@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 
 type Meta = Record<string, unknown>
 
 export function apiResponse<T>(data: T, status = 200, meta?: Meta): NextResponse {
   return NextResponse.json(
-    { data, meta: { requestId: randomUUID(), ...meta } },
+    { data, meta: { requestId: globalThis.crypto.randomUUID(), ...meta } },
     { status }
   )
 }
@@ -17,7 +16,7 @@ export function apiError(
   meta?: Meta
 ): NextResponse {
   return NextResponse.json(
-    { error: { code, message }, meta: { requestId: randomUUID(), ...meta } },
+    { error: { code, message }, meta: { requestId: globalThis.crypto.randomUUID(), ...meta } },
     { status }
   )
 }
@@ -31,7 +30,7 @@ export function paginatedResponse<T>(
   return NextResponse.json({
     data,
     meta: {
-      requestId: randomUUID(),
+      requestId: globalThis.crypto.randomUUID(),
       total,
       page,
       perPage,

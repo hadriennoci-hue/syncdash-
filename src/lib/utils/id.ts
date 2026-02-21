@@ -1,9 +1,7 @@
-import { randomUUID } from 'crypto'
-
 export function generateId(): string {
-  return randomUUID()
+  return globalThis.crypto.randomUUID()
 }
 
 export function generateShortId(): string {
-  return randomUUID().replace(/-/g, '').slice(0, 16)
+  return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 }
