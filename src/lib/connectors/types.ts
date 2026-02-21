@@ -123,6 +123,8 @@ export interface PlatformConnector {
 export interface WarehouseStockSnapshot {
   sku: string
   quantity: number
+  sourceUrl?: string  // product page on the source site — used to scrape missing listings
+  sourceName?: string // product name as it appears on the source
 }
 
 export interface WarehouseConnector {

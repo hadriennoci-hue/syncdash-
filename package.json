@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "deploy": "npx wrangler pages deploy",
+    "pages:build": "npx @cloudflare/next-on-pages@1",
+    "deploy": "npm run pages:build && npx wrangler pages deploy",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
@@ -18,7 +19,7 @@
     "db:seed": "wrangler d1 execute syncdash-db --local --file=./drizzle/seed.sql"
   },
   "dependencies": {
-    "@cloudflare/next-on-pages": "^1.13.0",
+    "@cloudflare/next-on-pages": "1.13.0",
     "@mendable/firecrawl-js": "^1.9.0",
     "@radix-ui/react-checkbox": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.1",

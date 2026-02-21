@@ -33,6 +33,7 @@ export const products = sqliteTable('products', {
   vendor:               text('vendor'),
   productType:          text('product_type'),
   isFeatured:           integer('is_featured').notNull().default(0),
+  pendingReview:        integer('pending_review').notNull().default(0), // 1 = auto-created, needs user check
   supplierId:           text('supplier_id').references(() => suppliers.id),
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt:   text('updated_at').default(sql`CURRENT_TIMESTAMP`),
@@ -142,6 +143,8 @@ export const warehouseStock = sqliteTable('warehouse_stock', {
   quantityOrdered: integer('quantity_ordered').default(0),
   lastOrderDate:   text('last_order_date'),
   purchasePrice:   real('purchase_price'),
+  sourceUrl:       text('source_url'),   // product page URL on the source site (e.g. ACER Store)
+  sourceName:      text('source_name'),  // product name as scraped from source
   updatedAt:       text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.warehouseId] }) }))
 

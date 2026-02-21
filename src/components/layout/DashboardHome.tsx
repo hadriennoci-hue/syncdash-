@@ -8,6 +8,7 @@ export function DashboardHome() {
   const { data: health }    = useQuery({ queryKey: ['health'],    queryFn: () => apiFetch('/api/health') })
   const { data: syncDaily } = useQuery({ queryKey: ['syncDaily'], queryFn: () => apiFetch('/api/sync/daily?limit=5') })
   const { data: products }  = useQuery({ queryKey: ['products-count'], queryFn: () => apiFetch('/api/products?perPage=1') })
+  const { data: pending }   = useQuery({ queryKey: ['pending-review'], queryFn: () => apiFetch('/api/products?pendingReview=1&perPage=50') })
 
   const lastSync   = syncDaily?.data?.[0]
   const healthData = health?.data
@@ -21,6 +22,25 @@ export function DashboardHome() {
         <StatCard label="Last Sync" value={lastSync ? lastSync.status : '—'} href="/sync" />
         <StatCard label="API Health" value={healthData ? 'checked' : '—'} href="/sync" />
       </div>
+
+      {(pending as any)?.data?.length > 0 && (
+        <section className="border border-amber-400 bg-amber-50 dark:bg-amber-950/20 rounded p-3 space-y-2">
+          <h2 className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+            ⚠ {(pending as any).data.length} new product{(pending as any).data.length > 1 ? 's' : ''} pending review
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            These SKUs were automatically created from ACER Store and pushed to channels. Please verify title, description, images and category before publishing.
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {(pending as any).data.map((p: any) => (
+              <Link key={p.id} href={`/products/${p.id}`}
+                className="text-xs font-mono bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded hover:underline">
+                {p.id}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <section className="border border-border rounded p-3 space-y-2">

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { warehouses, warehouseStock, warehouseChannelRules, platformMappings } from '@/lib/db/schema'
+import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getWarehouseConnector, getConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
@@ -34,14 +34,27 @@ export async function syncWarehouse(
 
   for (const snap of snapshots) {
     try {
+      // Auto-create a minimal product record if it doesn't exist yet.
+      // This prevents FK violations for new ACER SKUs not yet in D1.
+      await db.insert(products)
+        .values({ id: snap.sku, title: snap.sourceName ?? snap.sku, status: 'active' })
+        .onConflictDoNothing()
+
       await db.insert(warehouseStock).values({
         productId:   snap.sku,
         warehouseId,
         quantity:    snap.quantity,
+        sourceUrl:   snap.sourceUrl ?? null,
+        sourceName:  snap.sourceName ?? null,
         updatedAt:   new Date().toISOString(),
       }).onConflictDoUpdate({
         target: [warehouseStock.productId, warehouseStock.warehouseId],
-        set: { quantity: snap.quantity, updatedAt: new Date().toISOString() },
+        set: {
+          quantity:   snap.quantity,
+          sourceUrl:  snap.sourceUrl ?? null,
+          sourceName: snap.sourceName ?? null,
+          updatedAt:  new Date().toISOString(),
+        },
       })
       productsUpdated++
     } catch (err) {

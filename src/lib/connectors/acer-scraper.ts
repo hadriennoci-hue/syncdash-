@@ -26,6 +26,45 @@ const HealthSchema = z.object({
   products: z.array(z.object({ name: z.string(), sku: z.string() })).max(1),
 })
 
+export const ProductDetailSchema = z.object({
+  description: z.string(),   // translated to English by Firecrawl
+  category: z.string(),
+  imageUrls: z.array(z.string().url()).max(5),
+  price: z.number().nullable(),
+  promoPrice: z.number().nullable(),
+})
+
+export type ProductDetail = z.infer<typeof ProductDetailSchema>
+
+const DETAIL_PROMPT =
+  'Extract from this product page: ' +
+  '1) the full product description translated to English, ' +
+  '2) the main product category (e.g. "Monitor", "Keyboard", "Headset"), ' +
+  '3) up to 5 product image URLs (main product photos only, not UI icons or thumbnails), ' +
+  '4) the regular price as a number, ' +
+  '5) the promotional/discounted price as a number if shown, otherwise null.'
+
+export async function scrapeProductDetail(
+  firecrawl: FirecrawlApp,
+  url: string
+): Promise<ProductDetail> {
+  const result = await firecrawl.extract([url], {
+    prompt: DETAIL_PROMPT,
+    schema: ProductDetailSchema,
+  })
+
+  if (!result.success) {
+    const msg = 'error' in result ? String(result.error) : 'Firecrawl error'
+    throw new Error(`Failed to scrape product detail for ${url}: ${msg}`)
+  }
+
+  const parsed = ProductDetailSchema.safeParse(result.data)
+  if (!parsed.success) {
+    throw new Error(`Unexpected scrape response for ${url}: ${parsed.error.message}`)
+  }
+  return parsed.data
+}
+
 export class AcerScraperConnector implements WarehouseConnector {
   private readonly firecrawl: FirecrawlApp
   private readonly urls: string[]
@@ -59,7 +98,12 @@ export class AcerScraperConnector implements WarehouseConnector {
         const sku = product.sku.trim()
         if (!sku || seen.has(sku)) continue
         seen.add(sku)
-        snapshots.push({ sku, quantity: product.inStock ? 1 : 0 })
+        snapshots.push({
+          sku,
+          quantity:   product.inStock ? 1 : 0,
+          sourceUrl:  product.url,
+          sourceName: product.name,
+        })
       }
     }
 
@@ -78,9 +122,7 @@ export class AcerScraperConnector implements WarehouseConnector {
         latencyMs: Date.now() - start,
         error: result.success
           ? null
-          : 'error' in result
-          ? String(result.error)
-          : 'Unknown error',
+          : 'error' in result ? String(result.error) : 'Unknown error',
       }
     } catch (err) {
       return {

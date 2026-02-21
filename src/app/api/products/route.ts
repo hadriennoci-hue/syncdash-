@@ -54,9 +54,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const page    = parseInt(searchParams.get('page') ?? '1')
   const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
-  const search  = searchParams.get('search') ?? ''
-  const status  = searchParams.get('status') ?? ''
-  const offset  = (page - 1) * perPage
+  const search        = searchParams.get('search') ?? ''
+  const status        = searchParams.get('status') ?? ''
+  const pendingReview = searchParams.get('pendingReview') === '1'
+  const offset        = (page - 1) * perPage
 
   const allProducts = await db.query.products.findMany({
     with: {
@@ -76,6 +77,7 @@ export async function GET(req: NextRequest) {
   const filtered = allProducts.filter((p) => {
     if (search && !p.title.toLowerCase().includes(search.toLowerCase()) && !p.id.toLowerCase().includes(search.toLowerCase())) return false
     if (status && p.status !== status) return false
+    if (pendingReview && !p.pendingReview) return false
     return true
   })
 
