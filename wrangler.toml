@@ -1,8 +1,5 @@
 # =============================================================================
-# SYNCDASH — Wrangler Configuration (Cloudflare)
-# =============================================================================
-# Fill in your CLOUDFLARE_D1_DATABASE_ID below after running:
-#   npx wrangler d1 create syncdash-db
+# SYNCDASH — Wrangler Configuration (Cloudflare Pages)
 # =============================================================================
 
 name = "syncdash"
@@ -16,7 +13,7 @@ pages_build_output_dir = ".vercel/output/static"
 [[d1_databases]]
 binding = "DB"
 database_name = "syncdash-db"
-database_id = "d7471ca2-fe58-4066-a946-367d062e7e95"   # ← replace with your actual D1 database ID
+database_id = "d7471ca2-fe58-4066-a946-367d062e7e95"
 
 # -----------------------------------------------------------------------------
 # R2 Bucket — product image storage
@@ -24,12 +21,3 @@ database_id = "d7471ca2-fe58-4066-a946-367d062e7e95"   # ← replace with your a
 [[r2_buckets]]
 binding = "R2_IMAGES"
 bucket_name = "syncdash-images"
-
-# -----------------------------------------------------------------------------
-# Cron Triggers (daily automation)
-# -----------------------------------------------------------------------------
-[triggers]
-crons = [
-  "0 5 * * *",   # 05:00 UTC daily — warehouse sync + channel push + order reconciliation
-  "0 6 * * *"    # 06:00 UTC daily — API health check
-]
