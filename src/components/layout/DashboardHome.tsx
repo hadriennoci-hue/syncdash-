@@ -93,7 +93,7 @@ export function DashboardHome() {
   }
 
   const healthData    = health?.data
-  const healthResults = healthData?.results ?? null
+  const healthResults = testResult ?? healthData?.results ?? null
   const summaryData   = summary?.data
 
   return (
