@@ -49,6 +49,7 @@ export async function syncWarehouse(
 
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
+    if (snap.quantity <= 0) continue
     try {
       // Auto-create a minimal product record if it doesn't exist yet.
       // This prevents FK violations for new ACER SKUs not yet in D1.
