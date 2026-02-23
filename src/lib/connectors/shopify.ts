@@ -33,8 +33,11 @@ export class ShopifyConnector implements PlatformConnector {
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': this.token,
+        'User-Agent': 'SyncDash/1.0',
       },
       body: JSON.stringify({ query, variables }),
+      // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules
+      cf: { cacheEverything: false },
     })
     if (!res.ok) throw new Error(`Shopify GraphQL error: ${res.status} ${await res.text()}`)
     const json = await res.json() as { data?: T; errors?: unknown[] }
@@ -474,8 +477,11 @@ export class ShopifyWarehouseConnector {
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': this.token,
+        'User-Agent': 'SyncDash/1.0',
       },
       body: JSON.stringify({ query, variables }),
+      // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules
+      cf: { cacheEverything: false },
     })
     if (!res.ok) throw new Error(`Shopify error: ${res.status}`)
     const json = await res.json() as { data?: T; errors?: Array<{ message: string }> }
