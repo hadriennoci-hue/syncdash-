@@ -1,6 +1,13 @@
+// SKU prefixes that indicate non-hardware items (software keys, recovery tools, services).
+// These appear on the ACER Store website but are not physical products — skip them on import.
+const ACER_SKU_BLOCKLIST_PREFIXES = ['RECOVERY_', 'SERVICE_', 'SOFTWARE_', 'MEDIAKEY_']
+const isBlockedAcerSku = (sku: string) =>
+  ACER_SKU_BLOCKLIST_PREFIXES.some((prefix) => sku.toUpperCase().startsWith(prefix)) ||
+  sku.toUpperCase().includes('_MEDIAKEY')
+
 import { db } from '@/lib/db/client'
-import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers } from '@/lib/db/schema'
+import { eq, and, isNull } from 'drizzle-orm'
 import { getWarehouseConnector, getConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy } from '@/types/platform'
@@ -32,28 +39,65 @@ export async function syncWarehouse(
   const errors: string[] = []
   let productsUpdated = 0
 
+  // Ireland and ACER Store products are always supplied by ACER — ensure supplier row exists
+  const isAcerSource = warehouseId === 'ireland' || warehouseId === 'acer_store'
+  if (isAcerSource) {
+    await db.insert(suppliers)
+      .values({ id: 'acer', name: 'ACER' })
+      .onConflictDoNothing()
+  }
+
   for (const snap of snapshots) {
+    if (isBlockedAcerSku(snap.sku)) continue
     try {
       // Auto-create a minimal product record if it doesn't exist yet.
       // This prevents FK violations for new ACER SKUs not yet in D1.
+      const isIreland = warehouseId === 'ireland'
+
       await db.insert(products)
-        .values({ id: snap.sku, title: snap.sourceName ?? snap.sku, status: 'active' })
+        .values({
+          id: snap.sku,
+          title: snap.sourceName ?? snap.sku,
+          status: 'active',
+          pendingReview: 1,
+          ...(isAcerSource   ? { supplierId: 'acer' } : {}),
+          // Ireland products are already live on TikTok Shop — mark as done
+          ...(isIreland ? { pushedShopifyTiktok: 'done' } : {}),
+        })
         .onConflictDoNothing()
 
+      // Set supplier to ACER on existing products if not already assigned
+      if (isAcerSource) {
+        await db.update(products)
+          .set({ supplierId: 'acer' })
+          .where(and(eq(products.id, snap.sku), isNull(products.supplierId)))
+      }
+
+      // Ensure existing Ireland products are marked as done on TikTok
+      if (isIreland) {
+        await db.update(products)
+          .set({ pushedShopifyTiktok: 'done' })
+          .where(and(eq(products.id, snap.sku), eq(products.pushedShopifyTiktok, 'N')))
+      }
+
       await db.insert(warehouseStock).values({
-        productId:   snap.sku,
+        productId:        snap.sku,
         warehouseId,
-        quantity:    snap.quantity,
-        sourceUrl:   snap.sourceUrl ?? null,
-        sourceName:  snap.sourceName ?? null,
-        updatedAt:   new Date().toISOString(),
+        quantity:         snap.quantity,
+        sourceUrl:        snap.sourceUrl        ?? null,
+        sourceName:       snap.sourceName       ?? null,
+        importPrice:      snap.importPrice      ?? null,
+        importPromoPrice: snap.importPromoPrice ?? null,
+        updatedAt:        new Date().toISOString(),
       }).onConflictDoUpdate({
         target: [warehouseStock.productId, warehouseStock.warehouseId],
         set: {
-          quantity:   snap.quantity,
-          sourceUrl:  snap.sourceUrl ?? null,
-          sourceName: snap.sourceName ?? null,
-          updatedAt:  new Date().toISOString(),
+          quantity:         snap.quantity,
+          sourceUrl:        snap.sourceUrl        ?? null,
+          sourceName:       snap.sourceName       ?? null,
+          importPrice:      snap.importPrice      ?? null,
+          importPromoPrice: snap.importPromoPrice ?? null,
+          updatedAt:        new Date().toISOString(),
         },
       })
       productsUpdated++

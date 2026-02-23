@@ -1,11 +1,15 @@
 # =============================================================================
-# SYNCDASH — Wrangler Configuration (Cloudflare Pages)
+# SYNCDASH — Wrangler Configuration (Cloudflare Workers via @opennextjs/cloudflare)
 # =============================================================================
 
 name = "syncdash"
+main = ".open-next/worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".vercel/output/static"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
 
 # -----------------------------------------------------------------------------
 # D1 Database binding

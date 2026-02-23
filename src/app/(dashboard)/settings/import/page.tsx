@@ -40,7 +40,7 @@ export default function ImportPage() {
           <select value={mode} onChange={(e) => setMode(e.target.value)}
             className="w-full text-xs border border-border rounded px-2 py-1 bg-background">
             <option value="full">Full (replace all)</option>
-            <option value="incremental">Incremental (update changed)</option>
+            <option value="new_changed">New / changed products</option>
           </select>
         </div>
 

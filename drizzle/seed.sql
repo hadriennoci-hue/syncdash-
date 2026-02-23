@@ -1,6 +1,10 @@
 -- SyncDash seed data
 -- Run: npx wrangler d1 execute syncdash --local --file=drizzle/seed.sql
 
+-- Suppliers
+INSERT OR IGNORE INTO suppliers (id, name) VALUES
+  ('acer', 'ACER');
+
 -- Warehouses
 INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source_config, can_modify_stock, auto_sync, created_at) VALUES
   ('ireland',    'Entrepôt Irlande',  'Dublin, Ireland', 'shopify', '{"locationId":"placeholder"}', 0, 1, datetime('now')),

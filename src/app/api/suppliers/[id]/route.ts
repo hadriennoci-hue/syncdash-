@@ -6,7 +6,6 @@ import { db } from '@/lib/db/client'
 import { suppliers } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   name:    z.string().min(1).optional(),

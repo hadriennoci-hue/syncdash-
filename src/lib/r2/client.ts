@@ -1,6 +1,17 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare'
+
 // Cloudflare R2 binding — injected by the Workers runtime.
-// In local dev, Wrangler simulates R2 via [[r2_buckets]] in wrangler.toml.
 export function getR2Bucket(): R2Bucket {
+  // Try @opennextjs/cloudflare context first
+  try {
+    const { env } = getCloudflareContext()
+    const binding = (env as Record<string, unknown>).R2_IMAGES as R2Bucket | undefined
+    if (binding) return binding
+  } catch {
+    // Outside request context
+  }
+
+  // Fallback: globalThis binding
   const binding = (globalThis as unknown as { R2_IMAGES?: R2Bucket }).R2_IMAGES
   if (!binding) {
     throw new Error(

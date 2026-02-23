@@ -4,7 +4,6 @@ import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { runDailySync } from '@/lib/automation/daily-sync'
 
-export const runtime = 'edge'
 
 // GET — list daily sync log entries
 export async function GET(req: NextRequest) {

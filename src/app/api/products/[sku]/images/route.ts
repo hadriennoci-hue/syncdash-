@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { setProductImages, addProductImages, deleteProductImages } from '@/lib/functions/images'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const imageSchema = z.object({
   images: z.array(z.discriminatedUnion('type', [

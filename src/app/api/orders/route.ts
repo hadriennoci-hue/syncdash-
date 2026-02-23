@@ -5,7 +5,6 @@ import { apiResponse, apiError, paginatedResponse } from '@/lib/utils/api-respon
 import { db } from '@/lib/db/client'
 import { createOrder } from '@/lib/functions/orders'
 
-export const runtime = 'edge'
 
 const createSchema = z.object({
   invoiceNumber: z.string().optional(),

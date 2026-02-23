@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { runDailySync, runDailyHealthCheck } from '@/lib/automation/daily-sync'
 
-export const runtime = 'edge'
 
 // Internal Cloudflare Cron endpoint — NOT secured with bearer (called by Cloudflare)
 // Cloudflare Cron Triggers call GET /api/cron with a scheduled header

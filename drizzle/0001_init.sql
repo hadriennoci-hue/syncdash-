@@ -2,13 +2,12 @@
 -- Generated for Cloudflare D1 (SQLite)
 
 CREATE TABLE IF NOT EXISTS `suppliers` (
-  `id`         TEXT PRIMARY KEY NOT NULL,
-  `name`       TEXT NOT NULL,
-  `contact`    TEXT,
-  `email`      TEXT,
-  `phone`      TEXT,
-  `notes`      TEXT,
-  `created_at` TEXT NOT NULL
+  `id`                  TEXT PRIMARY KEY NOT NULL,
+  `name`                TEXT NOT NULL,
+  `contact_first_name`  TEXT,
+  `contact_last_name`   TEXT,
+  `email`               TEXT,
+  `created_at`          TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS `products` (
@@ -25,7 +24,8 @@ CREATE TABLE IF NOT EXISTS `products` (
   `weight_unit`           TEXT DEFAULT 'kg',
   `vendor`                TEXT,
   `product_type` TEXT,
-  `is_featured`  INTEGER NOT NULL DEFAULT 0,
+  `is_featured`    INTEGER NOT NULL DEFAULT 0,
+  `pending_review` INTEGER NOT NULL DEFAULT 0,
   `supplier_id`  TEXT REFERENCES suppliers(id),
   `created_at`   TEXT NOT NULL,
   `updated_at`   TEXT NOT NULL

@@ -5,7 +5,6 @@ import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 // GET — warehouse detail with full stock snapshot
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -19,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const stock = await db.query.warehouseStock.findMany({
     where: eq(warehouseStock.warehouseId, params.id),
-    with: { product: { columns: { id: true, title: true, status: true } } },
+    with: { product: { columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true } } },
     orderBy: (t, { asc }) => [asc(t.productId)],
   })
 
@@ -33,14 +32,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     lastSynced:     warehouse.lastSynced,
     createdAt:      warehouse.createdAt,
     stock:          stock.map((s) => ({
-      productId:       s.productId,
-      productTitle:    s.product?.title ?? null,
-      productStatus:   s.product?.status ?? null,
-      quantity:        s.quantity,
-      quantityOrdered: s.quantityOrdered ?? 0,
-      lastOrderDate:   s.lastOrderDate,
-      purchasePrice:   s.purchasePrice,
-      updatedAt:       s.updatedAt,
+      productId:                s.productId,
+      productTitle:             s.product?.title ?? null,
+      productStatus:            s.product?.status ?? null,
+      pushedWoocommerce:        s.product?.pushedWoocommerce ?? 'N',
+      pushedShopifyKomputerzz:  s.product?.pushedShopifyKomputerzz ?? 'N',
+      pushedShopifyTiktok:      s.product?.pushedShopifyTiktok ?? 'N',
+      quantity:                 s.quantity,
+      quantityOrdered:          s.quantityOrdered ?? 0,
+      lastOrderDate:            s.lastOrderDate,
+      purchasePrice:            s.purchasePrice,
+      updatedAt:                s.updatedAt,
     })),
   })
 }

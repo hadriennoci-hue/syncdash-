@@ -19,10 +19,10 @@ export const suppliers = sqliteTable('suppliers', {
 // ---------------------------------------------------------------------------
 
 export const products = sqliteTable('products', {
-  id:          text('id').primaryKey(), // SKU
-  title:       text('title').notNull(),
-  description: text('description'),
-  status:      text('status').notNull().default('active'), // 'active' | 'archived'
+  id:               text('id').primaryKey(), // SKU
+  title:            text('title').notNull(),
+  description:      text('description'),
+  status:           text('status').notNull().default('active'), // 'active' | 'archived'
   taxCode:              text('tax_code'),
   ean:                  text('ean'),                   // 13-digit EAN barcode
   commodityCode:        text('commodity_code'),        // HS customs tariff code
@@ -35,6 +35,10 @@ export const products = sqliteTable('products', {
   isFeatured:           integer('is_featured').notNull().default(0),
   pendingReview:        integer('pending_review').notNull().default(0), // 1 = auto-created, needs user check
   supplierId:           text('supplier_id').references(() => suppliers.id),
+  // Push status per channel: 'N' = don't push, '2push' = push on next run, 'done' = already pushed
+  pushedWoocommerce:        text('pushed_woocommerce').notNull().default('N'),
+  pushedShopifyKomputerzz:  text('pushed_shopify_komputerzz').notNull().default('N'),
+  pushedShopifyTiktok:      text('pushed_shopify_tiktok').notNull().default('N'),
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt:   text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 })
@@ -92,6 +96,7 @@ export const platformMappings = sqliteTable('platform_mappings', {
   variantId:  text('variant_id'),
   syncStatus: text('sync_status').notNull().default('pending'), // 'pending' | 'synced' | 'error'
   lastSynced: text('last_synced'),
+  updatedAt:  text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
 
 // ---------------------------------------------------------------------------
@@ -142,7 +147,9 @@ export const warehouseStock = sqliteTable('warehouse_stock', {
   quantity:        integer('quantity').notNull().default(0),
   quantityOrdered: integer('quantity_ordered').default(0),
   lastOrderDate:   text('last_order_date'),
-  purchasePrice:   real('purchase_price'),
+  purchasePrice:   real('purchase_price'),   // actual cost price — manual entry only
+  importPrice:     real('import_price'),     // listed price scraped from source (e.g. ACER Store)
+  importPromoPrice: real('import_promo_price'), // promo/discounted price scraped from source
   sourceUrl:       text('source_url'),   // product page URL on the source site (e.g. ACER Store)
   sourceName:      text('source_name'),  // product name as scraped from source
   updatedAt:       text('updated_at').default(sql`CURRENT_TIMESTAMP`),
@@ -242,6 +249,11 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   tiktokSelection:  one(tiktokSelection, { fields: [products.id], references: [tiktokSelection.productId] }),
 }))
 
+export const productCategoriesRelations = relations(productCategories, ({ one }) => ({
+  product:  one(products,   { fields: [productCategories.productId],  references: [products.id] }),
+  category: one(categories, { fields: [productCategories.categoryId], references: [categories.id] }),
+}))
+
 export const productVariantsRelations = relations(productVariants, ({ one }) => ({
   product: one(products, { fields: [productVariants.productId], references: [products.id] }),
 }))
@@ -283,4 +295,16 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
 export const suppliersRelations = relations(suppliers, ({ many }) => ({
   products: many(products),
   orders:   many(orders),
+}))
+
+export const productMetafieldsRelations = relations(productMetafields, ({ one }) => ({
+  product: one(products, { fields: [productMetafields.productId], references: [products.id] }),
+}))
+
+export const tiktokSelectionRelations = relations(tiktokSelection, ({ one }) => ({
+  product: one(products, { fields: [tiktokSelection.productId], references: [products.id] }),
+}))
+
+export const categoriesRelations = relations(categories, ({ many }) => ({
+  productCategories: many(productCategories),
 }))

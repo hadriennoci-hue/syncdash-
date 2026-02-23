@@ -7,7 +7,6 @@ import { orders } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { updateOrder } from '@/lib/functions/orders'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   invoiceNumber: z.string().optional(),

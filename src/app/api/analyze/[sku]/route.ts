@@ -3,7 +3,6 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { analyzeInconsistencies } from '@/lib/functions/analyze'
 
-export const runtime = 'edge'
 
 // GET — analyze inconsistencies for a single product
 export async function GET(req: NextRequest, { params }: { params: { sku: string } }) {

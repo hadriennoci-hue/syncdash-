@@ -23,26 +23,86 @@ Never call WooCommerce or Shopify APIs directly from a route handler. Always go 
 Never call Shopify or scraping logic directly for warehouse stock. Use `getWarehouseConnector(warehouseId)` from `src/lib/connectors/registry.ts`.
 
 ### Every write operation must be logged
-Every function that modifies data on a platform or warehouse must write to `sync_log`. Use `triggeredBy: 'human' | 'agent' | 'system'` based on the request context.
+Every function that modifies data on a platform or warehouse must write to `sync_log`. Use `triggeredBy: 'human' | 'agent' | 'system'` based on the request context. See `src/lib/functions/log.ts`.
+
+### Ireland warehouse — dual role (read carefully)
+The Ireland warehouse and the TikTok Shop share the **same Shopify account** (`SHOPIFY_TIKTOK_SHOP`) but serve two distinct purposes:
+
+1. **`ireland` warehouse** — a physical stock location. Stock is auto-updated by Shopify when deliveries arrive. SyncDash reads this stock via `ShopifyWarehouseConnector` using `SHOPIFY_TIKTOK_IRELAND_LOCATION_ID`. This stock feeds **all sales channels** (WooCommerce, Komputerzz, TikTok) according to `warehouse_channel_rules`.
+
+2. **`shopify_tiktok` platform** — a sales channel (point of sale). It sells products and draws its available stock from the Ireland warehouse. It is configured as a platform connector (`ShopifyConnector`) for pushing catalogue updates, prices, and status.
+
+**Same Shopify account, two connectors, two roles.** Never confuse the two:
+- Reading Ireland stock → `getWarehouseConnector('ireland')` → `ShopifyWarehouseConnector`
+- Pushing products/prices/status to TikTok Shop → `getConnector('shopify_tiktok')` → `ShopifyConnector`
+- `SHOPIFY_TIKTOK_LOCATION_ID` and `SHOPIFY_TIKTOK_IRELAND_LOCATION_ID` currently point to the same location (the account has one location), but they are kept separate because that may change.
 
 ### Warehouse write guard — ENFORCE THIS
 - **ACER Store:** read + write allowed (`canModifyStock = 1`)
 - **Ireland:** read only — do NOT write stock (`canModifyStock = 0`)
 - **Poland:** read only — do NOT write stock (`canModifyStock = 0`)
 - Always check `warehouse.canModifyStock` before writing. Return 403 if false.
-- Syncdash MAY always write `quantity_ordered` and `last_order_date` for any warehouse.
+- SyncDash MAY always write `quantity_ordered` and `last_order_date` for any warehouse.
+- Guard is implemented in `src/lib/functions/warehouses.ts`.
 
 ### SyncDash D1 is the master catalogue (after initial import)
 After the one-time Komputerzz import, **SyncDash D1 is the source of truth**. New products are created in SyncDash and pushed to channels. Komputerzz is a channel like the others — it receives pushes, it is no longer the source. Never pull from Komputerzz to overwrite D1 data outside of an explicit re-import operation.
+
+### Shopify category = Electronics (tax classification, NOT collections)
+When pushing any product to a Shopify sales channel (`shopify_komputerzz`, `shopify_tiktok`), the Shopify **product category** must be set to **"Electronics"**. This is Shopify's standardised taxonomy field used for **tax purposes** — it is NOT the same as collections.
+
+Mapping clarification:
+- **Shopify Collections** = equivalent to **WooCommerce Categories** (content/navigation grouping)
+- **Shopify Category** (taxonomy) = a separate tax classification field → always set to `"Electronics"` for all our products
+
+Never omit this field when creating or updating products on Shopify. It has no equivalent in WooCommerce.
 
 ### SKU is the universal key
 `products.id` is the SKU. All platform IDs are stored in `platform_mappings`. Never use platform-native IDs as the primary reference — always use SKU.
 
 ### Extensible platform list
-The `Platform` type must be a string enum. Adding a new platform = new connector + one line in the registry. No other files should need changes.
+The `Platform` type must be a string enum (`src/types/platform.ts`). Adding a new platform = new connector + one line in the registry. No other files should need changes.
 
 ### Extensible warehouse list
-Same pattern as platforms. Adding a warehouse = implement `WarehouseConnector` + one line in `getWarehouseConnector()`.
+Same pattern as platforms. Adding a warehouse = implement `WarehouseConnector` + one line in `getWarehouseConnector()` in `src/lib/connectors/registry.ts`.
+
+### pendingReview flag
+When a product is auto-created from ACER Store scraping (new SKU found in stock with no D1 record), it is created with `pendingReview: 1`. The home page surfaces these for manual verification before publishing. Always set `pendingReview: 1` on auto-created products; never set it on manually created ones.
+
+---
+
+## Environment Variables
+
+All secrets live in `.env.local` (local dev) or Cloudflare Pages environment (production).
+
+```bash
+# API auth
+AGENT_BEARER_TOKEN=                        # server-side bearer check (verifyBearer)
+NEXT_PUBLIC_AGENT_BEARER_TOKEN=            # client-side API calls (apiFetch)
+
+# WooCommerce — coincart.store
+WOO_BASE_URL=                              # e.g. https://coincart.store
+WOO_CONSUMER_KEY=
+WOO_CONSUMER_SECRET=
+
+# Shopify — komputerzz.com
+SHOPIFY_KOMPUTERZZ_SHOP=                   # e.g. komputerzz.myshopify.com
+SHOPIFY_KOMPUTERZZ_TOKEN=
+SHOPIFY_KOMPUTERZZ_LOCATION_ID=            # optional — falls back to primary location
+
+# Shopify — TikTok account
+SHOPIFY_TIKTOK_SHOP=
+SHOPIFY_TIKTOK_TOKEN=
+SHOPIFY_TIKTOK_LOCATION_ID=                # optional — falls back to primary location
+SHOPIFY_TIKTOK_IRELAND_LOCATION_ID=        # required for Ireland warehouse stock sync
+
+# ACER Store scraping
+ACER_STORE_SCRAPE_URLS=                    # comma-separated list of pages to scrape
+FIRECRAWL_API_KEY=                         # used by channel-sync and acer-scraper
+
+# Cloudflare R2
+R2_PUBLIC_URL=                             # public base URL for uploaded images
+```
 
 ---
 
@@ -54,6 +114,7 @@ Same pattern as platforms. Adding a warehouse = implement `WarehouseConnector` +
 - Use early returns to reduce nesting
 - Maximum function length: ~50 lines (extract if longer)
 - Maximum file length: ~300 lines (split if longer)
+- No `console.log` in production code — use `logOperation` from `src/lib/functions/log.ts`
 
 ### Naming
 ```typescript
@@ -63,7 +124,7 @@ function getProductBySku(sku: string) {}
 
 // Types and interfaces: PascalCase
 interface ProductPayload {}
-type SyncResult = {}
+type SyncResult = { warehouseId: string; productsUpdated: number }
 
 // Constants: SCREAMING_SNAKE_CASE
 const MAX_SHOPIFY_RATE = 2  // requests per second
@@ -79,7 +140,7 @@ const MAX_SHOPIFY_RATE = 2  // requests per second
 ```typescript
 // 1. React/Next
 import { useState } from 'react'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 
 // 2. External libraries
 import { z } from 'zod'
@@ -101,7 +162,7 @@ import type { Platform } from './types'
 
 ```typescript
 // src/app/api/products/[sku]/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
@@ -151,17 +212,17 @@ export class ShopifyConnector implements PlatformConnector {
 
   async importProducts(): Promise<RawProduct[]> { ... }
   async updateProduct(platformId: string, data: Partial<ProductPayload>): Promise<void> { ... }
-  async healthCheck(): Promise<{ ok: boolean; latency_ms: number; error?: string }> { ... }
+  async healthCheck(): Promise<{ ok: boolean; latencyMs: number | null; error?: string }> { ... }
   // ... implement all PlatformConnector methods
 }
 
 // src/lib/connectors/acer-scraper.ts
 export class AcerScraperConnector implements WarehouseConnector {
   async getStock(): Promise<WarehouseStockSnapshot[]> {
-    // Web scraping implementation (Playwright or Claude agent)
-    // Returns [{ sku, quantity }]
+    // Web scraping via Firecrawl
+    // Returns [{ sku, quantity, sourceUrl, sourceName }]
   }
-  async healthCheck(): Promise<{ ok: boolean; latency_ms: number; error?: string }> { ... }
+  async healthCheck(): Promise<{ ok: boolean; latencyMs: number | null; error?: string }> { ... }
 }
 
 // src/lib/connectors/registry.ts
@@ -178,7 +239,7 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
 export async function syncWarehouse(
   warehouseId: string,
   triggeredBy: TriggeredBy = 'system'
-): Promise<{ productsUpdated: number; errors: string[] }> {
+): Promise<{ warehouseId: string; productsUpdated: number; errors: string[]; syncedAt: string }> {
   const warehouse = await db.query.warehouses.findFirst({
     where: eq(warehouses.id, warehouseId)
   })
@@ -190,7 +251,7 @@ export async function syncWarehouse(
   // Upsert warehouse_stock
   // Update warehouse.last_synced
   // Log to sync_log (action: 'sync_warehouse', triggered_by)
-  // Return { productsUpdated, errors }
+  // Return { warehouseId, productsUpdated, errors, syncedAt }
 }
 
 export async function overrideWarehouseStock(
@@ -207,6 +268,21 @@ export async function overrideWarehouseStock(
   }
   // ... update + log
 }
+```
+
+---
+
+## Import Modes
+
+`POST /api/import/:platform` accepts a `mode` field:
+
+| Mode | Behaviour |
+|------|-----------|
+| `new_changed` | Default. Upserts only — creates new SKUs and updates existing ones. Does not delete. |
+| `full` | Full re-import. Replaces all data for every product fetched from the platform. |
+
+```json
+{ "mode": "full", "triggeredBy": "human" }
 ```
 
 ---
@@ -286,32 +362,12 @@ describe('overrideWarehouseStock', () => {
 
 ## Do NOT
 
-- ❌ Call Shopify/WooCommerce APIs directly from route handlers — go through connectors
-- ❌ Call scraping logic directly — go through AcerScraperConnector
-- ❌ Use `any` type
-- ❌ Leave `console.log` in production code — use structured logging
-- ❌ Hardcode platform URLs, tokens, or warehouse addresses — use env vars
-- ❌ Write to a platform without logging to `sync_log`
-- ❌ Write stock to Ireland or Poland warehouses — they are read-only
-- ❌ Add AI/LLM calls inside the application
-- ❌ Use `platform_id` as a primary reference — always use SKU
-- ❌ Skip Zod validation on API inputs
-- ❌ Add auth logic to the app — Cloudflare Access handles UI auth
-
----
-
-## Do
-
-- ✅ Always go through `getConnector(platform)` for platform operations
-- ✅ Always go through `getWarehouseConnector(id)` for warehouse operations
-- ✅ Always check `warehouse.canModifyStock` before writing stock
-- ✅ Always log to `sync_log` after every write (success or error)
-- ✅ Set `triggeredBy: 'human' | 'agent' | 'system'` on every log entry
-- ✅ Return `SyncResult[]` from all push functions
-- ✅ Handle rate limiting in connectors (Shopify: 2 req/s)
-- ✅ Paginate all platform imports (WooCommerce max 100/page, Shopify cursor-based)
-- ✅ Make all SKUs, channel names, warehouse names, supplier names, order numbers clickable
-- ✅ Write tests for connector normalization and warehouse guard logic
+- ❌ Use `any` type — use `unknown` if the shape is truly unknown
+- ❌ Leave `console.log` in production code — use `logOperation` from `src/lib/functions/log.ts`
+- ❌ Hardcode platform URLs, tokens, or warehouse addresses — use env vars (see list above)
+- ❌ Skip Zod validation on any API route input
+- ❌ Add auth logic to the app — Cloudflare Access handles UI auth, `verifyBearer` handles API auth
+- ❌ Return `NextResponse` directly from route handlers — always use `apiResponse` / `apiError`
 
 ---
 
@@ -319,7 +375,11 @@ describe('overrideWarehouseStock', () => {
 
 ```bash
 # Development
-npm run dev            # Start dev server (Next.js + Wrangler D1)
+# Two modes — choose based on what you need:
+npm run dev            # UI only — fast HMR, no D1 (all API routes return 500)
+npm run dev:cf         # Full stack — builds with next-on-pages then runs via Wrangler
+                       # Slower (requires full build) but D1 + all bindings work
+                       # Run db:migrate + db:seed first if local DB is empty
 npm run build          # Build for Cloudflare Pages
 npm run deploy         # Deploy to Cloudflare Pages
 
@@ -328,15 +388,20 @@ npm run lint           # ESLint
 npm run type-check     # TypeScript check
 npm run test           # Vitest unit tests
 
-# Database
-npm run db:generate    # Generate migration from schema changes
-npm run db:migrate     # Apply migrations to local D1
+# Database — run all in order on first setup
+npm run db:migrate     # Migration 1 — base schema
+npm run db:migrate2    # Migration 2 — product custom fields
+npm run db:migrate4    # Migration 4 — warehouse channel priority
+npm run db:migrate5    # Migration 5 — warehouse_stock source_url/source_name + pending_review
+npm run db:migrate6    # Migration 6 — suppliers contact_first_name/contact_last_name
+npm run db:migrate7    # Migration 7 — products pushed_woocommerce/pushed_shopify_komputerzz/pushed_shopify_tiktok
+npm run db:seed        # Seed suppliers + warehouses + channel rules
 npm run db:studio      # Drizzle Studio (visual DB browser)
-npm run db:seed        # Seed dev database
+npm run db:generate    # Generate new migration from schema changes
 
 # Wrangler (Cloudflare)
-npx wrangler d1 list                       # List D1 databases
-npx wrangler d1 execute syncdash --local   # Run SQL locally
+npx wrangler d1 list                          # List D1 databases
+npx wrangler d1 execute syncdash-db --local   # Run SQL locally
 ```
 
 ---

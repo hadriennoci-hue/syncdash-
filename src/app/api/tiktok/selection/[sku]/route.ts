@@ -5,7 +5,6 @@ import { db } from '@/lib/db/client'
 import { tiktokSelection } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 // DELETE — remove product from TikTok selection
 export async function DELETE(req: NextRequest, { params }: { params: { sku: string } }) {

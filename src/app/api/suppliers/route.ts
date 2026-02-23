@@ -6,7 +6,6 @@ import { db } from '@/lib/db/client'
 import { suppliers } from '@/lib/db/schema'
 import { generateId } from '@/lib/utils/id'
 
-export const runtime = 'edge'
 
 const createSchema = z.object({
   name:    z.string().min(1),

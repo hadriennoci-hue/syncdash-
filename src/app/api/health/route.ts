@@ -4,7 +4,6 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { runApiHealthCheck, getLatestHealthCheck } from '@/lib/functions/health'
 
-export const runtime = 'edge'
 
 const postSchema = z.object({
   triggeredBy: z.enum(['human', 'agent']).default('human'),

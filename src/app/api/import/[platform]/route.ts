@@ -6,10 +6,9 @@ import { importFromPlatform } from '@/lib/functions/import'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const postSchema = z.object({
-  mode:        z.enum(['full', 'incremental']).default('incremental'),
+  mode:        z.enum(['full', 'new_changed']).default('new_changed'),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
 

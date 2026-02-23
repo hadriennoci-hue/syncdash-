@@ -7,9 +7,7 @@ import { products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { updateProduct, deleteProduct } from '@/lib/functions/products'
 import type { Platform } from '@/types/platform'
-import { COUNTRY_LAYOUT_MAP } from '@/types/product'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   fields: z.object({
@@ -50,19 +48,14 @@ export async function GET(
       prices:           true,
       metafields:       true,
       platformMappings: true,
-      categories:       { with: { } },
+      categories:       { with: { category: true } },
       warehouseStock:   true,
     },
   })
 
   if (!product) return apiError('NOT_FOUND', `Product ${params.sku} not found`, 404)
 
-  // Compute localization from categories
-  const cats = await db.query.productCategories.findMany({
-    where: eq(require('@/lib/db/schema').productCategories.productId, params.sku),
-  })
-  let localization: string | null = null
-  // Would need a join with categories table for collection_type — simplified here
+  const localization: string | null = null
 
   const priceMap = Object.fromEntries(
     product.prices.map((p) => [p.platform, { price: p.price, compareAt: p.compareAt }])
@@ -105,6 +98,14 @@ export async function GET(
     platforms:            mappingMap,
     stock:                stockMap,
     localization,
+    categories: product.categories
+      .filter((c) => c.category)
+      .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType })),
+    pushStatus: {
+      woocommerce:        product.pushedWoocommerce,
+      shopify_komputerzz: product.pushedShopifyKomputerzz,
+      shopify_tiktok:     product.pushedShopifyTiktok,
+    },
     createdAt:            product.createdAt,
     updatedAt:            product.updatedAt,
   })

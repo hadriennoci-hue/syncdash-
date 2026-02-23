@@ -1,14 +1,18 @@
 import { drizzle } from 'drizzle-orm/d1'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 import * as schema from './schema'
 
-// Cloudflare D1 binding — injected by the Workers runtime
-// In local dev, this is provided by Wrangler via wrangler.toml [[d1_databases]] binding
-declare global {
-  // eslint-disable-next-line no-var
-  var __D1_DB: D1Database | undefined
-}
-
 function getDb() {
+  // Try @opennextjs/cloudflare context first (wrangler dev / production)
+  try {
+    const { env } = getCloudflareContext()
+    const binding = (env as Record<string, unknown>).DB as D1Database | undefined
+    if (binding) return drizzle(binding, { schema })
+  } catch {
+    // getCloudflareContext throws outside of a request context (e.g. build time)
+  }
+
+  // Fallback: globalThis binding (legacy @cloudflare/next-on-pages)
   const binding = (globalThis as unknown as { DB?: D1Database }).DB
   if (!binding) {
     throw new Error(
@@ -19,4 +23,11 @@ function getDb() {
   return drizzle(binding, { schema })
 }
 
-export const db = getDb()
+// Lazy proxy — defers DB initialisation to request time, not module load time.
+export const db = new Proxy({} as ReturnType<typeof getDb>, {
+  get(_target, prop: string | symbol) {
+    return Reflect.get(getDb(), prop)
+  },
+})
+
+export { getDb as getDbClient }

@@ -4,7 +4,6 @@ import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { PLATFORMS } from '@/types/platform'
 
-export const runtime = 'edge'
 
 interface ReadinessIssue {
   sku:     string

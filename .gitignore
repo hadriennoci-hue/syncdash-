@@ -26,6 +26,7 @@ out/
 # Build output
 dist/
 build/
+.open-next/
 
 # Logs
 *.log

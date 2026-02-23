@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { syncChannelAvailability } from '@/lib/functions/channel-sync'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const schema = z.object({
   platforms:   z.array(z.string()).min(1).default(['shopify_komputerzz', 'woocommerce']),

@@ -9,7 +9,6 @@ import { createProduct } from '@/lib/functions/products'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const createSchema = z.object({
   sku:          z.string().min(1),
@@ -57,9 +56,28 @@ export async function GET(req: NextRequest) {
   const search        = searchParams.get('search') ?? ''
   const status        = searchParams.get('status') ?? ''
   const pendingReview = searchParams.get('pendingReview') === '1'
+  const missingFields = searchParams.get('missingFields') === '1'
   const offset        = (page - 1) * perPage
 
+  // Build WHERE conditions in SQL
+  const conditions = []
+  if (search) conditions.push(or(like(products.title, `%${search}%`), like(products.id, `%${search}%`)))
+  if (status) conditions.push(eq(products.status, status))
+  if (pendingReview) conditions.push(eq(products.pendingReview, 1))
+  // missingFields: title = id (SKU used as title) OR no description
+  if (missingFields) conditions.push(
+    or(eq(products.title, products.id), sql`${products.description} IS NULL OR ${products.description} = ''`)
+  )
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  // Total count (for pagination header)
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(products)
+    .where(where)
+
   const allProducts = await db.query.products.findMany({
+    where,
     with: {
       supplier:         true,
       images:           true,
@@ -73,15 +91,7 @@ export async function GET(req: NextRequest) {
     orderBy: (t, { desc }) => [desc(t.updatedAt)],
   })
 
-  // Filter in JS (D1 has limited SQL capabilities)
-  const filtered = allProducts.filter((p) => {
-    if (search && !p.title.toLowerCase().includes(search.toLowerCase()) && !p.id.toLowerCase().includes(search.toLowerCase())) return false
-    if (status && p.status !== status) return false
-    if (pendingReview && !p.pendingReview) return false
-    return true
-  })
-
-  const rows = filtered.map((p) => {
+  const rows = allProducts.map((p) => {
     const imageCount = p.images.length
     const priceMap = Object.fromEntries(p.prices.map((pr) => [pr.platform, { price: pr.price, compareAt: pr.compareAt }]))
     const mappingMap = Object.fromEntries(p.platformMappings.map((m) => [m.platform, m]))
@@ -94,7 +104,11 @@ export async function GET(req: NextRequest) {
       }])
     )
 
-    const stockMap = Object.fromEntries(p.warehouseStock.map((ws) => [ws.warehouseId, ws.quantity]))
+    const stockMap = Object.fromEntries(p.warehouseStock.map((ws) => [ws.warehouseId, {
+      qty:              ws.quantity,
+      importPrice:      ws.importPrice      ?? null,
+      importPromoPrice: ws.importPromoPrice ?? null,
+    }]))
 
     return {
       id:             p.id,
@@ -107,7 +121,13 @@ export async function GET(req: NextRequest) {
       hasMinImages:   imageCount >= 5,
       localization:   null, // derived from categories — computed separately
       platforms:      platformData,
-      stock:          { ireland: stockMap.ireland ?? null, poland: stockMap.poland ?? null, acer_store: stockMap.acer_store ?? null },
+      stock: {
+        ireland:          stockMap.ireland?.qty              ?? null,
+        poland:           stockMap.poland?.qty               ?? null,
+        acer_store:       stockMap.acer_store?.qty           ?? null,
+        importPrice:      stockMap.acer_store?.importPrice      ?? null,
+        importPromoPrice: stockMap.acer_store?.importPromoPrice ?? null,
+      },
       categories:     p.categories.map((c) => c.categoryId),
       collections:    [],
       inconsistencies: 0,
@@ -115,7 +135,6 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const total = rows.length
   return paginatedResponse(rows, total, page, perPage)
 }
 

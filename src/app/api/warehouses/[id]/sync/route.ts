@@ -7,7 +7,6 @@ import { db } from '@/lib/db/client'
 import { warehouses } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 const postSchema = z.object({
   triggeredBy: z.enum(['human', 'agent', 'system']).default('human'),
@@ -28,8 +27,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
   try {
-    await syncWarehouse(params.id, parsed.data.triggeredBy)
-    return apiResponse({ success: true, warehouseId: params.id })
+    const result = await syncWarehouse(params.id, parsed.data.triggeredBy)
+    return apiResponse(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return apiError('SYNC_ERROR', message, 500)

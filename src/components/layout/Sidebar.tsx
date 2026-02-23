@@ -4,19 +4,17 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import {
-  LayoutDashboard, Package, Store, Warehouse, ShoppingCart,
-  Users, BarChart2, Link2, CheckSquare, RefreshCw, Video, Settings,
+  LayoutDashboard, Store, Warehouse, ShoppingCart,
+  Users, BarChart2, CheckSquare, RefreshCw, Video, Settings,
 } from 'lucide-react'
 
 const nav = [
   { href: '/',            label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/products',    label: 'Products',     icon: Package },
-  { href: '/channels',    label: 'Channels',     icon: Store },
+  { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/warehouses',  label: 'Warehouses',   icon: Warehouse },
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },
-  { href: '/mappings',    label: 'Mappings',     icon: Link2 },
   { href: '/validate',    label: 'Validate',     icon: CheckSquare },
   { href: '/sync',        label: 'Sync Logs',    icon: RefreshCw },
   { href: '/tiktok',      label: 'TikTok',       icon: Video },

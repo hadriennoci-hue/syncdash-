@@ -1,60 +1,215 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useState, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { apiFetch } from '@/lib/utils/api-fetch'
+import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
+
+type PushStatus = 'N' | '2push' | 'done'
+
+const PUSH_PLATFORMS = [
+  { key: 'woocommerce',        field: 'pushedWoocommerce',       label: 'Woo' },
+  { key: 'shopify_komputerzz', field: 'pushedShopifyKomputerzz', label: 'Komp.' },
+  { key: 'shopify_tiktok',     field: 'pushedShopifyTiktok',     label: 'TikTok' },
+] as const
+
+type PlatformKey = typeof PUSH_PLATFORMS[number]['key']
+
+type DirtyMap = Record<string, Partial<Record<PlatformKey, PushStatus>>>
 
 export default function WarehousePage({ params }: { params: { id: string } }) {
+  const qc = useQueryClient()
+  const [dirty, setDirty]   = useState<DirtyMap>({})
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<string[]>([])
+
   const { data, isLoading } = useQuery({
     queryKey: ['warehouse', params.id],
     queryFn:  () => apiFetch(`/api/warehouses/${params.id}`),
   })
+
+  const dirtyCount = Object.values(dirty).reduce((n, m) => n + Object.keys(m).length, 0)
+
+  const handleChange = useCallback((sku: string, platform: PlatformKey, value: PushStatus) => {
+    setDirty((prev) => ({
+      ...prev,
+      [sku]: { ...prev[sku], [platform]: value },
+    }))
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    setErrors([])
+    const calls: Promise<void>[] = []
+    const errs: string[] = []
+
+    for (const [sku, platforms] of Object.entries(dirty)) {
+      for (const [platform, status] of Object.entries(platforms) as [PlatformKey, PushStatus][]) {
+        calls.push(
+          apiPatch(`/api/products/${sku}/push-status`, { platform, status })
+            .catch(() => { errs.push(sku) })
+        )
+      }
+    }
+
+    await Promise.all(calls)
+    setSaving(false)
+
+    if (errs.length === 0) {
+      setDirty({})
+      qc.invalidateQueries({ queryKey: ['warehouse', params.id] })
+    } else {
+      setErrors([...new Set(errs)])
+    }
+  }
+
+  function handleDiscard() {
+    setDirty({})
+    setErrors([])
+  }
 
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
   const w = data?.data
   if (!w) return <p className="text-xs text-destructive">Warehouse not found</p>
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 max-w-5xl pb-16">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-sm font-semibold">{w.displayName}</h1>
           <p className="text-xs text-muted-foreground">{w.address ?? '—'}</p>
         </div>
         <div className="text-xs space-y-0.5 text-right">
-          <div>{w.canModifyStock ? <span className="text-green-600">writable</span> : <span className="text-muted-foreground">read-only</span>}</div>
+          <div>{w.canModifyStock
+            ? <span className="text-green-600">writable</span>
+            : <span className="text-muted-foreground">read-only</span>}
+          </div>
           <div className="text-muted-foreground">Last sync: {w.lastSynced?.slice(0, 10) ?? 'never'}</div>
         </div>
       </div>
 
-      <table className="w-full text-xs border-collapse">
-        <thead>
-          <tr className="border-b border-border text-muted-foreground">
-            <th className="text-left py-1.5 pr-3 font-medium">SKU</th>
-            <th className="text-left py-1.5 pr-3 font-medium">Title</th>
-            <th className="text-left py-1.5 pr-3 font-medium">Status</th>
-            <th className="text-left py-1.5 pr-3 font-medium">Qty</th>
-            <th className="text-left py-1.5 pr-3 font-medium">Ordered</th>
-            <th className="text-left py-1.5 font-medium">Purchase €</th>
-          </tr>
-        </thead>
-        <tbody>
-          {w.stock?.map((s: any) => (
-            <tr key={s.productId} className="border-b border-border hover:bg-accent/50">
-              <td className="py-1 pr-3 font-mono">
-                <Link href={`/products/${s.productId}`} className="text-primary hover:underline">{s.productId}</Link>
-              </td>
-              <td className="py-1 pr-3 max-w-xs truncate">{s.productTitle ?? '—'}</td>
-              <td className="py-1 pr-3">
-                <span className={s.productStatus === 'active' ? 'text-green-600' : 'text-muted-foreground'}>{s.productStatus}</span>
-              </td>
-              <td className="py-1 pr-3">{s.quantity ?? '—'}</td>
-              <td className="py-1 pr-3">{s.quantityOrdered ?? '—'}</td>
-              <td className="py-1">{s.purchasePrice != null ? `€${s.purchasePrice}` : '—'}</td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-border text-muted-foreground">
+              <th className="text-left py-1.5 pr-3 font-medium">SKU</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Title</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Status</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Qty</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Ordered</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Purchase €</th>
+              {PUSH_PLATFORMS.map((p) => (
+                <th key={p.key} className="text-left py-1.5 pr-3 font-medium">{p.label}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {w.stock?.map((s: {
+              productId: string
+              productTitle: string | null
+              productStatus: string | null
+              pushedWoocommerce: PushStatus
+              pushedShopifyKomputerzz: PushStatus
+              pushedShopifyTiktok: PushStatus
+              quantity: number | null
+              quantityOrdered: number
+              purchasePrice: number | null
+            }) => {
+              const rowDirty = dirty[s.productId] ?? {}
+              const isDirtyRow = Object.keys(rowDirty).length > 0
+              const hasError = errors.includes(s.productId)
+
+              return (
+                <tr
+                  key={s.productId}
+                  className={`border-b border-border hover:bg-accent/50 ${isDirtyRow ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''} ${hasError ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
+                >
+                  <td className="py-1 pr-3 font-mono">
+                    <Link href={`/products/${s.productId}`} className="text-primary hover:underline">{s.productId}</Link>
+                  </td>
+                  <td className="py-1 pr-3 max-w-xs truncate">{s.productTitle ?? '—'}</td>
+                  <td className="py-1 pr-3">
+                    <span className={s.productStatus === 'active' ? 'text-green-600' : 'text-muted-foreground'}>{s.productStatus}</span>
+                  </td>
+                  <td className="py-1 pr-3">{s.quantity ?? '—'}</td>
+                  <td className="py-1 pr-3">{s.quantityOrdered ?? '—'}</td>
+                  <td className="py-1 pr-3">{s.purchasePrice != null ? `€${s.purchasePrice}` : '—'}</td>
+                  {PUSH_PLATFORMS.map((p) => {
+                    const fieldValue = s[p.field as keyof typeof s] as PushStatus
+                    const current = rowDirty[p.key] ?? fieldValue
+                    const changed = rowDirty[p.key] !== undefined
+                    return (
+                      <td key={p.key} className="py-1 pr-3">
+                        <PushSelect
+                          value={current}
+                          changed={changed}
+                          disabled={saving}
+                          onChange={(v) => handleChange(s.productId, p.key, v)}
+                        />
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Sticky save banner */}
+      {dirtyCount > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background border border-border shadow-lg rounded-lg px-4 py-2.5 text-xs">
+          <span className="text-amber-600 font-medium">
+            {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}
+          </span>
+          {errors.length > 0 && (
+            <span className="text-destructive">Errors on: {errors.join(', ')}</span>
+          )}
+          <button
+            onClick={handleDiscard}
+            disabled={saving}
+            className="px-2.5 py-1 rounded border border-border text-muted-foreground hover:bg-accent disabled:opacity-40"
+          >
+            Discard
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-2.5 py-1 rounded bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+          >
+            {saving && <span className="inline-block h-3 w-3 border-2 border-primary-foreground/40 border-t-primary-foreground rounded-full animate-spin" />}
+            Save
+          </button>
+        </div>
+      )}
     </div>
+  )
+}
+
+function PushSelect({ value, changed, disabled, onChange }: {
+  value: PushStatus
+  changed: boolean
+  disabled: boolean
+  onChange: (v: PushStatus) => void
+}) {
+  const colorClass =
+    value === 'done'   ? 'text-green-600' :
+    value === '2push'  ? 'text-amber-600' :
+    'text-muted-foreground'
+
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value as PushStatus)}
+      className={`text-xs border rounded px-1 py-0.5 bg-background cursor-pointer
+        ${changed ? 'border-amber-400' : 'border-border'}
+        ${colorClass}
+        disabled:opacity-50 disabled:cursor-not-allowed`}
+    >
+      <option value="N">N</option>
+      <option value="2push">2push</option>
+      <option value="done">done</option>
+    </select>
   )
 }

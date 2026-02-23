@@ -128,11 +128,11 @@ export class WooCommerceConnector implements PlatformConnector {
       })
 
       return {
-        platformId:  String(p.id),
-        sku:         (p.sku as string) ?? String(p.id),
-        title:       String(p.name),
-        description: (p.description as string) ?? null,
-        status:      (p.status as string) === 'publish' ? 'active' : 'archived',
+        platformId:       String(p.id),
+        sku:              (p.sku as string) ?? String(p.id),
+        title:            String(p.name),
+        description:      (p.description as string) ?? null,
+        status:           (p.status as string) === 'publish' ? 'active' : 'archived',
         vendor:      null,
         productType: (p.type as string) ?? null,
         taxCode:     null,
@@ -167,17 +167,35 @@ export class WooCommerceConnector implements PlatformConnector {
 
   // -------------------------------------------------------------------------
   // Create product
+  //
+  // Required fields for Coincart (WooCommerce / WordPress):
+  //   - title (name)
+  //   - description
+  //   - status → 'publish' when active
+  //   - categoryIds → categories array
+  //   - price → regular_price (and sale_price when there is a compareAt)
+  //   - stock → manage_stock=true + stock_quantity; stock_status='instock' / 'outofstock'
+  //   - vendor → brand attribute (attributes: [{ name:'Brand', options:[vendor] }])
+  //   - images → set separately via connector.setImages() after creation
   // -------------------------------------------------------------------------
 
   async createProduct(data: ProductPayload): Promise<string> {
+    const attributes = data.vendor
+      ? [{ name: 'Brand', visible: true, variation: false, options: [data.vendor] }]
+      : []
+
     const body: Record<string, unknown> = {
-      name:        data.title,
-      description: data.description ?? '',
-      status:      data.status === 'active' ? 'publish' : 'private',
-      type:        data.variants && data.variants.length > 1 ? 'variable' : 'simple',
-      regular_price: data.price?.toString() ?? '',
-      sale_price:  data.compareAt ? data.price?.toString() : '',
-      categories:  data.categoryIds?.map((id) => ({ id: parseInt(id) })) ?? [],
+      name:          data.title,
+      description:   data.description ?? '',
+      status:        data.status === 'active' ? 'publish' : 'private',
+      type:          data.variants && data.variants.length > 1 ? 'variable' : 'simple',
+      regular_price: data.compareAt ? data.compareAt.toString() : (data.price?.toString() ?? ''),
+      sale_price:    data.compareAt && data.price ? data.price.toString() : '',
+      categories:    data.categoryIds?.map((id) => ({ id: parseInt(id) })) ?? [],
+      // Stock: mark as 'instock' at creation — no specific quantity.
+      // Actual warehouse quantities (Ireland, Poland) are synced later by the cron via updateStock().
+      stock_status:  'instock',
+      attributes,
     }
     const result = await this.request<{ id: number }>('POST', '/products', body)
     return String(result.id)

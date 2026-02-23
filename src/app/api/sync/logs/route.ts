@@ -2,8 +2,9 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { paginatedResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
+import { syncLog } from '@/lib/db/schema'
+import { eq, desc, and, SQL } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 // GET — list sync log entries (paginated, filterable)
 export async function GET(req: NextRequest) {
@@ -18,18 +19,21 @@ export async function GET(req: NextRequest) {
   const status    = searchParams.get('status') ?? ''
   const offset    = (page - 1) * perPage
 
-  const rows = await db.query.syncLog.findMany({
-    limit:   perPage,
-    offset,
-    orderBy: (t, { desc }) => [desc(t.createdAt)],
-  })
+  const conditions: SQL[] = []
+  if (productId) conditions.push(eq(syncLog.productId, productId))
+  if (platform)  conditions.push(eq(syncLog.platform, platform))
+  if (status)    conditions.push(eq(syncLog.status, status as 'success' | 'error'))
 
-  const filtered = rows.filter((r) => {
-    if (productId && r.productId !== productId) return false
-    if (platform  && r.platform  !== platform)  return false
-    if (status    && r.status    !== status)    return false
-    return true
-  })
+  const where = conditions.length > 0 ? and(...conditions) : undefined
 
-  return paginatedResponse(filtered, filtered.length, page, perPage)
+  const [rows, totalRows] = await Promise.all([
+    db.select().from(syncLog)
+      .where(where)
+      .orderBy(desc(syncLog.createdAt))
+      .limit(perPage)
+      .offset(offset),
+    db.select({ id: syncLog.id }).from(syncLog).where(where),
+  ])
+
+  return paginatedResponse(rows, totalRows.length, page, perPage)
 }

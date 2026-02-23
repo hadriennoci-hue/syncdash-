@@ -4,7 +4,6 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { overrideWarehouseStock } from '@/lib/functions/warehouses'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   productId:       z.string().min(1),

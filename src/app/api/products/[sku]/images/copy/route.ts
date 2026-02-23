@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { copyImagesBetweenPlatforms } from '@/lib/functions/images'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const copySchema = z.object({
   sourcePlatform:      z.string(),

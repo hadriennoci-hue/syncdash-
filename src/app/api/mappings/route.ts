@@ -8,7 +8,6 @@ import { and, eq } from 'drizzle-orm'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const postSchema = z.object({
   productId:   z.string().min(1),

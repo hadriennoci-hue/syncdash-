@@ -19,8 +19,28 @@ export interface ChannelSyncResult {
   errors: string[]
 }
 
+// Maps platform → the products column that tracks push status for that channel
+function getPushFilter(platform: Platform) {
+  switch (platform) {
+    case 'woocommerce':        return eq(products.pushedWoocommerce, '2push')
+    case 'shopify_komputerzz': return eq(products.pushedShopifyKomputerzz, '2push')
+    case 'shopify_tiktok':     return eq(products.pushedShopifyTiktok, '2push')
+    default:                   return null
+  }
+}
+
+function getDoneUpdate(platform: Platform): Partial<Record<string, string>> {
+  switch (platform) {
+    case 'woocommerce':        return { pushedWoocommerce: 'done' }
+    case 'shopify_komputerzz': return { pushedShopifyKomputerzz: 'done' }
+    case 'shopify_tiktok':     return { pushedShopifyTiktok: 'done' }
+    default:                   return {}
+  }
+}
+
 // ---------------------------------------------------------------------------
-// syncChannelAvailability — main entry point
+// syncChannelAvailability — updates status for already-listed products
+//   then pushes products marked '2push' for each channel
 // ---------------------------------------------------------------------------
 
 export async function syncChannelAvailability(
@@ -83,7 +103,7 @@ async function syncPlatform(
   const errors: string[] = []
   let statusUpdated = 0
 
-  // Update status for already-mapped products
+  // 1. Update active/archived status for products already listed on this channel
   for (const [sku, entry] of masterStock) {
     const platformId = mappedSkus.get(sku)
     if (!platformId) continue
@@ -96,83 +116,105 @@ async function syncPlatform(
     }
   }
 
-  // Find SKUs that are in stock but have no listing on this platform
-  const missing = [...masterStock.values()].filter(
-    e => e.quantity > 0 && !mappedSkus.has(e.sku) && e.sourceUrl
-  )
+  // 2. Push products explicitly marked '2push' for this channel
+  const pushFilter = getPushFilter(platform)
+  const newSkus: string[] = []
 
-  const newSkus = await createMissingProducts(missing, platform, triggeredBy, errors)
+  if (pushFilter) {
+    const toPush = await db.query.products.findMany({ where: pushFilter })
+
+    for (const product of toPush) {
+      // Skip if already mapped (listed) on this channel
+      if (mappedSkus.has(product.id)) {
+        await db.update(products)
+          .set(getDoneUpdate(platform) as Record<string, string>)
+          .where(eq(products.id, product.id))
+        newSkus.push(product.id)
+        continue
+      }
+
+      const stockEntry = masterStock.get(product.id)
+      try {
+        await pushProductToChannel(product, stockEntry, platform, connector, triggeredBy)
+        await db.update(products)
+          .set(getDoneUpdate(platform) as Record<string, string>)
+          .where(eq(products.id, product.id))
+        newSkus.push(product.id)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        errors.push(`${product.id}: ${msg}`)
+        await logOperation({ productId: product.id, platform,
+          action: 'push_product', status: 'error', message: msg, triggeredBy })
+      }
+    }
+  }
 
   await logOperation({
     platform,
     action: 'sync_channel_availability',
     status: errors.length === 0 ? 'success' : 'error',
-    message: `updated=${statusUpdated} created=${newSkus.length} errors=${errors.length}`,
+    message: `status_updated=${statusUpdated} pushed=${newSkus.length} errors=${errors.length}`,
     triggeredBy,
   })
 
   return { platform, statusUpdated, newProductsCreated: newSkus.length, newSkus, errors }
 }
 
-async function createMissingProducts(
-  entries: StockEntry[],
+async function pushProductToChannel(
+  product: { id: string; title: string; description: string | null; productType: string | null },
+  stockEntry: StockEntry | undefined,
   platform: Platform,
-  triggeredBy: TriggeredBy,
-  errors: string[]
-): Promise<string[]> {
-  if (entries.length === 0) return []
+  connector: ReturnType<typeof getConnector>,
+  triggeredBy: TriggeredBy
+): Promise<void> {
+  let description = product.description
+  let productType = product.productType
+  const imageInputs: ImageInput[] = []
 
-  const firecrawl = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY! })
-  const bucket    = getR2Bucket()
-  const publicUrl = getR2PublicUrl()
-  const connector = getConnector(platform)
-  const createdSkus: string[] = []
+  // If we have a sourceUrl (ACER Store), scrape for enriched data
+  if (stockEntry?.sourceUrl) {
+    const firecrawl = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY! })
+    const bucket    = getR2Bucket()
+    const publicUrl = getR2PublicUrl()
 
-  for (const entry of entries) {
-    try {
-      const detail = await scrapeProductDetail(firecrawl, entry.sourceUrl!)
-      const imageInputs = await fetchAndUploadImages(detail.imageUrls, entry.sku, bucket, publicUrl)
+    const detail = await scrapeProductDetail(firecrawl, stockEntry.sourceUrl)
+    description  = detail.description
+    productType  = detail.category
 
-      // Update product record with scraped detail
-      await db.update(products)
-        .set({ title: entry.sourceName ?? entry.sku, description: detail.description,
-               productType: detail.category, pendingReview: 1 })
-        .where(eq(products.id, entry.sku))
+    await db.update(products)
+      .set({ description: detail.description, productType: detail.category })
+      .where(eq(products.id, product.id))
 
-      // Persist images in D1
-      await db.delete(productImages).where(eq(productImages.productId, entry.sku))
-      for (const [i, img] of imageInputs.entries()) {
-        if (img.type !== 'url') continue
-        await db.insert(productImages).values({
-          id: generateId(), productId: entry.sku, url: img.url, position: i, alt: null,
-        })
-      }
+    const uploaded = await fetchAndUploadImages(detail.imageUrls, product.id, bucket, publicUrl)
+    imageInputs.push(...uploaded)
 
-      // Create on platform
-      const platformId = await connector.createProduct({
-        title: entry.sourceName ?? entry.sku, description: detail.description,
-        status: 'active', vendor: 'Acer', productType: detail.category, taxCode: null,
-        price: detail.price, compareAt: detail.promoPrice,
+    await db.delete(productImages).where(eq(productImages.productId, product.id))
+    for (const [i, img] of imageInputs.entries()) {
+      if (img.type !== 'url') continue
+      await db.insert(productImages).values({
+        id: generateId(), productId: product.id, url: img.url, position: i, alt: null,
       })
-      await connector.setImages(platformId, imageInputs)
-
-      await db.insert(platformMappings).values({
-        productId: entry.sku, platform, platformId, syncStatus: 'synced',
-        lastSynced: new Date().toISOString(),
-      })
-
-      await logOperation({ productId: entry.sku, platform,
-        action: 'create_missing_product', status: 'success', triggeredBy })
-      createdSkus.push(entry.sku)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      errors.push(`${entry.sku} create: ${msg}`)
-      await logOperation({ productId: entry.sku, platform,
-        action: 'create_missing_product', status: 'error', message: msg, triggeredBy })
     }
   }
 
-  return createdSkus
+  const platformId = await connector.createProduct({
+    title: product.title, description, status: 'active',
+    vendor: 'Acer', productType, taxCode: null,
+    price: null, compareAt: null,
+  })
+
+  if (imageInputs.length > 0) await connector.setImages(platformId, imageInputs)
+
+  await db.insert(platformMappings).values({
+    productId: product.id, platform, platformId, syncStatus: 'synced',
+    lastSynced: new Date().toISOString(),
+  }).onConflictDoUpdate({
+    target: [platformMappings.productId, platformMappings.platform],
+    set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
+  })
+
+  await logOperation({ productId: product.id, platform,
+    action: 'push_product', status: 'success', triggeredBy })
 }
 
 async function fetchAndUploadImages(

@@ -1,15 +1,29 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { apiFetch } from '@/lib/utils/api-fetch'
-import { PLATFORM_LABELS, WAREHOUSE_LABELS } from '@/types/platform'
+import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
+import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
+import type { Platform } from '@/types/platform'
+
+const PUSH_STATUS_LABELS = { N: 'N', '2push': '2push', done: 'done' } as const
+const PUSH_STATUS_COLORS: Record<string, string> = {
+  N:      'text-muted-foreground',
+  '2push': 'text-amber-500 font-medium',
+  done:   'text-green-600 font-medium',
+}
 
 export function ProductDetailPage({ sku }: { sku: string }) {
+  const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['product', sku],
     queryFn:  () => apiFetch(`/api/products/${sku}`),
   })
+
+  async function setPushStatus(platform: Platform, status: 'N' | '2push' | 'done') {
+    await apiPatch(`/api/products/${sku}/push-status`, { platform, status })
+    qc.invalidateQueries({ queryKey: ['product', sku] })
+  }
 
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
   if (error || !data?.data) return <p className="text-xs text-destructive">Product not found</p>
@@ -25,14 +39,18 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </div>
         <div className="flex gap-2">
           <Link href={`/products/${sku}/edit`} className="text-xs border border-border rounded px-2 py-1 hover:bg-accent">Edit</Link>
-          <span className={`text-xs px-2 py-1 rounded ${p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>
+          <span className={`text-xs px-2 py-1 rounded ${
+            p.status === 'active'   ? 'bg-green-100 text-green-700' :
+            p.status === 'info'     ? 'bg-red-100 text-red-600 font-semibold' :
+            'bg-muted text-muted-foreground'
+          }`}>
             {p.status}
           </span>
         </div>
       </div>
 
+      {/* Row 1 — Meta + Images */}
       <div className="grid grid-cols-3 gap-3 text-xs">
-        {/* Meta */}
         <section className="border border-border rounded p-3 space-y-1.5 col-span-1">
           <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Meta</h2>
           <Row label="Vendor"     value={p.vendor      ?? '—'} />
@@ -52,39 +70,99 @@ export function ProductDetailPage({ sku }: { sku: string }) {
           <Row label="Updated"    value={p.updatedAt?.slice(0, 10) ?? '—'} />
         </section>
 
-        {/* Platforms */}
-        <section className="border border-border rounded p-3 space-y-1.5 col-span-2">
-          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Channels</h2>
-          <table className="w-full">
-            <thead>
-              <tr className="text-muted-foreground">
-                <th className="text-left font-medium py-0.5 pr-2">Channel</th>
-                <th className="text-left font-medium py-0.5 pr-2">Platform ID</th>
-                <th className="text-left font-medium py-0.5 pr-2">Sync</th>
-                <th className="text-left font-medium py-0.5 pr-2">Price</th>
-                <th className="text-left font-medium py-0.5">Promo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(p.platforms ?? {}).map(([pl, m]: [string, any]) => (
-                <tr key={pl} className="border-t border-border">
-                  <td className="py-1 pr-2">
-                    <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl] ?? pl}</Link>
-                  </td>
-                  <td className="py-1 pr-2 font-mono text-muted-foreground">{m.platformId ?? '—'}</td>
-                  <td className="py-1 pr-2">
-                    <span className={m.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{m.syncStatus ?? '—'}</span>
-                  </td>
-                  <td className="py-1 pr-2">{p.prices?.[pl]?.price != null ? `€${p.prices[pl].price}` : '—'}</td>
-                  <td className="py-1">{p.prices?.[pl]?.compareAt != null ? `€${p.prices[pl].compareAt}` : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section className="border border-border rounded p-3 space-y-2 text-xs col-span-2">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
+            Images ({p.images?.length ?? 0}{(p.images?.length ?? 0) < 5 ? ' — needs 5+' : ''})
+          </h2>
+          {p.images?.length > 0 ? (
+            <div className="flex gap-2 flex-wrap">
+              {p.images.map((img: any, i: number) => {
+                const h = img.url ? (new URL(img.url).searchParams.get('height') ?? null) : null
+                const w = img.url ? (new URL(img.url).searchParams.get('width')  ?? null) : null
+                const dims = h && w ? `${w}×${h}px` : null
+                return (
+                  <div key={i} className="flex flex-col gap-0.5">
+                    <a href={img.url} target="_blank" rel="noreferrer">
+                      <img
+                        src={img.url}
+                        alt={img.alt ?? ''}
+                        className="h-36 w-36 object-contain rounded border border-border bg-muted/30 hover:opacity-80 transition-opacity"
+                      />
+                    </a>
+                    {dims && <span className="text-[10px] text-muted-foreground text-center">{dims}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-muted-foreground italic">No images</p>
+          )}
         </section>
       </div>
 
-      {/* Stock */}
+      {/* Row 2 — Description */}
+      <section className="border border-border rounded p-3 space-y-1 text-xs">
+        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Description</h2>
+        {p.description
+          ? <div className="whitespace-pre-wrap prose-none" dangerouslySetInnerHTML={{ __html: p.description }} />
+          : <p className="text-muted-foreground italic">—</p>
+        }
+      </section>
+
+      {/* Row 3 — Categories & Collections */}
+      <section className="border border-border rounded p-3 text-xs space-y-2">
+        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Categories &amp; Collections</h2>
+        {p.categories?.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {p.categories.map((c: any) => (
+              <span key={c.id}
+                className={`px-2 py-0.5 rounded text-xs border ${
+                  c.type === 'country_layout' ? 'border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' :
+                  'border-border bg-muted/40 text-foreground'
+                }`}
+                title={c.type}
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground italic">No categories</p>
+        )}
+      </section>
+
+      {/* Row 4 — Channels */}
+      <section className="border border-border rounded p-3 space-y-1.5 text-xs">
+        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Channels</h2>
+        <table className="w-full">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="text-left font-medium py-0.5 pr-2">Channel</th>
+              <th className="text-left font-medium py-0.5 pr-2">Platform ID</th>
+              <th className="text-left font-medium py-0.5 pr-2">Sync</th>
+              <th className="text-left font-medium py-0.5 pr-2">Price</th>
+              <th className="text-left font-medium py-0.5">Promo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(p.platforms ?? {}).map(([pl, m]: [string, any]) => (
+              <tr key={pl} className="border-t border-border">
+                <td className="py-1 pr-2">
+                  <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl] ?? pl}</Link>
+                </td>
+                <td className="py-1 pr-2 font-mono text-muted-foreground">{m.platformId ?? '—'}</td>
+                <td className="py-1 pr-2">
+                  <span className={m.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{m.syncStatus ?? '—'}</span>
+                </td>
+                <td className="py-1 pr-2">{p.prices?.[pl]?.price != null ? `€${p.prices[pl].price}` : '—'}</td>
+                <td className="py-1">{p.prices?.[pl]?.compareAt != null ? `€${p.prices[pl].compareAt}` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Row 5 — Stock */}
       <section className="border border-border rounded p-3 space-y-1.5 text-xs">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Warehouse Stock</h2>
         <table className="w-full">
@@ -111,27 +189,46 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </table>
       </section>
 
-      {/* Images */}
-      {p.images?.length > 0 && (
-        <section className="border border-border rounded p-3 space-y-2 text-xs">
-          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
-            Images ({p.images.length}{p.images.length < 5 ? ' — needs 5+' : ''})
-          </h2>
-          <div className="flex gap-2 flex-wrap">
-            {p.images.map((img: any, i: number) => (
-              <img key={i} src={img.url} alt={img.alt ?? ''} className="h-16 w-16 object-cover rounded border border-border" />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Description */}
-      <section className="border border-border rounded p-3 text-xs space-y-1">
-        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Description</h2>
-        {p.description
-          ? <p className="whitespace-pre-wrap">{p.description}</p>
-          : <p className="text-muted-foreground italic">No description</p>
-        }
+      {/* Row 6 — Push to channels */}
+      <section className="border border-border rounded p-3 space-y-1.5 text-xs">
+        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Push to channels</h2>
+        <table className="w-full">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="text-left font-medium py-0.5 pr-2">Channel</th>
+              <th className="text-left font-medium py-0.5">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PLATFORMS.map((pl) => {
+              const current = p.pushStatus?.[pl] ?? 'N'
+              return (
+                <tr key={pl} className="border-t border-border">
+                  <td className="py-1 pr-2">
+                    <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl]}</Link>
+                  </td>
+                  <td className="py-1">
+                    <div className="flex gap-1">
+                      {(['N', '2push', 'done'] as const).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setPushStatus(pl, s)}
+                          className={`px-2 py-0.5 rounded border text-xs transition-colors ${
+                            current === s
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border hover:bg-accent'
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </section>
 
       {/* Variants */}

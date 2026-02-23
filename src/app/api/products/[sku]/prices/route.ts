@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { updateProductPrice } from '@/lib/functions/prices'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   price:       z.number().positive().optional(),

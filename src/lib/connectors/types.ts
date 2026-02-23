@@ -5,11 +5,11 @@ import type { ImageInput } from '@/types/platform'
 // ---------------------------------------------------------------------------
 
 export interface RawProduct {
-  platformId: string
-  sku: string
-  title: string
-  description: string | null
-  status: 'active' | 'archived'
+  platformId:       string
+  sku:              string
+  title:            string
+  description:      string | null
+  status:           'active' | 'archived'
   vendor: string | null
   productType: string | null
   taxCode: string | null
@@ -61,16 +61,46 @@ export interface RawMetafield {
 // ---------------------------------------------------------------------------
 // Product payload — sent to platform when creating/updating
 // ---------------------------------------------------------------------------
+//
+// Required fields for a SHOPIFY push (createProduct):
+//   - title           → product name
+//   - description     → full HTML description
+//   - price           → via variants[0].price
+//   - sku             → via variants[0].sku
+//   - status          → 'active' (published + in stock) or 'archived'
+//   - shopifyCategory → ALWAYS 'Electronics' (GID: gid://shopify/TaxonomyCategory/el, used for tax)
+//   - images          → set separately via connector.setImages() after createProduct
+//
+// Note: shopifyCategory (Shopify product taxonomy / tax classification) is DIFFERENT
+// from categoryIds (Shopify Collections = equivalent of WooCommerce categories).
+//
+// Required fields for a WOOCOMMERCE push (createProduct):
+//   - title           → product name (name)
+//   - description     → full HTML description
+//   - price           → regular_price
+//   - sku             → set separately via variant or product sku field
+//   - status          → 'active' maps to 'publish'
+//   - categoryIds     → WooCommerce category IDs (categories array)
+//   - stock           → stock_status='instock' at creation (no qty needed); actual quantities
+//                       are synced later by the warehouse cron via connector.updateStock()
+//   - vendor          → brand attribute (attributes: [{ name:'Brand', options:[vendor] }])
+//   - images          → set separately via connector.setImages() after createProduct
+// ---------------------------------------------------------------------------
 
 export interface ProductPayload {
   title: string
   description: string | null
   status: 'active' | 'archived'
-  vendor: string | null
+  vendor: string | null       // maps to WooCommerce brand attribute + Shopify vendor field
   productType: string | null
   taxCode: string | null
   price: number | null
   compareAt: number | null
+  // Shopify product taxonomy category for tax purposes — always 'Electronics' for our catalogue.
+  // GID: 'gid://shopify/TaxonomyCategory/el'
+  // This is the Shopify standardized product type / taxonomy node, NOT collections.
+  // See: https://help.shopify.com/en/manual/products/details/product-category
+  shopifyCategory?: string
   variants?: VariantPayload[]
   categoryIds?: string[]
 }
@@ -123,8 +153,10 @@ export interface PlatformConnector {
 export interface WarehouseStockSnapshot {
   sku: string
   quantity: number
-  sourceUrl?: string  // product page on the source site — used to scrape missing listings
-  sourceName?: string // product name as it appears on the source
+  sourceUrl?: string      // product page on the source site — used to scrape missing listings
+  sourceName?: string     // product name as it appears on the source
+  importPrice?: number | null       // listed price scraped from source (e.g. ACER Store regular price)
+  importPromoPrice?: number | null  // promo/discounted price scraped from source
 }
 
 export interface WarehouseConnector {

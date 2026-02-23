@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { toggleProductStatus } from '@/lib/functions/products'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const patchSchema = z.object({
   status:      z.enum(['active', 'archived']),

@@ -5,6 +5,10 @@ import type {
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
+// Shopify standard product taxonomy GID for "Electronics" — used for tax classification.
+// See: https://help.shopify.com/en/manual/products/details/product-category
+const SHOPIFY_ELECTRONICS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/el'
+
 export class ShopifyConnector implements PlatformConnector {
   private readonly baseUrl: string
 
@@ -151,8 +155,8 @@ export class ShopifyConnector implements PlatformConnector {
         platformId:  String(node.id),
         sku:         (firstVariant?.sku ?? String(node.id)),
         title:       String(node.title),
-        description: (node.descriptionHtml as string) ?? null,
-        status:      (node.status as string)?.toLowerCase() === 'active' ? 'active' : 'archived',
+        description:      (node.descriptionHtml as string) ?? null,
+        status:           (node.status as string)?.toLowerCase() === 'active' ? 'active' : 'archived',
         vendor:      (node.vendor as string) ?? null,
         productType: (node.productType as string) ?? null,
         taxCode:     null, // metafield lookup if needed
@@ -207,19 +211,24 @@ export class ShopifyConnector implements PlatformConnector {
         }
       }
     `
-    const input = {
-      title:       data.title,
+    const input: Record<string, unknown> = {
+      title:           data.title,
       descriptionHtml: data.description ?? '',
-      status:      data.status.toUpperCase(),
-      vendor:      data.vendor,
-      productType: data.productType,
-      variants:    data.variants?.map((v) => ({
-        title:         v.title,
-        sku:           v.sku,
-        price:         v.price?.toString(),
-        compareAtPrice: v.compareAt?.toString(),
+      status:          data.status.toUpperCase(),
+      vendor:          data.vendor,
+      productType:     data.productType,
+      variants:        data.variants?.map((v) => ({
+        title:           v.title,
+        sku:             v.sku,
+        price:           v.price?.toString(),
+        compareAtPrice:  v.compareAt?.toString(),
         inventoryQuantities: [{ availableQuantity: v.stock, locationId: '' }],
       })) ?? [],
+    }
+    // Shopify product taxonomy category (used for tax classification).
+    // Defaults to Electronics. Override via data.shopifyCategory if needed.
+    input.productCategory = {
+      productTaxonomyNodeId: data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
     }
     const result = await this.graphql<{ productCreate: { product: { id: string }; userErrors: Array<{ message: string }> } }>(
       mutation,
@@ -469,12 +478,14 @@ export class ShopifyWarehouseConnector {
       body: JSON.stringify({ query, variables }),
     })
     if (!res.ok) throw new Error(`Shopify error: ${res.status}`)
-    const json = await res.json() as { data?: T }
-    return json.data as T
+    const json = await res.json() as { data?: T; errors?: Array<{ message: string }> }
+    if (json.errors?.length) throw new Error(`Shopify GraphQL error: ${json.errors[0].message}`)
+    if (!json.data) throw new Error('Shopify GraphQL returned no data')
+    return json.data
   }
 
   async getStock() {
-    const snapshots: Array<{ sku: string; quantity: number }> = []
+    const snapshots: Array<{ sku: string; quantity: number; sourceName?: string }> = []
     let cursor: string | null = null
     let hasNext = true
 
@@ -485,6 +496,7 @@ export class ShopifyWarehouseConnector {
             pageInfo { hasNextPage endCursor }
             nodes {
               sku
+              variant { product { title } }
               inventoryLevel(locationId: $locationId) { quantities(names: ["available"]) { quantity } }
             }
           }
@@ -493,14 +505,22 @@ export class ShopifyWarehouseConnector {
       const data = await this.graphql<{
         inventoryItems: {
           pageInfo: { hasNextPage: boolean; endCursor: string }
-          nodes: Array<{ sku: string; inventoryLevel: { quantities: Array<{ quantity: number }> } | null }>
+          nodes: Array<{
+            sku: string
+            variant: { product: { title: string } } | null
+            inventoryLevel: { quantities: Array<{ quantity: number }> } | null
+          }>
         }
       }>(query, { cursor, locationId: this.locationId })
 
       for (const item of data.inventoryItems.nodes) {
         if (item.sku) {
           const qty = item.inventoryLevel?.quantities[0]?.quantity ?? 0
-          snapshots.push({ sku: item.sku, quantity: qty })
+          snapshots.push({
+            sku: item.sku,
+            quantity: qty,
+            sourceName: item.variant?.product?.title ?? undefined,
+          })
         }
       }
 

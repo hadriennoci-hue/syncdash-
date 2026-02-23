@@ -5,7 +5,6 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { assignCategories } from '@/lib/functions/categories'
 import type { Platform } from '@/types/platform'
 
-export const runtime = 'edge'
 
 const putSchema = z.object({
   categoryIds: z.array(z.string()),

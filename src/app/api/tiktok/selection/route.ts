@@ -6,7 +6,6 @@ import { db } from '@/lib/db/client'
 import { tiktokSelection } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-export const runtime = 'edge'
 
 const postSchema = z.object({
   sku:         z.string().min(1),

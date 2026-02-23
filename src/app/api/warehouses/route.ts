@@ -3,7 +3,6 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 
-export const runtime = 'edge'
 
 // GET — list all warehouses with current sync status
 export async function GET(req: NextRequest) {

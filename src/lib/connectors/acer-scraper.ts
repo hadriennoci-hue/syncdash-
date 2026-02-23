@@ -78,20 +78,39 @@ export class AcerScraperConnector implements WarehouseConnector {
     const seen = new Set<string>()
     const snapshots: WarehouseStockSnapshot[] = []
 
-    for (const url of this.urls) {
-      const result = await this.firecrawl.extract([url], {
+    for (const baseUrl of this.urls) {
+      // Crawl the category including all paginated pages.
+      // includePaths constrains crawling to the same category path so we
+      // don't follow individual product detail pages or unrelated sections.
+      const categoryPath = new URL(baseUrl).pathname
+      const crawlResult = await this.firecrawl.crawlUrl(baseUrl, {
+        limit: 20,
+        includePaths: [`${categoryPath}*`],
+        scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
+      }, true)
+
+      if (!crawlResult.success || !('data' in crawlResult) || !crawlResult.data?.length) continue
+
+      const pageUrls = (crawlResult.data as Array<{ metadata?: { sourceURL?: string } }>)
+        .map((d) => d.metadata?.sourceURL)
+        .filter((u): u is string => Boolean(u))
+
+      if (pageUrls.length === 0) continue
+
+      // Extract structured product data from all discovered pages at once
+      const result = await this.firecrawl.extract(pageUrls, {
         prompt: EXTRACT_PROMPT,
         schema: AcerProductSchema,
       })
 
       if (!result.success) {
         const msg = 'error' in result ? String(result.error) : 'Unknown Firecrawl error'
-        throw new Error(`Firecrawl extraction failed for ${url}: ${msg}`)
+        throw new Error(`Firecrawl extraction failed for ${baseUrl}: ${msg}`)
       }
 
       const parsed = AcerProductSchema.safeParse(result.data)
       if (!parsed.success) {
-        throw new Error(`Unexpected Firecrawl response shape for ${url}: ${parsed.error.message}`)
+        throw new Error(`Unexpected Firecrawl response shape for ${baseUrl}: ${parsed.error.message}`)
       }
 
       for (const product of parsed.data.products) {
@@ -100,9 +119,11 @@ export class AcerScraperConnector implements WarehouseConnector {
         seen.add(sku)
         snapshots.push({
           sku,
-          quantity:   product.inStock ? 1 : 0,
-          sourceUrl:  product.url,
-          sourceName: product.name,
+          quantity:         product.inStock ? 1 : 0,
+          sourceUrl:        product.url,
+          sourceName:       product.name,
+          importPrice:      product.price ?? null,
+          importPromoPrice: product.promoPrice ?? null,
         })
       }
     }

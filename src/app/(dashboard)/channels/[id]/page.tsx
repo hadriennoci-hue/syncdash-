@@ -34,6 +34,9 @@ export default function ChannelPage({ params }: { params: { id: string } }) {
             <th className="text-left py-1.5 pr-3 font-medium">SKU</th>
             <th className="text-left py-1.5 pr-3 font-medium">Title</th>
             <th className="text-left py-1.5 pr-3 font-medium">Status</th>
+            {c.sourceWarehouse && (
+              <th className="text-left py-1.5 pr-3 font-medium">IE Qty</th>
+            )}
             <th className="text-left py-1.5 pr-3 font-medium">Sync</th>
             <th className="text-left py-1.5 pr-3 font-medium">Price</th>
             <th className="text-left py-1.5 pr-3 font-medium">Promo</th>
@@ -50,12 +53,19 @@ export default function ChannelPage({ params }: { params: { id: string } }) {
               <td className="py-1 pr-3">
                 <span className={p.status === 'active' ? 'text-green-600' : 'text-muted-foreground'}>{p.status}</span>
               </td>
+              {c.sourceWarehouse && (
+                <td className="py-1 pr-3">{p.irelandQty ?? '—'}</td>
+              )}
               <td className="py-1 pr-3">
-                <span className={p.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{p.syncStatus}</span>
+                <span className={
+                  p.syncStatus === 'synced'  ? 'text-green-600' :
+                  p.syncStatus === 'missing' ? 'text-muted-foreground' :
+                  'text-amber-500'
+                }>{p.syncStatus}</span>
               </td>
               <td className="py-1 pr-3">{p.price != null ? `€${p.price}` : '—'}</td>
               <td className="py-1 pr-3">{p.compareAt != null ? `€${p.compareAt}` : '—'}</td>
-              <td className="py-1 font-mono text-muted-foreground text-[10px]">{p.platformId}</td>
+              <td className="py-1 font-mono text-muted-foreground text-[10px]">{p.platformId ?? '—'}</td>
             </tr>
           ))}
         </tbody>

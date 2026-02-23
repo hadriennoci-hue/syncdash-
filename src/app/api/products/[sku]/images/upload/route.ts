@@ -3,7 +3,6 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { uploadProductImages } from '@/lib/functions/images'
 
-export const runtime = 'edge'
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
