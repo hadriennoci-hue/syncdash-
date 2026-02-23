@@ -89,7 +89,9 @@ export class AcerScraperConnector implements WarehouseConnector {
         scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
       }, true)
 
-      if (!crawlResult.success || !('data' in crawlResult) || !crawlResult.data?.length) continue
+      if (!crawlResult.success || !('data' in crawlResult) || !crawlResult.data?.length) {
+        throw new Error(`Firecrawl crawl failed for ${baseUrl}`)
+      }
 
       const pageUrls = (crawlResult.data as Array<{ metadata?: { sourceURL?: string } }>)
         .map((d) => d.metadata?.sourceURL)

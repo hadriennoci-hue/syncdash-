@@ -36,6 +36,15 @@ export async function syncWarehouse(
   const connector = getWarehouseConnector(warehouseId)
   const snapshots = await connector.getStock()
 
+  // For ACER Store: zero all existing stock before applying the new scrape.
+  // Firecrawl only returns in-stock SKUs, so anything not returned is now out of stock.
+  // This only runs after a fully successful getStock() — if it throws, we never reach here.
+  if (warehouseId === 'acer_store') {
+    await db.update(warehouseStock)
+      .set({ quantity: 0, updatedAt: new Date().toISOString() })
+      .where(eq(warehouseStock.warehouseId, 'acer_store'))
+  }
+
   const errors: string[] = []
   let productsUpdated = 0
 
