@@ -119,7 +119,7 @@ export class AcerScraperConnector implements WarehouseConnector {
         seen.add(sku)
         snapshots.push({
           sku,
-          quantity:         product.inStock ? 1 : 0,
+          quantity:         product.inStock ? 2 : 0,
           sourceUrl:        product.url,
           sourceName:       product.name,
           importPrice:      product.price ?? null,
