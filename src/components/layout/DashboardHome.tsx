@@ -24,7 +24,7 @@ interface ChannelSyncResult {
 
 export function DashboardHome() {
   const { data: health }  = useQuery({ queryKey: ['health'],            queryFn: () => apiFetch('/api/health') })
-  const { data: summary } = useQuery({ queryKey: ['dashboard-summary'], queryFn: () => apiFetch('/api/dashboard/summary') })
+  const { data: summary, isLoading: summaryLoading, isError: summaryError } = useQuery({ queryKey: ['dashboard-summary'], queryFn: () => apiFetch('/api/dashboard/summary') })
   const { data: pending }   = useQuery({ queryKey: ['pending-review'], queryFn: () => apiFetch('/api/products?pendingReview=1&perPage=50') })
 
   const [scanning, setScanning]       = useState(false)
@@ -127,7 +127,11 @@ export function DashboardHome() {
               </tr>
             </thead>
             <tbody>
-              {summaryData?.warehouses?.map((w: any) => (
+              {summaryLoading ? (
+                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
+              ) : summaryError ? (
+                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load — check DB migrations</td></tr>
+              ) : summaryData?.warehouses?.map((w: any) => (
                 <tr key={w.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 flex items-center gap-2">
                     <ConnDot status={healthResults?.[w.id]} />
@@ -135,9 +139,7 @@ export function DashboardHome() {
                   </td>
                   <td className="px-3 py-2 text-right font-mono">{w.refsInStock}</td>
                 </tr>
-              )) ?? (
-                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
@@ -152,7 +154,11 @@ export function DashboardHome() {
               </tr>
             </thead>
             <tbody>
-              {summaryData?.channels?.map((c: any) => (
+              {summaryLoading ? (
+                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
+              ) : summaryError ? (
+                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load — check DB migrations</td></tr>
+              ) : summaryData?.channels?.map((c: any) => (
                 <tr key={c.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 flex items-center gap-2">
                     <ConnDot status={healthResults?.[c.id]} />
@@ -160,9 +166,7 @@ export function DashboardHome() {
                   </td>
                   <td className="px-3 py-2 text-right font-mono">{c.refsForSale}</td>
                 </tr>
-              )) ?? (
-                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
