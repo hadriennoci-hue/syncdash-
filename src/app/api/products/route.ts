@@ -9,7 +9,6 @@ import { createProduct } from '@/lib/functions/products'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
-
 const createSchema = z.object({
   sku:          z.string().min(1),
   title:        z.string().min(1),
@@ -55,18 +54,26 @@ export async function GET(req: NextRequest) {
   const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
   const search        = searchParams.get('search') ?? ''
   const status        = searchParams.get('status') ?? ''
-  const pendingReview = searchParams.get('pendingReview') === '1'
-  const missingFields = searchParams.get('missingFields') === '1'
-  const offset        = (page - 1) * perPage
+  const pendingReview  = searchParams.get('pendingReview') === '1'
+  const missingFields  = searchParams.get('missingFields') === '1'
+  const hasStock       = searchParams.get('hasStock') === '1'
+  const pushedPlatform = searchParams.get('pushedPlatform') ?? ''
+  const offset         = (page - 1) * perPage
 
   // Build WHERE conditions in SQL
   const conditions = []
   if (search) conditions.push(or(like(products.title, `%${search}%`), like(products.id, `%${search}%`)))
   if (status) conditions.push(eq(products.status, status))
   if (pendingReview) conditions.push(eq(products.pendingReview, 1))
+  if (pushedPlatform === 'libre_market') conditions.push(eq(products.pushedLibreMarket, '2push'))
+  if (pushedPlatform === 'xmr_bazaar')  conditions.push(eq(products.pushedXmrBazaar, '2push'))
   // missingFields: title = id (SKU used as title) OR no description
   if (missingFields) conditions.push(
     or(eq(products.title, products.id), sql`${products.description} IS NULL OR ${products.description} = ''`)
+  )
+  // hasStock: at least one warehouse (ireland or acer_store) has quantity > 0
+  if (hasStock) conditions.push(
+    sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id IN ('ireland','acer_store') AND ws.quantity > 0)`
   )
   const where = conditions.length > 0 ? and(...conditions) : undefined
 

@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**Name:** SyncDash
+**Name:** Wizhard
 **Description:** Internal dashboard to sync product catalogues across COINCART.STORE (WooCommerce), KOMPUTERZZ.COM (Shopify), and a TikTok Shop Shopify account — plus warehouse stock management (Ireland, Poland, ACER Store), supplier tracking, and purchase order management.
 **Stack:** Next.js 14, TypeScript, Tailwind, shadcn/ui, Drizzle ORM, Cloudflare D1, Cloudflare Pages
 **Auth:** Cloudflare Access (SSO) for the web UI. Bearer token for all `/api/*` routes.
@@ -28,7 +28,7 @@ Every function that modifies data on a platform or warehouse must write to `sync
 ### Ireland warehouse — dual role (read carefully)
 The Ireland warehouse and the TikTok Shop share the **same Shopify account** (`SHOPIFY_TIKTOK_SHOP`) but serve two distinct purposes:
 
-1. **`ireland` warehouse** — a physical stock location. Stock is auto-updated by Shopify when deliveries arrive. SyncDash reads this stock via `ShopifyWarehouseConnector` using `SHOPIFY_TIKTOK_IRELAND_LOCATION_ID`. This stock feeds **all sales channels** (WooCommerce, Komputerzz, TikTok) according to `warehouse_channel_rules`.
+1. **`ireland` warehouse** — a physical stock location. Stock is auto-updated by Shopify when deliveries arrive. Wizhard reads this stock via `ShopifyWarehouseConnector` using `SHOPIFY_TIKTOK_IRELAND_LOCATION_ID`. This stock feeds **all sales channels** (WooCommerce, Komputerzz, TikTok) according to `warehouse_channel_rules`.
 
 2. **`shopify_tiktok` platform** — a sales channel (point of sale). It sells products and draws its available stock from the Ireland warehouse. It is configured as a platform connector (`ShopifyConnector`) for pushing catalogue updates, prices, and status.
 
@@ -42,11 +42,11 @@ The Ireland warehouse and the TikTok Shop share the **same Shopify account** (`S
 - **Ireland:** read only — do NOT write stock (`canModifyStock = 0`)
 - **Poland:** read only — do NOT write stock (`canModifyStock = 0`)
 - Always check `warehouse.canModifyStock` before writing. Return 403 if false.
-- SyncDash MAY always write `quantity_ordered` and `last_order_date` for any warehouse.
+- Wizhard MAY always write `quantity_ordered` and `last_order_date` for any warehouse.
 - Guard is implemented in `src/lib/functions/warehouses.ts`.
 
-### SyncDash D1 is the master catalogue (after initial import)
-After the one-time Komputerzz import, **SyncDash D1 is the source of truth**. New products are created in SyncDash and pushed to channels. Komputerzz is a channel like the others — it receives pushes, it is no longer the source. Never pull from Komputerzz to overwrite D1 data outside of an explicit re-import operation.
+### Wizhard D1 is the master catalogue (after initial import)
+After the one-time Komputerzz import, **Wizhard D1 is the source of truth**. New products are created in Wizhard and pushed to channels. Komputerzz is a channel like the others — it receives pushes, it is no longer the source. Never pull from Komputerzz to overwrite D1 data outside of an explicit re-import operation.
 
 ### Shopify category = Electronics (tax classification, NOT collections)
 When pushing any product to a Shopify sales channel (`shopify_komputerzz`, `shopify_tiktok`), the Shopify **product category** must be set to **"Electronics"**. This is Shopify's standardised taxonomy field used for **tax purposes** — it is NOT the same as collections.

@@ -6,12 +6,6 @@ import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
-const PUSH_STATUS_LABELS = { N: 'N', '2push': '2push', done: 'done' } as const
-const PUSH_STATUS_COLORS: Record<string, string> = {
-  N:      'text-muted-foreground',
-  '2push': 'text-amber-500 font-medium',
-  done:   'text-green-600 font-medium',
-}
 
 export function ProductDetailPage({ sku }: { sku: string }) {
   const qc = useQueryClient()
@@ -141,7 +135,8 @@ export function ProductDetailPage({ sku }: { sku: string }) {
               <th className="text-left font-medium py-0.5 pr-2">Platform ID</th>
               <th className="text-left font-medium py-0.5 pr-2">Sync</th>
               <th className="text-left font-medium py-0.5 pr-2">Price</th>
-              <th className="text-left font-medium py-0.5">Promo</th>
+              <th className="text-left font-medium py-0.5 pr-2">Promo</th>
+              <th className="text-left font-medium py-0.5">Listing</th>
             </tr>
           </thead>
           <tbody>
@@ -155,7 +150,13 @@ export function ProductDetailPage({ sku }: { sku: string }) {
                   <span className={m.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{m.syncStatus ?? '—'}</span>
                 </td>
                 <td className="py-1 pr-2">{p.prices?.[pl]?.price != null ? `€${p.prices[pl].price}` : '—'}</td>
-                <td className="py-1">{p.prices?.[pl]?.compareAt != null ? `€${p.prices[pl].compareAt}` : '—'}</td>
+                <td className="py-1 pr-2">{p.prices?.[pl]?.compareAt != null ? `€${p.prices[pl].compareAt}` : '—'}</td>
+                <td className="py-1">
+                  {m.listingUrl
+                    ? <a href={m.listingUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-primary hover:underline">view ↗</a>
+                    : <span className="text-muted-foreground/40">—</span>}
+                </td>
               </tr>
             ))}
           </tbody>

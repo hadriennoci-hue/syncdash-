@@ -8,6 +8,31 @@ import { eq } from 'drizzle-orm'
 import { updateProduct, deleteProduct } from '@/lib/functions/products'
 import type { Platform } from '@/types/platform'
 
+function shopifyAdminUrl(shopEnvVar: string | undefined, platformId: string): string | null {
+  if (!shopEnvVar) return null
+  const numId = platformId.replace(/^.*\/(\d+)$/, '$1')
+  return `https://${shopEnvVar}/admin/products/${numId}`
+}
+
+function buildListingUrl(platform: string, platformId: string | null): string | null {
+  if (!platformId) return null
+  switch (platform) {
+    case 'woocommerce': {
+      const base = process.env.WOO_BASE_URL
+      return base ? `${base}/?p=${platformId}` : null
+    }
+    case 'shopify_komputerzz':
+      return shopifyAdminUrl(process.env.SHOPIFY_KOMPUTERZZ_SHOP, platformId)
+    case 'shopify_tiktok':
+      return shopifyAdminUrl(process.env.SHOPIFY_TIKTOK_SHOP, platformId)
+    case 'libre_market':
+      return `https://libre-market.com/m/coincart/admin/products/${platformId}`
+    case 'xmr_bazaar':
+      return `https://xmrbazaar.com/listing/${platformId}/`
+    default:
+      return null
+  }
+}
 
 const patchSchema = z.object({
   fields: z.object({
@@ -65,6 +90,7 @@ export async function GET(
       platformId: m.platformId,
       recordType: m.recordType,
       syncStatus: m.syncStatus,
+      listingUrl: buildListingUrl(m.platform, m.platformId),
     }])
   )
   const stockMap = Object.fromEntries(
@@ -105,6 +131,8 @@ export async function GET(
       woocommerce:        product.pushedWoocommerce,
       shopify_komputerzz: product.pushedShopifyKomputerzz,
       shopify_tiktok:     product.pushedShopifyTiktok,
+      xmr_bazaar:         product.pushedXmrBazaar,
+      libre_market:       product.pushedLibreMarket,
     },
     createdAt:            product.createdAt,
     updatedAt:            product.updatedAt,

@@ -41,7 +41,7 @@ export function ProductsTable() {
     setProgress({ done: 0, total: 0, results: [] })
 
     // Fetch all products with missing fields (no pagination limit — use 200)
-    const list = await apiFetch('/api/products?missingFields=1&perPage=200&page=1')
+    const list = await apiFetch('/api/products?missingFields=1&hasStock=1&perPage=200&page=1')
     const skus: string[] = (list?.data ?? []).map((p: { id: string }) => p.id)
 
     if (skus.length === 0) {

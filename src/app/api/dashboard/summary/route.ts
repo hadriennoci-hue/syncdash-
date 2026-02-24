@@ -2,8 +2,9 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { warehouseStock, platformMappings } from '@/lib/db/schema'
-import { PLATFORMS, PLATFORM_LABELS, WAREHOUSE_LABELS } from '@/types/platform'
+import { warehouseStock, platformMappings, salesChannels } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { WAREHOUSE_LABELS } from '@/types/platform'
 
 const ACTIVE_WAREHOUSES = ['ireland', 'acer_store'] as const
 
@@ -11,9 +12,10 @@ export async function GET(req: NextRequest) {
   const auth = verifyBearer(req)
   if (auth) return auth
 
-  const [stockRows, mappingRows] = await Promise.all([
+  const [stockRows, mappingRows, channels] = await Promise.all([
     db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }),
     db.query.platformMappings.findMany({ columns: { platform: true } }),
+    db.query.salesChannels.findMany({ where: eq(salesChannels.enabled, 1) }),
   ])
 
   // Count refs in stock per warehouse (quantity > 0)
@@ -36,10 +38,11 @@ export async function GET(req: NextRequest) {
       label:      WAREHOUSE_LABELS[id],
       refsInStock: stockCounts[id] ?? 0,
     })),
-    channels: PLATFORMS.map((id) => ({
-      id,
-      label:       PLATFORM_LABELS[id],
-      refsForSale: listingCounts[id] ?? 0,
+    channels: channels.map((ch) => ({
+      id:            ch.id,
+      label:         ch.name,
+      refsForSale:   listingCounts[ch.id] ?? 0,
+      connectorType: ch.connectorType,
     })),
   })
 }

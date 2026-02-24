@@ -62,17 +62,19 @@ export async function syncWarehouse(
     try {
       // Auto-create a minimal product record if it doesn't exist yet.
       // This prevents FK violations for new ACER SKUs not yet in D1.
-      const isIreland = warehouseId === 'ireland'
-
       await db.insert(products)
         .values({
           id: snap.sku,
           title: snap.sourceName ?? snap.sku,
           status: 'active',
           pendingReview: 1,
-          ...(isAcerSource   ? { supplierId: 'acer' } : {}),
-          // Ireland products are already live on TikTok Shop — mark as done
-          ...(isIreland ? { pushedShopifyTiktok: 'done' } : {}),
+          ...(isAcerSource ? { supplierId: 'acer' } : {}),
+          // All ACER-sourced SKUs (Ireland + ACER Store): queue for Komputerzz + Coincart, skip TikTok
+          ...(isAcerSource ? {
+            pushedShopifyKomputerzz: '2push',
+            pushedWoocommerce:       '2push',
+            pushedShopifyTiktok:     'N',
+          } : {}),
         })
         .onConflictDoNothing()
 
@@ -81,13 +83,6 @@ export async function syncWarehouse(
         await db.update(products)
           .set({ supplierId: 'acer' })
           .where(and(eq(products.id, snap.sku), isNull(products.supplierId)))
-      }
-
-      // Ensure existing Ireland products are marked as done on TikTok
-      if (isIreland) {
-        await db.update(products)
-          .set({ pushedShopifyTiktok: 'done' })
-          .where(and(eq(products.id, snap.sku), eq(products.pushedShopifyTiktok, 'N')))
       }
 
       await db.insert(warehouseStock).values({

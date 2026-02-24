@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
 
-type PushStatus = 'N' | '2push' | 'done'
+type PushStatus = string   // 'N' | '2push' | 'done' | 'FAIL: <reason>'
 
 const PUSH_PLATFORMS = [
   { key: 'woocommerce',        field: 'pushedWoocommerce',       label: 'Woo' },
@@ -94,6 +94,7 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
             <tr className="border-b border-border text-muted-foreground">
               <th className="text-left py-1.5 pr-3 font-medium">SKU</th>
               <th className="text-left py-1.5 pr-3 font-medium">Title</th>
+              <th className="text-left py-1.5 pr-3 font-medium">Categories</th>
               <th className="text-left py-1.5 pr-3 font-medium">Status</th>
               <th className="text-left py-1.5 pr-3 font-medium">Qty</th>
               <th className="text-left py-1.5 pr-3 font-medium">Ordered</th>
@@ -114,20 +115,27 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
               quantity: number | null
               quantityOrdered: number
               purchasePrice: number | null
+              categories: string[]
             }) => {
               const rowDirty = dirty[s.productId] ?? {}
               const isDirtyRow = Object.keys(rowDirty).length > 0
               const hasError = errors.includes(s.productId)
+              const hasFail = PUSH_PLATFORMS.some((p) => (s[p.field as keyof typeof s] as string)?.startsWith('FAIL:'))
 
               return (
                 <tr
                   key={s.productId}
-                  className={`border-b border-border hover:bg-accent/50 ${isDirtyRow ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''} ${hasError ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
+                  className={`border-b border-border hover:bg-accent/50 ${isDirtyRow ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''} ${hasError || hasFail ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
                 >
                   <td className="py-1 pr-3 font-mono">
                     <Link href={`/products/${s.productId}`} className="text-primary hover:underline">{s.productId}</Link>
                   </td>
                   <td className="py-1 pr-3 max-w-xs truncate">{s.productTitle ?? '—'}</td>
+                  <td className="py-1 pr-3 max-w-[160px]">
+                    {s.categories.length > 0
+                      ? <span className="text-muted-foreground">{s.categories.join(', ')}</span>
+                      : <span className="text-muted-foreground/50">—</span>}
+                  </td>
                   <td className="py-1 pr-3">
                     <span className={s.productStatus === 'active' ? 'text-green-600' : 'text-muted-foreground'}>{s.productStatus}</span>
                   </td>
@@ -192,9 +200,35 @@ function PushSelect({ value, changed, disabled, onChange }: {
   disabled: boolean
   onChange: (v: PushStatus) => void
 }) {
+  const isFail = value.startsWith('FAIL:')
+
+  if (isFail) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span
+          className="text-xs text-destructive font-medium cursor-help"
+          title={value}
+        >
+          FAIL
+        </span>
+        <select
+          value=""
+          disabled={disabled}
+          onChange={(e) => { if (e.target.value) onChange(e.target.value as PushStatus) }}
+          className="text-xs border border-destructive/40 rounded px-1 py-0.5 bg-background cursor-pointer
+            disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground"
+        >
+          <option value="" disabled>reset…</option>
+          <option value="N">→ N</option>
+          <option value="2push">→ 2push</option>
+        </select>
+      </div>
+    )
+  }
+
   const colorClass =
-    value === 'done'   ? 'text-green-600' :
-    value === '2push'  ? 'text-amber-600' :
+    value === 'done'  ? 'text-green-600' :
+    value === '2push' ? 'text-amber-600' :
     'text-muted-foreground'
 
   return (

@@ -16,8 +16,10 @@ interface ChannelSyncResult {
   platform:           string
   statusUpdated:      number
   newProductsCreated: number
+  zeroedOutOfStock:   number
   newSkus:            string[]
   errors:             string[]
+  incomplete:         Array<{ sku: string; missing: string[] }>
 }
 
 export function DashboardHome() {
@@ -32,6 +34,7 @@ export function DashboardHome() {
   const [pushing, setPushing]               = useState(false)
   const [pushResult, setPushResult]         = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError]           = useState<string | null>(null)
+  const [browserQueued, setBrowserQueued]   = useState<{ libre_market: number; xmr_bazaar: number } | null>(null)
   const [lastListingsUpdate, setLastListingsUpdate] = useState<string | null>(null)
   const [lastStockScan, setLastStockScan]           = useState<string | null>(null)
 
@@ -76,6 +79,7 @@ export function DashboardHome() {
     setPushing(true)
     setPushResult(null)
     setPushError(null)
+    setBrowserQueued(null)
     try {
       const res = await apiPost('/api/sync/channel-availability', {
         platforms:   ['shopify_komputerzz', 'woocommerce'],
@@ -85,6 +89,15 @@ export function DashboardHome() {
       const now = new Date().toISOString()
       localStorage.setItem('lastListingsUpdate', now)
       setLastListingsUpdate(now)
+
+      // Check if any products are queued for browser-automated channels
+      const [lmRes, xmrRes] = await Promise.all([
+        apiFetch('/api/products?pushedPlatform=libre_market&perPage=1').catch(() => null),
+        apiFetch('/api/products?pushedPlatform=xmr_bazaar&perPage=1').catch(() => null),
+      ])
+      const lmCount  = (lmRes?.meta?.total  ?? 0) as number
+      const xmrCount = (xmrRes?.meta?.total ?? 0) as number
+      if (lmCount > 0 || xmrCount > 0) setBrowserQueued({ libre_market: lmCount, xmr_bazaar: xmrCount })
     } catch (err) {
       setPushError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -208,21 +221,21 @@ export function DashboardHome() {
           {pushError && (
             <p className="text-xs text-destructive">{pushError}</p>
           )}
-          {pushResult && (
-            <div className="space-y-1">
-              {pushResult.map((r) => (
-                <div key={r.platform} className="flex items-center justify-between text-xs">
-                  <Link href={`/channels/${r.platform}`} className="font-mono hover:underline">
-                    {r.platform}
-                  </Link>
-                  <span className={r.errors.length > 0 ? 'text-destructive' : 'text-green-600'}>
-                    {r.errors.length > 0
-                      ? r.errors[0]
-                      : `${r.newProductsCreated} new · ${r.statusUpdated} updated`
-                    }
-                  </span>
-                </div>
-              ))}
+          {pushResult && <PushResultDisplay results={pushResult} />}
+          {browserQueued && (
+            <div className="rounded border border-red-500 bg-red-50 dark:bg-red-950/30 p-2 space-y-1">
+              <p className="text-xs font-semibold text-red-600">
+                ⚠ Browser channels still queued — run in terminal:
+              </p>
+              <p className="text-xs font-mono bg-red-100 dark:bg-red-900/40 text-red-700 px-2 py-1 rounded select-all">
+                npm run push:browser
+              </p>
+              {browserQueued.libre_market > 0 && (
+                <p className="text-xs text-red-600/80">Libre Market: {browserQueued.libre_market} product(s)</p>
+              )}
+              {browserQueued.xmr_bazaar > 0 && (
+                <p className="text-xs text-red-600/80">XMR Bazaar: {browserQueued.xmr_bazaar} product(s)</p>
+              )}
             </div>
           )}
           {!pushResult && !pushError && (
@@ -281,6 +294,8 @@ const CONN_LABELS: Record<string, string> = {
   woocommerce:        'Coincart',
   shopify_komputerzz: 'Komputerzz',
   shopify_tiktok:     'TikTok Shop',
+  libre_market:       'Libre Market',
+  xmr_bazaar:         'XMR Bazaar',
   ireland:            'Ireland',
   acer_store:         'ACER Store',
 }
@@ -320,6 +335,57 @@ function ConnDot({ status }: { status?: { ok: boolean } | null }) {
   return status.ok
     ? <span className="inline-block h-2 w-2 rounded-full bg-green-500 shrink-0" title="Live" />
     : <span className="inline-block h-2 w-2 rounded-full bg-red-500 shrink-0" title="Offline" />
+}
+
+function PushResultDisplay({ results }: { results: ChannelSyncResult[] }) {
+  // Incomplete products are shared across all platforms in the abort case — deduplicate by SKU
+  const incompleteList = Array.from(
+    new Map(
+      results.flatMap((r) => r.incomplete ?? []).map((i) => [i.sku, i])
+    ).values()
+  )
+
+  if (incompleteList.length > 0) {
+    return (
+      <div className="space-y-1.5 text-xs">
+        <p className="font-medium text-destructive">
+          Push aborted — {incompleteList.length} incomplete product{incompleteList.length > 1 ? 's' : ''}:
+        </p>
+        <ul className="space-y-0.5 max-h-48 overflow-y-auto">
+          {incompleteList.map(({ sku, missing }) => (
+            <li key={sku} className="flex gap-2 items-baseline">
+              <Link href={`/products/${sku}`} className="font-mono text-destructive hover:underline shrink-0">
+                {sku}
+              </Link>
+              <span className="text-destructive/70">{missing.join(', ')}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {results.map((r) => (
+        <div key={r.platform} className="flex items-center justify-between text-xs">
+          <Link href={`/channels/${r.platform}`} className="font-mono hover:underline">
+            {r.platform}
+          </Link>
+          <span className={r.errors.length > 0 ? 'text-destructive' : 'text-green-600'}>
+            {r.errors.length > 0
+              ? r.errors[0]
+              : [
+                  r.newProductsCreated > 0 && `${r.newProductsCreated} new`,
+                  r.statusUpdated > 0      && `${r.statusUpdated} updated`,
+                  r.zeroedOutOfStock > 0   && `${r.zeroedOutOfStock} zeroed`,
+                ].filter(Boolean).join(' · ') || 'nothing to push'
+            }
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function StatCard({ label, value, href }: { label: string; value: string | number; href: string }) {

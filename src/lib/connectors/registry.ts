@@ -31,6 +31,12 @@ export function getConnector(platform: Platform): PlatformConnector {
         process.env.SHOPIFY_TIKTOK_LOCATION_ID  // optional; falls back to primary location
       )
 
+    case 'xmr_bazaar':
+      throw new Error('xmr_bazaar is a browser-automated channel — use the local push script, not getConnector()')
+
+    case 'libre_market':
+      throw new Error('libre_market is a browser-automated channel — use the local push script, not getConnector()')
+
     case 'platform_4':
       throw new Error('platform_4 connector not yet implemented')
 

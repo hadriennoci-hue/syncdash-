@@ -27,7 +27,7 @@ export function Sidebar() {
   return (
     <aside className="w-48 shrink-0 border-r border-border bg-card flex flex-col">
       <div className="px-4 py-3 border-b border-border">
-        <span className="text-sm font-semibold tracking-tight">SyncDash</span>
+        <span className="text-sm font-semibold tracking-tight">Wizhard</span>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
         {nav.map(({ href, label, icon: Icon }) => {

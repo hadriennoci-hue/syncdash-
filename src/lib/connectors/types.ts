@@ -141,6 +141,9 @@ export interface PlatformConnector {
   deleteImages(platformId: string): Promise<void>
   updatePrice(platformId: string, price: number | null, compareAt?: number | null): Promise<void>
   updateStock(platformId: string, quantity: number): Promise<void>
+  // Bulk-set stock for many products in as few API calls as possible.
+  // Use this instead of looping updateStock() — connectors implement platform-native batch APIs.
+  bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void>
   toggleStatus(platformId: string, status: 'active' | 'archived'): Promise<void>
   assignCategories(platformId: string, categoryIds: string[]): Promise<void>
   healthCheck(): Promise<HealthCheckResult>

@@ -1,242 +1,281 @@
-import FirecrawlApp from '@mendable/firecrawl-js'
 import { db } from '@/lib/db/client'
-import { products, productImages, platformMappings, warehouseStock } from '@/lib/db/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { products, platformMappings } from '@/lib/db/schema'
+import { eq, or } from 'drizzle-orm'
 import { getConnector } from '@/lib/connectors/registry'
-import { getR2Bucket, getR2PublicUrl } from '@/lib/r2/client'
-import { scrapeProductDetail } from '@/lib/connectors/acer-scraper'
 import { logOperation } from './log'
-import { generateId } from '@/lib/utils/id'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 
-const STOCK_WAREHOUSES = ['ireland', 'acer_store'] as const
-
 export interface ChannelSyncResult {
-  platform: Platform
-  statusUpdated: number
+  platform:           Platform
+  statusUpdated:      number
   newProductsCreated: number
-  newSkus: string[]
-  errors: string[]
-}
-
-// Maps platform → the products column that tracks push status for that channel
-function getPushFilter(platform: Platform) {
-  switch (platform) {
-    case 'woocommerce':        return eq(products.pushedWoocommerce, '2push')
-    case 'shopify_komputerzz': return eq(products.pushedShopifyKomputerzz, '2push')
-    case 'shopify_tiktok':     return eq(products.pushedShopifyTiktok, '2push')
-    default:                   return null
-  }
-}
-
-function getDoneUpdate(platform: Platform): Partial<Record<string, string>> {
-  switch (platform) {
-    case 'woocommerce':        return { pushedWoocommerce: 'done' }
-    case 'shopify_komputerzz': return { pushedShopifyKomputerzz: 'done' }
-    case 'shopify_tiktok':     return { pushedShopifyTiktok: 'done' }
-    default:                   return {}
-  }
+  zeroedOutOfStock:   number
+  newSkus:            string[]
+  errors:             string[]
+  incomplete:         Array<{ sku: string; missing: string[] }>
 }
 
 // ---------------------------------------------------------------------------
-// syncChannelAvailability — updates status for already-listed products
-//   then pushes products marked '2push' for each channel
+// Internal types (shaped from Drizzle relation query)
+// ---------------------------------------------------------------------------
+
+interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
+interface CatRow     { category: { id: string; platform: string } }
+interface StockRow   { quantity: number }
+interface MappingRow { platform: string; platformId: string }
+interface ImageRow   { url: string; position: number; alt: string | null }
+
+interface EligibleProduct {
+  id:                      string
+  title:                   string
+  description:             string | null
+  vendor:                  string | null
+  productType:             string | null
+  pushedWoocommerce:       string
+  pushedShopifyKomputerzz: string
+  pushedShopifyTiktok:     string
+  pushedXmrBazaar:         string
+  pushedLibreMarket:       string
+  images:                  ImageRow[]
+  prices:                  PriceRow[]
+  categories:              CatRow[]
+  warehouseStock:          StockRow[]
+  platformMappings:        MappingRow[]
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// Platforms that use browser automation (Playwright) rather than a REST connector.
+// These are handled separately — cannot run inside Cloudflare Workers.
+const BROWSER_PLATFORMS: Platform[] = ['xmr_bazaar', 'libre_market']
+
+function isPushable(p: EligibleProduct, platform: Platform): boolean {
+  if (platform === 'woocommerce')        return p.pushedWoocommerce === '2push'
+  if (platform === 'shopify_komputerzz') return p.pushedShopifyKomputerzz === '2push'
+  if (platform === 'shopify_tiktok')     return p.pushedShopifyTiktok === '2push'
+  if (platform === 'xmr_bazaar')         return p.pushedXmrBazaar === '2push'
+  if (platform === 'libre_market')       return p.pushedLibreMarket === '2push'
+  return false
+}
+
+function getPushUpdate(platform: Platform, value: string): Record<string, string> {
+  if (platform === 'woocommerce')        return { pushedWoocommerce: value }
+  if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: value }
+  if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: value }
+  if (platform === 'xmr_bazaar')         return { pushedXmrBazaar: value }
+  if (platform === 'libre_market')       return { pushedLibreMarket: value }
+  return {}
+}
+
+function checkCompleteness(p: EligibleProduct, platform: Platform): string[] {
+  const missing: string[] = []
+
+  if (!p.title || p.title === p.id) missing.push('title')
+  if (!p.description?.trim())        missing.push('description')
+  if (p.images.length < 3)           missing.push(`images (${p.images.length}/3)`)
+
+  const price = p.prices.find((r) => r.platform === platform)
+  if (!price?.price)                 missing.push(`price (${platform})`)
+
+  if (platform === 'woocommerce') {
+    if (!p.categories.some((pc) => pc.category.platform === 'woocommerce'))
+      missing.push('woocommerce category')
+  } else if (platform.startsWith('shopify')) {
+    if (!p.categories.some((pc) => pc.category.platform === platform))
+      missing.push(`collection (${platform})`)
+  }
+
+  return missing
+}
+
+// ---------------------------------------------------------------------------
+// Main export
 // ---------------------------------------------------------------------------
 
 export async function syncChannelAvailability(
   platforms: Platform[],
   triggeredBy: TriggeredBy = 'human'
 ): Promise<ChannelSyncResult[]> {
-  const masterStock = await getMasterStockMap()
+  // Load all 2push candidates with full context
+  const raw = await db.query.products.findMany({
+    where: or(
+      eq(products.pushedWoocommerce, '2push'),
+      eq(products.pushedShopifyKomputerzz, '2push'),
+      eq(products.pushedShopifyTiktok, '2push'),
+      eq(products.pushedXmrBazaar, '2push'),
+      eq(products.pushedLibreMarket, '2push'),
+    ),
+    with: {
+      images:           true,
+      prices:           true,
+      categories:       { with: { category: true } },
+      warehouseStock:   true,
+      platformMappings: true,
+    },
+  })
+
+  // Only products with stock > 0 in at least one warehouse
+  const eligible = raw.filter((p) =>
+    p.warehouseStock.some((ws) => ws.quantity > 0)
+  ) as unknown as EligibleProduct[]
+
+  // Completeness check across all platforms — aggregate by SKU, abort if any fail
+  const incompleteMap = new Map<string, string[]>()
+  for (const platform of platforms) {
+    for (const product of eligible.filter((p) => isPushable(p, platform))) {
+      const missing = checkCompleteness(product, platform)
+      if (missing.length > 0) {
+        const prev = incompleteMap.get(product.id) ?? []
+        incompleteMap.set(product.id, [...new Set([...prev, ...missing])])
+      }
+    }
+  }
+
+  if (incompleteMap.size > 0) {
+    const incomplete = Array.from(incompleteMap.entries()).map(([sku, missing]) => ({ sku, missing }))
+    return platforms.map((platform) => ({
+      platform,
+      statusUpdated: 0, newProductsCreated: 0, zeroedOutOfStock: 0, newSkus: [], errors: [],
+      incomplete,
+    }))
+  }
+
+  // All complete — push each platform
   const results: ChannelSyncResult[] = []
   for (const platform of platforms) {
-    results.push(await syncPlatform(platform, masterStock, triggeredBy))
+    results.push(await pushPlatform(platform, eligible, triggeredBy))
   }
   return results
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Push one platform
 // ---------------------------------------------------------------------------
 
-interface StockEntry {
-  sku: string
-  quantity: number
-  sourceUrl?: string
-  sourceName?: string
-}
-
-async function getMasterStockMap(): Promise<Map<string, StockEntry>> {
-  const rows = await db.query.warehouseStock.findMany({
-    where: inArray(warehouseStock.warehouseId, [...STOCK_WAREHOUSES]),
-  })
-  const map = new Map<string, StockEntry>()
-  for (const row of rows) {
-    const entry = map.get(row.productId)
-    if (entry) {
-      entry.quantity += row.quantity
-      entry.sourceUrl  ??= row.sourceUrl  ?? undefined
-      entry.sourceName ??= row.sourceName ?? undefined
-    } else {
-      map.set(row.productId, {
-        sku:        row.productId,
-        quantity:   row.quantity,
-        sourceUrl:  row.sourceUrl  ?? undefined,
-        sourceName: row.sourceName ?? undefined,
-      })
-    }
-  }
-  return map
-}
-
-async function syncPlatform(
+async function pushPlatform(
   platform: Platform,
-  masterStock: Map<string, StockEntry>,
+  eligible: EligibleProduct[],
   triggeredBy: TriggeredBy
 ): Promise<ChannelSyncResult> {
-  const connector = getConnector(platform)
-  const mappings  = await db.query.platformMappings.findMany({
-    where: eq(platformMappings.platform, platform),
-  })
-  const mappedSkus = new Map(mappings.map(m => [m.productId, m.platformId]))
-
-  const errors: string[] = []
-  let statusUpdated = 0
-
-  // 1. Update active/archived status for products already listed on this channel
-  for (const [sku, entry] of masterStock) {
-    const platformId = mappedSkus.get(sku)
-    if (!platformId) continue
-    const status = entry.quantity > 0 ? 'active' : 'archived'
-    try {
-      await connector.toggleStatus(platformId, status)
-      statusUpdated++
-    } catch (err) {
-      errors.push(`${sku} status: ${err instanceof Error ? err.message : 'error'}`)
+  // Browser channels require local Playwright automation — cannot run in CF Workers.
+  // Use the local push scripts (scripts/push-browser-channels.ts) instead.
+  if (BROWSER_PLATFORMS.includes(platform)) {
+    const count = eligible.filter((p) => isPushable(p, platform)).length
+    return {
+      platform,
+      statusUpdated: 0, newProductsCreated: 0, zeroedOutOfStock: 0, newSkus: [],
+      errors: [`browser channel — ${count} product(s) queued, run local push script to process`],
+      incomplete: [],
     }
   }
 
-  // 2. Push products explicitly marked '2push' for this channel
-  const pushFilter = getPushFilter(platform)
-  const newSkus: string[] = []
+  const toPush    = eligible.filter((p) => isPushable(p, platform))
+  const connector = getConnector(platform)
+  const errors: string[] = []
+  const newSkus:  string[] = []
+  let statusUpdated = 0
 
-  if (pushFilter) {
-    const toPush = await db.query.products.findMany({ where: pushFilter })
+  for (const product of toPush) {
+    const mapping    = product.platformMappings.find((m) => m.platform === platform)
+    const totalStock = product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
+    const priceRow   = product.prices.find((r) => r.platform === platform)
 
-    for (const product of toPush) {
-      // Skip if already mapped (listed) on this channel
-      if (mappedSkus.has(product.id)) {
-        await db.update(products)
-          .set(getDoneUpdate(platform) as Record<string, string>)
-          .where(eq(products.id, product.id))
+    try {
+      if (mapping) {
+        // Already listed — update price, stock, ensure published
+        await connector.updatePrice(mapping.platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+        await connector.updateStock(mapping.platformId, totalStock)
+        await connector.toggleStatus(mapping.platformId, 'active')
+        statusUpdated++
+      } else {
+        // New product — create with full data
+        const images: ImageInput[] = product.images
+          .sort((a, b) => a.position - b.position)
+          .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
+
+        const categoryIds = product.categories
+          .filter((pc) => platform === 'woocommerce'
+            ? pc.category.platform === 'woocommerce'
+            : pc.category.platform === platform)
+          .map((pc) => pc.category.id)
+
+        const platformId = await connector.createProduct({
+          title:       product.title,
+          description: product.description,
+          status:      'active',
+          vendor:      product.vendor,
+          productType: product.productType,
+          taxCode:     null,
+          price:       priceRow?.price ?? null,
+          compareAt:   priceRow?.compareAt ?? null,
+          ...(platform.startsWith('shopify') ? { shopifyCategory: 'gid://shopify/TaxonomyCategory/el' } : {}),
+          categoryIds,
+        })
+
+        if (images.length > 0) await connector.setImages(platformId, images)
+        await connector.updateStock(platformId, totalStock)
+
+        await db.insert(platformMappings).values({
+          productId: product.id, platform, platformId, syncStatus: 'synced',
+          lastSynced: new Date().toISOString(),
+        }).onConflictDoUpdate({
+          target: [platformMappings.productId, platformMappings.platform],
+          set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
+        })
+
         newSkus.push(product.id)
-        continue
       }
 
-      const stockEntry = masterStock.get(product.id)
-      try {
-        await pushProductToChannel(product, stockEntry, platform, connector, triggeredBy)
-        await db.update(products)
-          .set(getDoneUpdate(platform) as Record<string, string>)
-          .where(eq(products.id, product.id))
-        newSkus.push(product.id)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
-        errors.push(`${product.id}: ${msg}`)
-        await logOperation({ productId: product.id, platform,
-          action: 'push_product', status: 'error', message: msg, triggeredBy })
-      }
+      await db.update(products)
+        .set(getPushUpdate(platform, 'done') as Record<string, string>)
+        .where(eq(products.id, product.id))
+
+      await logOperation({
+        productId: product.id, platform,
+        action: 'push_product', status: 'success',
+        message: mapping ? 'updated price/stock' : 'created',
+        triggeredBy,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      errors.push(`${product.id}: ${msg}`)
+      await db.update(products)
+        .set(getPushUpdate(platform, `FAIL: ${msg.slice(0, 200)}`) as Record<string, string>)
+        .where(eq(products.id, product.id))
+      await logOperation({ productId: product.id, platform,
+        action: 'push_product', status: 'error', message: msg, triggeredBy })
     }
+  }
+
+  // Zero out products that are no longer in stock in any Wizhard warehouse.
+  // Uses platform-native batch APIs to minimise API calls.
+  let zeroedOutOfStock = 0
+  try {
+    const allMappings  = await db.query.platformMappings.findMany({
+      where: eq(platformMappings.platform, platform),
+    })
+    const eligibleSkus = new Set(eligible.map((p) => p.id))
+    const toZero = allMappings
+      .filter((m) => !eligibleSkus.has(m.productId))
+      .map((m) => ({ platformId: m.platformId, quantity: 0 }))
+
+    if (toZero.length > 0) {
+      await connector.bulkSetStock(toZero)
+      zeroedOutOfStock = toZero.length
+    }
+  } catch (err) {
+    errors.push(`bulk-zero: ${err instanceof Error ? err.message : 'error'}`)
   }
 
   await logOperation({
     platform,
-    action: 'sync_channel_availability',
-    status: errors.length === 0 ? 'success' : 'error',
-    message: `status_updated=${statusUpdated} pushed=${newSkus.length} errors=${errors.length}`,
+    action:  'sync_channel_availability',
+    status:  errors.length === 0 ? 'success' : 'error',
+    message: `updated=${statusUpdated} created=${newSkus.length} zeroed=${zeroedOutOfStock} errors=${errors.length}`,
     triggeredBy,
   })
 
-  return { platform, statusUpdated, newProductsCreated: newSkus.length, newSkus, errors }
-}
-
-async function pushProductToChannel(
-  product: { id: string; title: string; description: string | null; productType: string | null },
-  stockEntry: StockEntry | undefined,
-  platform: Platform,
-  connector: ReturnType<typeof getConnector>,
-  triggeredBy: TriggeredBy
-): Promise<void> {
-  let description = product.description
-  let productType = product.productType
-  const imageInputs: ImageInput[] = []
-
-  // If we have a sourceUrl (ACER Store), scrape for enriched data
-  if (stockEntry?.sourceUrl) {
-    const firecrawl = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY! })
-    const bucket    = getR2Bucket()
-    const publicUrl = getR2PublicUrl()
-
-    const detail = await scrapeProductDetail(firecrawl, stockEntry.sourceUrl)
-    description  = detail.description
-    productType  = detail.category
-
-    await db.update(products)
-      .set({ description: detail.description, productType: detail.category })
-      .where(eq(products.id, product.id))
-
-    const uploaded = await fetchAndUploadImages(detail.imageUrls, product.id, bucket, publicUrl)
-    imageInputs.push(...uploaded)
-
-    await db.delete(productImages).where(eq(productImages.productId, product.id))
-    for (const [i, img] of imageInputs.entries()) {
-      if (img.type !== 'url') continue
-      await db.insert(productImages).values({
-        id: generateId(), productId: product.id, url: img.url, position: i, alt: null,
-      })
-    }
-  }
-
-  const platformId = await connector.createProduct({
-    title: product.title, description, status: 'active',
-    vendor: 'Acer', productType, taxCode: null,
-    price: null, compareAt: null,
-  })
-
-  if (imageInputs.length > 0) await connector.setImages(platformId, imageInputs)
-
-  await db.insert(platformMappings).values({
-    productId: product.id, platform, platformId, syncStatus: 'synced',
-    lastSynced: new Date().toISOString(),
-  }).onConflictDoUpdate({
-    target: [platformMappings.productId, platformMappings.platform],
-    set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
-  })
-
-  await logOperation({ productId: product.id, platform,
-    action: 'push_product', status: 'success', triggeredBy })
-}
-
-async function fetchAndUploadImages(
-  urls: string[],
-  sku: string,
-  bucket: R2Bucket,
-  publicUrl: string
-): Promise<ImageInput[]> {
-  const inputs: ImageInput[] = []
-  for (const url of urls.slice(0, 5)) {
-    try {
-      const res = await fetch(url)
-      if (!res.ok) continue
-      const buffer   = await res.arrayBuffer()
-      const mimeType = res.headers.get('content-type') ?? 'image/jpeg'
-      const ext      = mimeType.split('/')[1]?.split(';')[0] ?? 'jpg'
-      const key      = `products/${sku}/${generateId()}.${ext}`
-      await bucket.put(key, buffer, { httpMetadata: { contentType: mimeType } })
-      inputs.push({ type: 'url', url: `${publicUrl}/${key}` })
-    } catch {
-      // skip images that fail to fetch
-    }
-  }
-  return inputs
+  return { platform, statusUpdated, newProductsCreated: newSkus.length, zeroedOutOfStock, newSkus, errors, incomplete: [] }
 }

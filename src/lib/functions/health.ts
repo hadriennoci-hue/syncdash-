@@ -1,5 +1,6 @@
 import { db } from '@/lib/db/client'
-import { apiHealthLog } from '@/lib/db/schema'
+import { apiHealthLog, salesChannels } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { getConnector, getWarehouseConnector, ALL_PLATFORMS, ALL_WAREHOUSE_IDS } from '@/lib/connectors/registry'
 import { generateId } from '@/lib/utils/id'
 import type { HealthCheckResult } from '@/lib/connectors/types'
@@ -10,12 +11,26 @@ interface HealthResults {
   results: Record<string, HealthCheckResult>
 }
 
+async function pingUrl(url: string): Promise<HealthCheckResult> {
+  const start = Date.now()
+  try {
+    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) })
+    const latencyMs = Date.now() - start
+    if (res.ok || res.status < 500) {
+      return { ok: true, latencyMs }
+    }
+    return { ok: false, latencyMs, error: `HTTP ${res.status}` }
+  } catch (err) {
+    return { ok: false, latencyMs: null, error: err instanceof Error ? err.message : 'unreachable' }
+  }
+}
+
 export async function runApiHealthCheck(): Promise<HealthResults> {
   const start = Date.now()
   const checkedAt = new Date().toISOString()
   const results: Record<string, HealthCheckResult> = {}
 
-  // Check all platform connectors
+  // Check all API platform connectors
   for (const platform of ALL_PLATFORMS) {
     try {
       const connector = getConnector(platform)
@@ -26,6 +41,16 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
         latencyMs: null,
         error: err instanceof Error ? err.message : 'Connector not available',
       }
+    }
+  }
+
+  // Check browser channels — URL ping instead of API connector
+  const browserChannels = await db.query.salesChannels.findMany({
+    where: eq(salesChannels.connectorType, 'browser'),
+  })
+  for (const ch of browserChannels) {
+    if (ch.enabled) {
+      results[ch.id] = await pingUrl(ch.url)
     }
   }
 

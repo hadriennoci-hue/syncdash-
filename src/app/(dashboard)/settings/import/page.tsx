@@ -21,7 +21,7 @@ export default function ImportPage() {
     <div className="space-y-4 max-w-md">
       <h1 className="text-sm font-semibold">Import from Platform</h1>
       <p className="text-xs text-muted-foreground">
-        Imports all products from the selected platform into SyncDash D1. Use <strong>full</strong> for the initial Phase A import.
+        Imports all products from the selected platform into Wizhard D1. Use <strong>full</strong> for the initial Phase A import.
       </p>
 
       <div className="space-y-3">

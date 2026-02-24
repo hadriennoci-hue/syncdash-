@@ -1,5 +1,5 @@
 # =============================================================================
-# SYNCDASH — Wrangler Configuration (Cloudflare Workers via @opennextjs/cloudflare)
+# WIZHARD — Wrangler Configuration (Cloudflare Workers via @opennextjs/cloudflare)
 # =============================================================================
 
 name = "syncdash"

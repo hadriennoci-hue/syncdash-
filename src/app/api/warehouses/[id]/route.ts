@@ -3,10 +3,10 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, gt, and } from 'drizzle-orm'
 
 
-// GET — warehouse detail with full stock snapshot
+// GET — warehouse detail with full stock snapshot (only in-stock products)
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = verifyBearer(req)
   if (auth) return auth
@@ -17,8 +17,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!warehouse) return apiError('NOT_FOUND', `Warehouse ${params.id} not found`, 404)
 
   const stock = await db.query.warehouseStock.findMany({
-    where: eq(warehouseStock.warehouseId, params.id),
-    with: { product: { columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true } } },
+    where: and(eq(warehouseStock.warehouseId, params.id), gt(warehouseStock.quantity, 0)),
+    with: {
+      product: {
+        columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true },
+        with: { categories: { with: { category: true } } },
+      },
+    },
     orderBy: (t, { asc }) => [asc(t.productId)],
   })
 
@@ -43,6 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       lastOrderDate:            s.lastOrderDate,
       purchasePrice:            s.purchasePrice,
       updatedAt:                s.updatedAt,
+      categories:               (s.product?.categories ?? []).map((pc) => pc.category.name),
     })),
   })
 }

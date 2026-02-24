@@ -33,7 +33,7 @@ export class ShopifyConnector implements PlatformConnector {
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': this.token,
-        'User-Agent': 'SyncDash/1.0',
+        'User-Agent': 'Wizhard/1.0',
       },
       body: JSON.stringify({ query, variables }),
       // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules
@@ -417,6 +417,76 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  // Bulk-set stock: resolve all inventory items in one nodes() query per 50 products,
+  // then set quantities in one inventorySetOnHandQuantities mutation per 250 items.
+  // This replaces 3N individual API calls with ~ceil(N/50) + ceil(N/250) calls.
+  async bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void> {
+    if (items.length === 0) return
+
+    // Resolve location once
+    let locationGid = this.locationId
+    if (!locationGid) {
+      const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(
+        `{ locations(first: 1) { nodes { id } } }`
+      )
+      locationGid = locData.locations.nodes[0]?.id
+      if (!locationGid) throw new Error('No Shopify location found')
+    }
+
+    // Batch-resolve inventory item IDs from product GIDs (50 per query)
+    const QUERY_BATCH = 50
+    const setQuantities: Array<{ inventoryItemId: string; locationId: string; quantity: number }> = []
+
+    for (let i = 0; i < items.length; i += QUERY_BATCH) {
+      const batch = items.slice(i, i + QUERY_BATCH)
+      const ids   = batch.map((b) => b.platformId)
+
+      const query = `
+        query InventoryItems($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              variants(first: 1) { nodes { inventoryItem { id } } }
+            }
+          }
+        }
+      `
+      const data = await this.graphql<{
+        nodes: Array<{ id?: string; variants?: { nodes: Array<{ inventoryItem: { id: string } }> } } | null>
+      }>(query, { ids })
+
+      for (const node of data.nodes) {
+        if (!node?.id || !node.variants) continue
+        const inventoryItemId = node.variants.nodes[0]?.inventoryItem?.id
+        if (!inventoryItemId) continue
+        const item = batch.find((b) => b.platformId === node.id)
+        if (!item) continue
+        setQuantities.push({ inventoryItemId, locationId: locationGid, quantity: item.quantity })
+      }
+    }
+
+    if (setQuantities.length === 0) return
+
+    // Set all quantities in batches of 250
+    const MUTATION_BATCH = 250
+    const mutation = `
+      mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
+        inventorySetOnHandQuantities(input: $input) {
+          userErrors { field message }
+        }
+      }
+    `
+    for (let i = 0; i < setQuantities.length; i += MUTATION_BATCH) {
+      const batch  = setQuantities.slice(i, i + MUTATION_BATCH)
+      const result = await this.graphql<{
+        inventorySetOnHandQuantities: { userErrors: Array<{ message: string }> }
+      }>(mutation, { input: { reason: 'correction', setQuantities: batch } })
+      if (result.inventorySetOnHandQuantities.userErrors.length > 0) {
+        throw new Error(result.inventorySetOnHandQuantities.userErrors.map((e) => e.message).join(', '))
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Status
   // -------------------------------------------------------------------------
@@ -477,7 +547,7 @@ export class ShopifyWarehouseConnector {
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': this.token,
-        'User-Agent': 'SyncDash/1.0',
+        'User-Agent': 'Wizhard/1.0',
       },
       body: JSON.stringify({ query, variables }),
       // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules

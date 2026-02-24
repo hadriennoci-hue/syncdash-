@@ -39,6 +39,8 @@ export const products = sqliteTable('products', {
   pushedWoocommerce:        text('pushed_woocommerce').notNull().default('N'),
   pushedShopifyKomputerzz:  text('pushed_shopify_komputerzz').notNull().default('N'),
   pushedShopifyTiktok:      text('pushed_shopify_tiktok').notNull().default('N'),
+  pushedXmrBazaar:          text('pushed_xmr_bazaar').notNull().default('N'),
+  pushedLibreMarket:        text('pushed_libre_market').notNull().default('N'),
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt:   text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 })
@@ -197,6 +199,21 @@ export const orderItems = sqliteTable('order_items', {
 export const tiktokSelection = sqliteTable('tiktok_selection', {
   productId: text('product_id').primaryKey().references(() => products.id),
   addedAt:   text('added_at').default(sql`CURRENT_TIMESTAMP`),
+})
+
+// ---------------------------------------------------------------------------
+// Sales Channels
+// ---------------------------------------------------------------------------
+
+export const salesChannels = sqliteTable('sales_channels', {
+  id:            text('id').primaryKey(),            // matches Platform type: 'woocommerce', 'libre_market', etc.
+  name:          text('name').notNull(),             // display name
+  url:           text('url').notNull(),              // storefront URL
+  connectorType: text('connector_type').notNull(),  // 'woocommerce_api' | 'shopify_api' | 'browser'
+  enabled:       integer('enabled').notNull().default(1),
+  config:        text('config'),                    // JSON: non-sensitive platform-specific config
+  lastPush:      text('last_push'),                 // ISO timestamp of last successful push
+  createdAt:     text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
 // ---------------------------------------------------------------------------

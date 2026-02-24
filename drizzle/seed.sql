@@ -11,6 +11,14 @@ INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source
   ('poland',     'Entrepôt Pologne',  'Warsaw, Poland',  'manual',   NULL,                           0, 0, datetime('now')),
   ('acer_store', 'ACER Store',        'France',          'scraper', '{"url":"placeholder"}',         1, 0, datetime('now'));
 
+-- Sales Channels
+INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, config, created_at) VALUES
+  ('woocommerce',        'CoInCart',            'https://coincart.store',   'woocommerce_api', 1, NULL,                                                                                                                    datetime('now')),
+  ('shopify_komputerzz', 'Komputerzz',          'https://komputerzz.com',   'shopify_api',     1, '{"shopDomain":"ikw70s-fr.myshopify.com"}',                                                                              datetime('now')),
+  ('shopify_tiktok',     'Tech Store (TikTok)', 'https://shop.tiktok.com',  'shopify_api',     1, '{"shopDomain":"qanjg5-0h.myshopify.com"}',                                                                              datetime('now')),
+  ('libre_market',       'Libre Market',        'https://libre-market.com', 'browser',         1, '{"loginUrl":"https://libre-market.com/merchant/signin","newListingUrl":null}',                                          datetime('now')),
+  ('xmr_bazaar',         'XMR Bazaar',          'https://xmrbazaar.com',    'browser',         1, '{"loginUrl":"https://xmrbazaar.com/login/","newListingUrl":"https://xmrbazaar.com/new-listing/"}',                      datetime('now'));
+
 -- Warehouse → channel routing rules
 -- priority 1 = primary stock source, 2 = secondary/fallback
 -- No row = warehouse FORBIDDEN for that channel

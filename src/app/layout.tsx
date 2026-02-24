@@ -7,7 +7,7 @@ import { Providers } from '@/components/layout/Providers'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'SyncDash',
+  title: 'Wizhard',
   description: 'Product sync dashboard',
 }
 

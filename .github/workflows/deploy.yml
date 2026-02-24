@@ -1,4 +1,4 @@
-name: Deploy SyncDash
+name: Deploy Wizhard
 
 on:
   push:
