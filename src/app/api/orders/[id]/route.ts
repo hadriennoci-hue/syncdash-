@@ -45,7 +45,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const parsed = patchSchema.safeParse(body)
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
-  const updated = await updateOrder(params.id, parsed.data, parsed.data.triggeredBy)
-  if (!updated) return apiError('NOT_FOUND', `Order ${params.id} not found`, 404)
-  return apiResponse(updated)
+  await updateOrder(params.id, parsed.data, parsed.data.triggeredBy)
+  return apiResponse({ success: true })
 }

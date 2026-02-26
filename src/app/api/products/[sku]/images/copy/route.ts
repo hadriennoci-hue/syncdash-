@@ -9,6 +9,7 @@ import type { Platform } from '@/types/platform'
 const copySchema = z.object({
   sourcePlatform:      z.string(),
   destinationPlatforms: z.array(z.string()).min(1),
+  mode: z.enum(['replace', 'add']).default('replace'),
   triggeredBy:         z.enum(['human', 'agent']).default('human'),
 })
 
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: { sku: string
     params.sku,
     parsed.data.sourcePlatform as Platform,
     parsed.data.destinationPlatforms as Platform[],
+    parsed.data.mode,
     parsed.data.triggeredBy
   )
   return apiResponse(results)

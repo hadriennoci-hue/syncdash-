@@ -131,7 +131,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
             {Object.entries(p.platforms ?? {}).map(([pl, m]: [string, any]) => (
               <tr key={pl} className="border-t border-border">
                 <td className="py-1 pr-2">
-                  <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl] ?? pl}</Link>
+                  <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl as Platform] ?? pl}</Link>
                 </td>
                 <td className="py-1 pr-2 font-mono text-muted-foreground">{m.platformId ?? '—'}</td>
                 <td className="py-1 pr-2">
@@ -167,7 +167,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
             {Object.entries(p.stock ?? {}).map(([wh, s]: [string, any]) => (
               <tr key={wh} className="border-t border-border">
                 <td className="py-1 pr-2">
-                  <Link href={`/warehouses/${wh}`} className="text-primary hover:underline">{WAREHOUSE_LABELS[wh] ?? wh}</Link>
+                  <Link href={`/warehouses/${wh}`} className="text-primary hover:underline">{WAREHOUSE_LABELS[wh as keyof typeof WAREHOUSE_LABELS] ?? wh}</Link>
                 </td>
                 <td className="py-1 pr-2">{s.quantity ?? '—'}</td>
                 <td className="py-1 pr-2">{s.quantityOrdered ?? '—'}</td>

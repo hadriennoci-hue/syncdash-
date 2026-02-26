@@ -18,6 +18,7 @@ interface ImportResult {
 
 export async function importFromPlatform(
   platform: Platform,
+  _mode: 'full' | 'new_changed' = 'new_changed',
   triggeredBy: TriggeredBy = 'human'
 ): Promise<ImportResult> {
   const connector = await createConnector(platform)
@@ -113,9 +114,10 @@ export async function importFromPlatform(
         platform,
         price:     raw.prices.price,
         compareAt: raw.prices.compareAt,
+        updatedAt: now,
       }).onConflictDoUpdate({
         target: [productPrices.productId, productPrices.platform],
-        set: { price: raw.prices.price, compareAt: raw.prices.compareAt },
+        set: { price: raw.prices.price, compareAt: raw.prices.compareAt, updatedAt: now },
       })
 
       // Metafields — master platform only; batch upsert

@@ -340,7 +340,7 @@ async function fetchFromFirecrawl(sku: string): Promise<FetchedData | null> {
           description: { type: 'string' },
           images: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, alt: { type: 'string' } }, required: ['url'] } },
         },
-      },
+      } as any,
     },
   }))
   if (!result.success) return null

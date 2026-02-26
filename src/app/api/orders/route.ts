@@ -59,6 +59,18 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
-  const order = await createOrder(parsed.data, parsed.data.triggeredBy)
+  const payload = {
+    invoiceNumber: parsed.data.invoiceNumber ?? `INV-${Date.now()}`,
+    supplierId: parsed.data.supplierId,
+    warehouseId: parsed.data.warehouseId,
+    orderDate: parsed.data.orderDate ?? new Date().toISOString(),
+    items: parsed.data.items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      purchasePrice: item.purchasePrice ?? 0,
+    })),
+  }
+
+  const order = await createOrder(payload, parsed.data.triggeredBy)
   return apiResponse(order, 201)
 }

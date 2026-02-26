@@ -8,11 +8,10 @@ import { generateId } from '@/lib/utils/id'
 
 
 const createSchema = z.object({
-  name:    z.string().min(1),
-  contact: z.string().optional(),
-  email:   z.string().email().optional(),
-  phone:   z.string().optional(),
-  notes:   z.string().optional(),
+  name: z.string().min(1),
+  contactFirstName: z.string().optional(),
+  contactLastName: z.string().optional(),
+  email: z.string().email().optional(),
 })
 
 // GET — list suppliers
@@ -39,11 +38,10 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString()
   await db.insert(suppliers).values({
     id,
-    name:      parsed.data.name,
-    contact:   parsed.data.contact ?? null,
-    email:     parsed.data.email   ?? null,
-    phone:     parsed.data.phone   ?? null,
-    notes:     parsed.data.notes   ?? null,
+    name: parsed.data.name,
+    contactFirstName: parsed.data.contactFirstName ?? null,
+    contactLastName: parsed.data.contactLastName ?? null,
+    email: parsed.data.email ?? null,
     createdAt: now,
   })
 

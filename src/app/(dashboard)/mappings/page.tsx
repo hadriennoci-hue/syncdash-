@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/utils/api-fetch'
-import { PLATFORM_LABELS } from '@/types/platform'
+import { PLATFORM_LABELS, type Platform } from '@/types/platform'
 
 export default function MappingsPage() {
   const [productId, setProductId] = useState('')
@@ -56,7 +56,7 @@ export default function MappingsPage() {
                   <Link href={`/products/${m.productId}`} className="text-primary hover:underline">{m.productId}</Link>
                 </td>
                 <td className="py-1 pr-3">
-                  <Link href={`/channels/${m.platform}`} className="text-primary hover:underline">{PLATFORM_LABELS[m.platform] ?? m.platform}</Link>
+                  <Link href={`/channels/${m.platform}`} className="text-primary hover:underline">{PLATFORM_LABELS[m.platform as Platform] ?? m.platform}</Link>
                 </td>
                 <td className="py-1 pr-3 font-mono text-muted-foreground text-[10px]">{m.platformId}</td>
                 <td className="py-1 pr-3">{m.recordType}</td>

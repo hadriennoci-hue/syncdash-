@@ -17,7 +17,7 @@ async function pingUrl(url: string): Promise<HealthCheckResult> {
     const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) })
     const latencyMs = Date.now() - start
     if (res.ok || res.status < 500) {
-      return { ok: true, latencyMs }
+      return { ok: true, latencyMs, error: null }
     }
     return { ok: false, latencyMs, error: `HTTP ${res.status}` }
   } catch (err) {

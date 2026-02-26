@@ -306,7 +306,7 @@ async function pushPlatform(
   }
 
   let zeroedOutOfStock = 0
-  let skippedRecentEdits = 0
+  const skippedRecentEdits = 0
   try {
     const inStockRows = await db.query.warehouseStock.findMany({
       where: gt(warehouseStock.quantity, 0),

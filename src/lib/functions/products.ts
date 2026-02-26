@@ -97,9 +97,10 @@ export async function createProduct(
         platform,
         price:     price ?? null,
         compareAt: input.compareAtPrices?.[platform as Platform] ?? null,
+        updatedAt: new Date().toISOString(),
       }).onConflictDoUpdate({
         target: [productPrices.productId, productPrices.platform],
-        set: { price: price ?? null },
+        set: { price: price ?? null, updatedAt: new Date().toISOString() },
       })
     }
   }

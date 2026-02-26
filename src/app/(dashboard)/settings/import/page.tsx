@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { apiPost } from '@/lib/utils/api-fetch'
-import { PLATFORMS, PLATFORM_LABELS } from '@/types/platform'
+import { PLATFORMS, PLATFORM_LABELS, type Platform } from '@/types/platform'
 
 export default function ImportPage() {
   const [platform, setPlatform] = useState<string>('shopify_komputerzz')
@@ -49,7 +49,7 @@ export default function ImportPage() {
           disabled={doImport.isPending}
           className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50"
         >
-          {doImport.isPending ? 'Importing...' : `Import from ${PLATFORM_LABELS[platform] ?? platform}`}
+          {doImport.isPending ? 'Importing...' : `Import from ${PLATFORM_LABELS[platform as Platform] ?? platform}`}
         </button>
       </div>
 

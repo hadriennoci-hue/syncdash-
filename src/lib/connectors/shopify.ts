@@ -99,18 +99,18 @@ export class ShopifyConnector implements PlatformConnector {
           }
         }
       `
-      const data = await this.graphql<{ products: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] } }>(
+      const gqlResponse: { products: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: unknown[] } } = await this.graphql(
         query,
         { cursor }
       )
 
-      for (const node of data.products.nodes) {
+      for (const node of gqlResponse.products.nodes) {
         const product = this.normalizeProduct(node as Record<string, unknown>)
         if (product) products.push(product)
       }
 
-      hasNextPage = data.products.pageInfo.hasNextPage
-      cursor = data.products.pageInfo.endCursor
+      hasNextPage = gqlResponse.products.pageInfo.hasNextPage
+      cursor = gqlResponse.products.pageInfo.endCursor
     }
 
     return products
@@ -620,22 +620,22 @@ export class ShopifyConnector implements PlatformConnector {
           }
         }
       `
-      const data = await this.graphql<{
+      const gqlResponse: {
         products: {
           pageInfo: { hasNextPage: boolean; endCursor: string }
           nodes: Array<{ id: string; updatedAt?: string; variants?: { nodes?: Array<{ sku?: string | null }> } }>
         }
-      }>(query, { cursor })
+      } = await this.graphql(query, { cursor })
 
-      for (const n of data.products.nodes) {
+      for (const n of gqlResponse.products.nodes) {
         out.push({
           platformId: n.id,
           sku: n.variants?.nodes?.[0]?.sku ?? null,
           updatedAt: n.updatedAt ?? null,
         })
       }
-      hasNext = data.products.pageInfo.hasNextPage
-      cursor = data.products.pageInfo.endCursor
+      hasNext = gqlResponse.products.pageInfo.hasNextPage
+      cursor = gqlResponse.products.pageInfo.endCursor
     }
 
     return out
@@ -732,7 +732,7 @@ export class ShopifyWarehouseConnector {
           }
         }
       `
-      const data = await this.graphql<{
+      const gqlResponse: {
         inventoryItems: {
           pageInfo: { hasNextPage: boolean; endCursor: string }
           nodes: Array<{
@@ -741,9 +741,9 @@ export class ShopifyWarehouseConnector {
             inventoryLevel: { quantities: Array<{ quantity: number }> } | null
           }>
         }
-      }>(query, { cursor, locationId: this.locationId })
+      } = await this.graphql(query, { cursor, locationId: this.locationId })
 
-      for (const item of data.inventoryItems.nodes) {
+      for (const item of gqlResponse.inventoryItems.nodes) {
         if (item.sku) {
           const qty = item.inventoryLevel?.quantities[0]?.quantity ?? 0
           snapshots.push({
@@ -756,8 +756,8 @@ export class ShopifyWarehouseConnector {
         }
       }
 
-      hasNext = data.inventoryItems.pageInfo.hasNextPage
-      cursor = data.inventoryItems.pageInfo.endCursor
+      hasNext = gqlResponse.inventoryItems.pageInfo.hasNextPage
+      cursor = gqlResponse.inventoryItems.pageInfo.endCursor
     }
 
     return snapshots

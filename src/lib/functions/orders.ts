@@ -122,7 +122,7 @@ export async function updateOrder(
 export async function reconcileOrders(triggeredBy: TriggeredBy = 'system'): Promise<number> {
   const openOrders = await db.query.orders.findMany({
     where: eq(orders.arrivalStatus, 'pending'),
-    with: { items: true, warehouse: false },
+    with: { items: true },
   })
 
   let reconciled = 0

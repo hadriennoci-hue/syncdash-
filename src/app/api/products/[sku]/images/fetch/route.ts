@@ -101,7 +101,7 @@ async function fetchFirecrawlImages(sourceUrl: string): Promise<{ url: string; a
         type:       'object',
         properties: { images: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, alt: { type: 'string' } }, required: ['url'] } } },
         required:   ['images'],
-      },
+      } as any,
     },
   })
 

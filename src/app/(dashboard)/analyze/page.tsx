@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/utils/api-fetch'
-import { INCONSISTENCY_LABELS } from '@/types/analysis'
+import { INCONSISTENCY_LABELS, type InconsistencyType } from '@/types/analysis'
 
 export default function AnalyzePage() {
   const { data, isLoading, refetch } = useQuery({
@@ -45,7 +45,7 @@ export default function AnalyzePage() {
                   <div className="flex flex-wrap gap-1">
                     {r.inconsistencies.map((inc: any) => (
                       <span key={inc.type} className="bg-amber-100 text-amber-700 px-1 rounded text-[10px]">
-                        {INCONSISTENCY_LABELS[inc.type] ?? inc.type}
+                        {INCONSISTENCY_LABELS[inc.type as InconsistencyType] ?? inc.type}
                       </span>
                     ))}
                   </div>
