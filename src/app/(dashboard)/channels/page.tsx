@@ -130,9 +130,9 @@ export default function ChannelsPage() {
                     return (
                       <span>
                         <span className="text-green-600">
-                          {s.imported} new · {s.updated} updated
+                          {s.imported} new ï¿½ {s.updated} updated
                         </span>
-                        {s.errors.length > 0 && <span className="text-amber-500"> · {s.errors.length} errors</span>}
+                        {s.errors.length > 0 && <span className="text-amber-500"> ï¿½ {s.errors.length} errors</span>}
                       </span>
                     )
                   })()
