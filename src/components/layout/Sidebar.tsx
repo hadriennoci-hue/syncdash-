@@ -10,8 +10,8 @@ import {
 
 const nav = [
   { href: '/',            label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/warehouses',  label: 'Warehouses',   icon: Warehouse },
+  { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },

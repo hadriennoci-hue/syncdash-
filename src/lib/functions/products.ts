@@ -4,7 +4,7 @@ import {
   productMetafields, platformMappings, productCategories,
 } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
 import type { Platform, SyncResult, TriggeredBy, ImageInput } from '@/types/platform'
@@ -16,6 +16,7 @@ import type { Platform, SyncResult, TriggeredBy, ImageInput } from '@/types/plat
 interface CreateProductInput {
   sku: string
   title: string
+  ean?: string
   description?: string
   vendor?: string
   productType?: string
@@ -50,6 +51,7 @@ export async function createProduct(
   await db.insert(products).values({
     id:          input.sku,
     title:       input.title,
+    ean:         input.ean ?? null,
     description: input.description ?? null,
     status:      'active',
     taxCode:     input.taxCode ?? null,
@@ -62,6 +64,7 @@ export async function createProduct(
     target: products.id,
     set: {
       title:       input.title,
+      ean:         input.ean ?? null,
       description: input.description ?? null,
       updatedAt:   new Date().toISOString(),
     },
@@ -116,8 +119,10 @@ export async function createProduct(
 
   for (const platform of input.platforms) {
     try {
-      const connector = getConnector(platform)
+      const connector = await createConnector(platform)
       const platformId = await connector.createProduct({
+        sku:         input.sku,
+        ean:         input.ean ?? null,
         title:       input.title,
         description: input.description ?? null,
         status:      'active',
@@ -217,7 +222,7 @@ export async function updateProduct(
         continue
       }
 
-      const connector = getConnector(platform)
+      const connector = await createConnector(platform)
       await connector.updateProduct(mapping.platformId, {
         title:       input.fields.title,
         description: input.fields.description,
@@ -266,7 +271,8 @@ export async function toggleProductStatus(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).toggleStatus(mapping.platformId, status)
+      const connToggle = await createConnector(platform)
+      await connToggle.toggleStatus(mapping.platformId, status)
       await logOperation({ productId: sku, platform, action: 'toggle_status', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {
@@ -299,7 +305,8 @@ export async function deleteProduct(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).deleteProduct(mapping.platformId)
+      const connDel = await createConnector(platform)
+      await connDel.deleteProduct(mapping.platformId)
       await db.delete(platformMappings)
         .where(and(eq(platformMappings.productId, sku), eq(platformMappings.platform, platform)))
       await logOperation({ productId: sku, platform, action: 'delete', status: 'success', triggeredBy })

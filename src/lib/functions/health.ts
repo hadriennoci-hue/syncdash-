@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
 import { apiHealthLog, salesChannels } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getConnector, getWarehouseConnector, ALL_PLATFORMS, ALL_WAREHOUSE_IDS } from '@/lib/connectors/registry'
+import { createConnector, createWarehouseConnector, ALL_PLATFORMS, ALL_WAREHOUSE_IDS } from '@/lib/connectors/registry'
 import { generateId } from '@/lib/utils/id'
 import type { HealthCheckResult } from '@/lib/connectors/types'
 
@@ -33,7 +33,7 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
   // Check all API platform connectors
   for (const platform of ALL_PLATFORMS) {
     try {
-      const connector = getConnector(platform)
+      const connector = await createConnector(platform)
       results[platform] = await connector.healthCheck()
     } catch (err) {
       results[platform] = {
@@ -57,7 +57,7 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
   // Check all warehouse connectors
   for (const warehouseId of ALL_WAREHOUSE_IDS) {
     try {
-      const connector = getWarehouseConnector(warehouseId)
+      const connector = await createWarehouseConnector(warehouseId)
       results[warehouseId] = await connector.healthCheck()
     } catch (err) {
       results[warehouseId] = {

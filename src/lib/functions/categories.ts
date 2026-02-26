@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
 import { productCategories, platformMappings } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, SyncResult, TriggeredBy } from '@/types/platform'
 
@@ -30,7 +30,8 @@ export async function assignCategories(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).assignCategories(mapping.platformId, categoryIds)
+      const connector = await createConnector(platform)
+      await connector.assignCategories(mapping.platformId, categoryIds)
       await logOperation({ productId: sku, platform, action: 'assign_categories', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {

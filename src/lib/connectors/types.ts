@@ -88,6 +88,10 @@ export interface RawMetafield {
 // ---------------------------------------------------------------------------
 
 export interface ProductPayload {
+  // Internal canonical SKU (product.id). Must be pushed as platform SKU when possible.
+  sku?: string
+  // EAN/GTIN barcode. Optional; skip push when empty.
+  ean?: string | null
   title: string
   description: string | null
   status: 'active' | 'archived'
@@ -133,6 +137,15 @@ export interface HealthCheckResult {
 export interface PlatformConnector {
   importProducts(): Promise<RawProduct[]>
   getProduct(platformId: string): Promise<RawProduct>
+  // Optional: channel-native last modification timestamp for this product.
+  // Used to protect recent manual edits from automatic stock-zero operations.
+  getProductUpdatedAt?(platformId: string): Promise<string | null>
+  // Optional: list channel products for stock-zero decisions (covers products
+  // that may not yet exist in local platform_mappings).
+  listProductsForZeroing?(): Promise<Array<{ platformId: string; sku: string | null; updatedAt: string | null }>>
+  // Resolve a platform-native product ID from SKU when no mapping exists yet.
+  // Returns null when the SKU is not found on that platform.
+  findProductIdBySku?(sku: string): Promise<string | null>
   createProduct(data: ProductPayload): Promise<string>  // returns platformId
   updateProduct(platformId: string, data: Partial<ProductPayload>): Promise<void>
   deleteProduct(platformId: string): Promise<void>

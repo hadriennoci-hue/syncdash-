@@ -1,7 +1,7 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 
@@ -23,9 +23,9 @@ interface ChannelSyncResult {
 }
 
 export function DashboardHome() {
+  const qc = useQueryClient()
   const { data: health }  = useQuery({ queryKey: ['health'],            queryFn: () => apiFetch('/api/health') })
   const { data: summary, isLoading: summaryLoading, isError: summaryError } = useQuery({ queryKey: ['dashboard-summary'], queryFn: () => apiFetch('/api/dashboard/summary') })
-  const { data: pending }   = useQuery({ queryKey: ['pending-review'], queryFn: () => apiFetch('/api/products?pendingReview=1&perPage=50') })
 
   const [scanning, setScanning]       = useState(false)
   const [scanResult, setScanResult]   = useState<WarehouseSyncResult[] | null>(null)
@@ -43,8 +43,9 @@ export function DashboardHome() {
     setLastStockScan(localStorage.getItem('lastStockScan'))
   }, [])
 
-  const [testing, setTesting]         = useState(false)
-  const [testResult, setTestResult]   = useState<Record<string, { ok: boolean; latencyMs: number | null; error?: string }> | null>(null)
+  const [testing, setTesting]               = useState(false)
+  const [testResult, setTestResult]         = useState<Record<string, { ok: boolean; latencyMs: number | null; error?: string }> | null>(null)
+  const [tokenStatus, setTokenStatus]       = useState<Array<{ platform: string; ok: boolean; expiresAt?: string; error?: string }> | null>(null)
 
   async function handleScanStocks() {
     setScanning(true)
@@ -56,6 +57,7 @@ export function DashboardHome() {
       const now = new Date().toISOString()
       localStorage.setItem('lastStockScan', now)
       setLastStockScan(now)
+      qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -65,7 +67,16 @@ export function DashboardHome() {
 
   async function handleTestConnections() {
     setTesting(true)
+    setTokenStatus(null)
     try {
+      // 1. Refresh Shopify OAuth tokens first (they last 24h)
+      const tokenRes = await apiPost('/api/tokens/refresh', {})
+      setTokenStatus(tokenRes.data?.results ?? null)
+    } catch {
+      // Token refresh failure is non-fatal â€” log and continue with env var tokens
+    }
+    try {
+      // 2. Run health check with fresh tokens
       const res = await apiPost('/api/health', {})
       setTestResult(res.data?.results ?? null)
     } catch {
@@ -81,6 +92,9 @@ export function DashboardHome() {
     setPushError(null)
     setBrowserQueued(null)
     try {
+      // Wake local browser runner immediately on Push click.
+      await apiPost('/api/runner/wake', { runner: 'browser', reason: 'dashboard push button' }).catch(() => null)
+
       const res = await apiPost('/api/sync/channel-availability', {
         platforms:   ['shopify_komputerzz', 'woocommerce'],
         triggeredBy: 'human',
@@ -89,6 +103,7 @@ export function DashboardHome() {
       const now = new Date().toISOString()
       localStorage.setItem('lastListingsUpdate', now)
       setLastListingsUpdate(now)
+      qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
 
       // Check if any products are queued for browser-automated channels
       const [lmRes, xmrRes] = await Promise.all([
@@ -113,7 +128,7 @@ export function DashboardHome() {
     <div className="space-y-4 max-w-4xl">
       <h1 className="text-sm font-semibold">Dashboard</h1>
 
-      <StatCard label="Last Listings Update" value={lastListingsUpdate ? lastListingsUpdate.slice(0, 16).replace('T', ' ') : '—'} href="/sync" />
+      <StatCard label="Last Listings Update" value={lastListingsUpdate ? lastListingsUpdate.slice(0, 16).replace('T', ' ') : 'â€”'} href="/sync" />
 
       {/* Stock & listings overview */}
       <div className="grid grid-cols-2 gap-3">
@@ -128,9 +143,9 @@ export function DashboardHome() {
             </thead>
             <tbody>
               {summaryLoading ? (
-                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loadingâ€¦</td></tr>
               ) : summaryError ? (
-                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load — check DB migrations</td></tr>
+                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load â€” check DB migrations</td></tr>
               ) : summaryData?.warehouses?.map((w: any) => (
                 <tr key={w.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 flex items-center gap-2">
@@ -155,9 +170,9 @@ export function DashboardHome() {
             </thead>
             <tbody>
               {summaryLoading ? (
-                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={2} className="px-3 py-2 text-muted-foreground">Loadingâ€¦</td></tr>
               ) : summaryError ? (
-                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load — check DB migrations</td></tr>
+                <tr><td colSpan={2} className="px-3 py-2 text-destructive text-xs">Failed to load â€” check DB migrations</td></tr>
               ) : summaryData?.channels?.map((c: any) => (
                 <tr key={c.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 flex items-center gap-2">
@@ -182,7 +197,7 @@ export function DashboardHome() {
               disabled={scanning}
               className="text-xs px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {scanning ? 'Scanning…' : 'Scan stocks'}
+              {scanning ? 'Scanningâ€¦' : 'Scan stocks'}
             </button>
           </div>
           {scanError && (
@@ -219,7 +234,7 @@ export function DashboardHome() {
               disabled={pushing}
               className="text-xs px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {pushing ? 'Updating…' : 'Update Products'}
+              {pushing ? 'Updating...' : 'Update Products'}
             </button>
           </div>
           {pushError && (
@@ -229,7 +244,7 @@ export function DashboardHome() {
           {browserQueued && (
             <div className="rounded border border-red-500 bg-red-50 dark:bg-red-950/30 p-2 space-y-1">
               <p className="text-xs font-semibold text-red-600">
-                ⚠ Browser channels still queued — run in terminal:
+                âš  Browser channels still queued â€” run in terminal:
               </p>
               <p className="text-xs font-mono bg-red-100 dark:bg-red-900/40 text-red-700 px-2 py-1 rounded select-all">
                 npm run push:browser
@@ -250,19 +265,16 @@ export function DashboardHome() {
         </div>
       </div>
 
-      {(pending as any)?.data?.length > 0 && (
+      {summaryData?.readyToPush?.count > 0 && (
         <section className="border border-amber-400 bg-amber-50 dark:bg-amber-950/20 rounded p-3 space-y-2">
           <h2 className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-            ⚠ {(pending as any).data.length} new product{(pending as any).data.length > 1 ? 's' : ''} pending review
+            There are {summaryData.readyToPush.count} references in stock ready to push to sale channels
           </h2>
-          <p className="text-xs text-muted-foreground">
-            These SKUs were automatically created from ACER Store and pushed to channels. Please verify title, description, images and category before publishing.
-          </p>
           <div className="flex flex-wrap gap-1">
-            {(pending as any).data.map((p: any) => (
-              <Link key={p.id} href={`/products/${p.id}`}
+            {(summaryData.readyToPush.skus as string[]).map((sku) => (
+              <Link key={sku} href={`/products/${sku}`}
                 className="text-xs font-mono bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded hover:underline">
-                {p.id}
+                {sku}
               </Link>
             ))}
           </div>
@@ -278,16 +290,29 @@ export function DashboardHome() {
               disabled={testing}
               className="text-xs px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {testing ? 'Testing…' : 'Test API connections'}
+              {testing ? 'Testing...' : 'Test API connections'}
             </button>
           </div>
           <ConnSummary results={testResult ?? healthData?.results ?? null} />
+          {tokenStatus && (
+            <div className="mt-1.5 space-y-0.5">
+              {tokenStatus.map((t) => (
+                <p key={t.platform} className={`text-xs ${t.ok ? 'text-green-600' : 'text-destructive'}`}>
+                  {t.platform === 'shopify_komputerzz' ? 'Komputerzz' : 'TikTok'} token:{' '}
+                  {t.ok
+                    ? `refreshed, expires ${t.expiresAt ? t.expiresAt.slice(0, 16).replace('T', ' ') : '?'}`
+                    : t.error ?? 'refresh failed'
+                  }
+                </p>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="border border-border rounded p-3 space-y-2">
           <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sync Logs</h2>
           <p className="text-xs text-muted-foreground">Full history of automated and manual syncs.</p>
-          <Link href="/sync" className="text-xs text-primary hover:underline">View all logs →</Link>
+          <Link href="/sync" className="text-xs text-primary hover:underline">View all logs â†’</Link>
         </section>
       </div>
     </div>
@@ -305,7 +330,7 @@ const CONN_LABELS: Record<string, string> = {
 }
 
 function ConnSummary({ results }: { results: Record<string, { ok: boolean; latencyMs: number | null; error?: string }> | null }) {
-  if (!results) return <p className="text-xs text-muted-foreground">No data yet — click Test to check.</p>
+  if (!results) return <p className="text-xs text-muted-foreground">No data yet â€” click Test to check.</p>
 
   const entries  = Object.entries(results)
   const total    = entries.length
@@ -318,7 +343,7 @@ function ConnSummary({ results }: { results: Record<string, { ok: boolean; laten
         ? <p className="text-xs font-medium text-green-600">{total} / {total} online</p>
         : (
           <p className="text-xs font-medium text-destructive">
-            {onlineCount} / {total} online — {offline.map(([k]) => CONN_LABELS[k] ?? k).join(', ')} offline
+            {onlineCount} / {total} online â€” {offline.map(([k]) => CONN_LABELS[k] ?? k).join(', ')} offline
           </p>
         )
       }
@@ -342,7 +367,7 @@ function ConnDot({ status }: { status?: { ok: boolean } | null }) {
 }
 
 function PushResultDisplay({ results }: { results: ChannelSyncResult[] }) {
-  // Incomplete products are shared across all platforms in the abort case — deduplicate by SKU
+  // Incomplete products are shared across all platforms in the abort case â€” deduplicate by SKU
   const incompleteList = Array.from(
     new Map(
       results.flatMap((r) => r.incomplete ?? []).map((i) => [i.sku, i])
@@ -353,7 +378,7 @@ function PushResultDisplay({ results }: { results: ChannelSyncResult[] }) {
     return (
       <div className="space-y-1.5 text-xs">
         <p className="font-medium text-destructive">
-          Push aborted — {incompleteList.length} incomplete product{incompleteList.length > 1 ? 's' : ''}:
+          Push aborted â€” {incompleteList.length} incomplete product{incompleteList.length > 1 ? 's' : ''}:
         </p>
         <ul className="space-y-0.5 max-h-48 overflow-y-auto">
           {incompleteList.map(({ sku, missing }) => (
@@ -383,7 +408,7 @@ function PushResultDisplay({ results }: { results: ChannelSyncResult[] }) {
                   r.newProductsCreated > 0 && `${r.newProductsCreated} new`,
                   r.statusUpdated > 0      && `${r.statusUpdated} updated`,
                   r.zeroedOutOfStock > 0   && `${r.zeroedOutOfStock} zeroed`,
-                ].filter(Boolean).join(' · ') || 'nothing to push'
+                ].filter(Boolean).join(' | ') || 'nothing to push'
             }
           </span>
         </div>

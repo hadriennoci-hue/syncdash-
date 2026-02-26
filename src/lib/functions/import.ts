@@ -4,7 +4,7 @@ import {
   productMetafields, platformMappings, categories, productCategories,
 } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
 import type { Platform, TriggeredBy } from '@/types/platform'
@@ -20,7 +20,7 @@ export async function importFromPlatform(
   platform: Platform,
   triggeredBy: TriggeredBy = 'human'
 ): Promise<ImportResult> {
-  const connector = getConnector(platform)
+  const connector = await createConnector(platform)
   const rawProducts = await connector.importProducts()
 
   // Products imported from TikTok (Ireland warehouse) are always ACER products.

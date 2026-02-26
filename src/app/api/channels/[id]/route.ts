@@ -3,7 +3,7 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { products, salesChannels } from '@/lib/db/schema'
-import { eq, ne, desc, sql } from 'drizzle-orm'
+import { eq, or, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
 const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
@@ -69,10 +69,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const pushCol = getPushCol(platform)
 
   const rows = await db.query.products.findMany({
-    where:   ne(pushCol, 'N'),
+    where:   or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`),
     with:    { prices: true, warehouseStock: true, platformMappings: true },
     orderBy: [
-      sql`CASE WHEN ${pushCol} = '2push' THEN 0 ELSE 1 END`,
+      sql`CASE WHEN ${pushCol} = '2push' THEN 0 WHEN ${pushCol} LIKE 'FAIL:%' THEN 1 ELSE 2 END`,
       desc(products.updatedAt),
     ],
     limit:  perPage,
@@ -105,8 +105,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       pushStatus,
       price:            priceRow?.price    ?? null,
       compareAt:        priceRow?.compareAt ?? null,
-      importPrice:      stockMap.acer_store.importPrice,
-      importPromoPrice: stockMap.acer_store.importPromoPrice,
+      importPrice:      stockMap.acer_store.importPrice ?? stockMap.ireland.importPrice ?? null,
+      importPromoPrice: stockMap.acer_store.importPromoPrice ?? stockMap.ireland.importPromoPrice ?? null,
       stock: {
         ireland:    stockMap.ireland.qty,
         acer_store: stockMap.acer_store.qty,

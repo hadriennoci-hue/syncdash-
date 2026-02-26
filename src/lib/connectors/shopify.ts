@@ -19,7 +19,7 @@ export class ShopifyConnector implements PlatformConnector {
     // If omitted, updateStock() will use the shop's primary location.
     private readonly locationId?: string
   ) {
-    this.baseUrl = `https://${shop}/admin/api/2024-01`
+    this.baseUrl = `https://${shop}/admin/api/2025-01`
   }
 
   // -------------------------------------------------------------------------
@@ -45,6 +45,29 @@ export class ShopifyConnector implements PlatformConnector {
     return json.data as T
   }
 
+  private async rest<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: Record<string, unknown>): Promise<T> {
+    await shopifyLimiter.throttle()
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': this.token,
+        'User-Agent': 'Wizhard/1.0',
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      // @ts-ignore
+      cf: { cacheEverything: false },
+    })
+    if (!res.ok) throw new Error(`Shopify REST error: ${res.status} ${await res.text()}`)
+    return res.json() as Promise<T>
+  }
+
+  private gidToNumericId(gid: string): number {
+    const n = Number(gid.split('/').pop() ?? '')
+    if (!Number.isFinite(n) || n <= 0) throw new Error(`Invalid Shopify GID: ${gid}`)
+    return n
+  }
+
   // -------------------------------------------------------------------------
   // Import (paginated)
   // -------------------------------------------------------------------------
@@ -65,12 +88,12 @@ export class ShopifyConnector implements PlatformConnector {
               metafields(first: 50) { nodes { namespace key value type } }
               variants(first: 50) {
                 nodes {
-                  id title sku price compareAtPrice inventoryQuantity position weight
+                  id title sku price compareAtPrice inventoryQuantity position
                   selectedOptions { name value }
                 }
               }
               images(first: 20) {
-                nodes { id url altText width height position }
+                nodes { id url altText width height }
               }
             }
           }
@@ -188,8 +211,8 @@ export class ShopifyConnector implements PlatformConnector {
       query Product($id: ID!) {
         product(id: $id) {
           id title descriptionHtml status vendor productType
-          variants(first: 50) { nodes { id title sku price compareAtPrice inventoryQuantity position weight selectedOptions { name value } } }
-          images(first: 20) { nodes { id url altText width height position } }
+          variants(first: 50) { nodes { id title sku price compareAtPrice inventoryQuantity position selectedOptions { name value } } }
+          images(first: 20) { nodes { id url altText width height } }
           collections(first: 20) { nodes { id title handle } }
           metafields(first: 50) { nodes { namespace key value type } }
         }
@@ -201,46 +224,123 @@ export class ShopifyConnector implements PlatformConnector {
     return product
   }
 
+  async getProductUpdatedAt(platformId: string): Promise<string | null> {
+    const query = `
+      query ProductUpdatedAt($id: ID!) {
+        product(id: $id) { updatedAt }
+      }
+    `
+    const data = await this.graphql<{ product: { updatedAt?: string } | null }>(query, { id: platformId })
+    return data.product?.updatedAt ?? null
+  }
+
+  async findProductIdBySku(sku: string): Promise<string | null> {
+    const query = `
+      query ProductIdBySku($q: String!) {
+        productVariants(first: 1, query: $q) {
+          nodes {
+            product { id }
+          }
+        }
+      }
+    `
+    const data = await this.graphql<{
+      productVariants: { nodes: Array<{ product?: { id?: string } }> }
+    }>(query, { q: `sku:"${sku}"` })
+    return data.productVariants.nodes[0]?.product?.id ?? null
+  }
+
   // -------------------------------------------------------------------------
   // Create product
   // -------------------------------------------------------------------------
 
+  private async updateVariantIdentity(
+    variantId: string,
+    identity: { sku?: string | null; barcode?: string | null }
+  ): Promise<void> {
+    if (!identity.sku && !identity.barcode) return
+    const numericId = this.gidToNumericId(variantId)
+    await this.rest('PUT', `/variants/${numericId}.json`, {
+      variant: {
+        id: numericId,
+        ...(identity.sku ? { sku: identity.sku } : {}),
+        ...(identity.barcode ? { barcode: identity.barcode } : {}),
+      },
+    })
+  }
+
   async createProduct(data: ProductPayload): Promise<string> {
-    const mutation = `
-      mutation CreateProduct($input: ProductInput!) {
-        productCreate(input: $input) {
-          product { id }
+    // Shopify 2024-04+ new product API: ProductCreateInput
+    // - no variants field (Shopify auto-creates a default variant)
+    // - category is the taxonomy node GID directly (not ProductCategoryInput wrapper)
+    const createMutation = `
+      mutation CreateProduct($product: ProductCreateInput!) {
+        productCreate(product: $product) {
+          product {
+            id
+            variants(first: 1) { nodes { id } }
+          }
           userErrors { field message }
         }
       }
     `
-    const input: Record<string, unknown> = {
+    const productInput: Record<string, unknown> = {
       title:           data.title,
       descriptionHtml: data.description ?? '',
       status:          data.status.toUpperCase(),
-      vendor:          data.vendor,
-      productType:     data.productType,
-      variants:        data.variants?.map((v) => ({
-        title:           v.title,
-        sku:             v.sku,
-        price:           v.price?.toString(),
-        compareAtPrice:  v.compareAt?.toString(),
-        inventoryQuantities: [{ availableQuantity: v.stock, locationId: '' }],
-      })) ?? [],
+      // Shopify product taxonomy category (tax classification). Always Electronics.
+      category:        data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
     }
-    // Shopify product taxonomy category (used for tax classification).
-    // Defaults to Electronics. Override via data.shopifyCategory if needed.
-    input.productCategory = {
-      productTaxonomyNodeId: data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
-    }
-    const result = await this.graphql<{ productCreate: { product: { id: string }; userErrors: Array<{ message: string }> } }>(
-      mutation,
-      { input }
-    )
+    if (data.vendor)      productInput.vendor = data.vendor
+    if (data.productType) productInput.productType = data.productType
+
+    const result = await this.graphql<{
+      productCreate: {
+        product: { id: string; variants: { nodes: Array<{ id: string }> } } | null
+        userErrors: Array<{ message: string }>
+      }
+    }>(createMutation, { product: productInput })
+
     if (result.productCreate.userErrors.length > 0) {
       throw new Error(result.productCreate.userErrors.map((e) => e.message).join(', '))
     }
-    return result.productCreate.product.id
+
+    const productId       = result.productCreate.product!.id
+    const defaultVariantId = result.productCreate.product!.variants.nodes[0]?.id
+
+    // Set price and enable inventory tracking on the auto-created default variant.
+    // inventoryItem.tracked must be true or inventorySetOnHandQuantities silently does nothing.
+    if (defaultVariantId) {
+      const variantMutation = `
+        mutation UpdateVariantPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            userErrors { field message }
+          }
+        }
+      `
+      const variantInput: Record<string, unknown> = {
+        id:            defaultVariantId,
+        inventoryItem: { tracked: true },
+      }
+      if (data.ean) variantInput.barcode = data.ean
+      if (data.price != null)    variantInput.price = data.price.toString()
+      if (data.compareAt != null) variantInput.compareAtPrice = data.compareAt.toString()
+
+      const varUpdate = await this.graphql<{
+        productVariantsBulkUpdate: { userErrors: Array<{ message: string }> }
+      }>(variantMutation, { productId, variants: [variantInput] })
+      if (varUpdate.productVariantsBulkUpdate.userErrors.length > 0) {
+        throw new Error(varUpdate.productVariantsBulkUpdate.userErrors.map((e) => e.message).join(', '))
+      }
+
+      // Some stores reject SKU in ProductVariantsBulkInput. Set SKU/EAN in a dedicated call.
+      await this.updateVariantIdentity(defaultVariantId, {
+        sku: data.sku ?? null,
+        barcode: data.ean ?? null,
+      }).catch(() => {})
+    }
+
+    return productId
   }
 
   // -------------------------------------------------------------------------
@@ -248,25 +348,47 @@ export class ShopifyConnector implements PlatformConnector {
   // -------------------------------------------------------------------------
 
   async updateProduct(platformId: string, data: Partial<ProductPayload>): Promise<void> {
+    // Shopify schema on this store expects productUpdate(product: ProductUpdateInput!)
+    // with product.id inside the input.
     const mutation = `
-      mutation UpdateProduct($input: ProductInput!) {
-        productUpdate(input: $input) {
+      mutation UpdateProduct($product: ProductUpdateInput!) {
+        productUpdate(product: $product) {
           product { id }
           userErrors { field message }
         }
       }
     `
-    const input: Record<string, unknown> = { id: platformId }
-    if (data.title)       input.title = data.title
-    if (data.description !== undefined) input.descriptionHtml = data.description ?? ''
-    if (data.status)      input.status = data.status.toUpperCase()
-    if (data.vendor)      input.vendor = data.vendor
+    const productInput: Record<string, unknown> = { id: platformId }
+    if (data.title)                     productInput.title = data.title
+    if (data.description !== undefined) productInput.descriptionHtml = data.description ?? ''
+    if (data.status)                    productInput.status = data.status.toUpperCase()
+    if (data.vendor)                    productInput.vendor = data.vendor
 
     const result = await this.graphql<{ productUpdate: { userErrors: Array<{ message: string }> } }>(
-      mutation, { input }
+      mutation, { product: productInput }
     )
     if (result.productUpdate.userErrors.length > 0) {
       throw new Error(result.productUpdate.userErrors.map((e) => e.message).join(', '))
+    }
+
+    // EAN lives on the variant; keep SKU unchanged for existing products.
+    if (data.ean || data.sku) {
+      const variantQuery = `
+        query ProductVariant($id: ID!) {
+          product(id: $id) { variants(first: 1) { nodes { id } } }
+        }
+      `
+      const variantData = await this.graphql<{ product: { variants: { nodes: Array<{ id: string }> } } }>(
+        variantQuery,
+        { id: platformId }
+      )
+      const variantId = variantData.product.variants.nodes[0]?.id
+      if (variantId) {
+        await this.updateVariantIdentity(variantId, {
+          sku: data.sku ?? null,
+          barcode: data.ean ?? null,
+        }).catch(() => {})
+      }
     }
   }
 
@@ -351,19 +473,12 @@ export class ShopifyConnector implements PlatformConnector {
     const variantId = data.product.variants.nodes[0]?.id
     if (!variantId) return
 
-    const mutation = `
-      mutation UpdateVariant($input: ProductVariantInput!) {
-        productVariantUpdate(input: $input) {
-          productVariant { id }
-          userErrors { field message }
-        }
-      }
-    `
-    await this.graphql(mutation, {
-      input: {
-        id:            variantId,
-        price:         price?.toString(),
-        compareAtPrice: compareAt?.toString() ?? null,
+    const numericId = this.gidToNumericId(variantId)
+    await this.rest('PUT', `/variants/${numericId}.json`, {
+      variant: {
+        id: numericId,
+        price: price?.toString() ?? null,
+        compare_at_price: compareAt?.toString() ?? null,
       },
     })
   }
@@ -487,6 +602,45 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  async listProductsForZeroing(): Promise<Array<{ platformId: string; sku: string | null; updatedAt: string | null }>> {
+    const out: Array<{ platformId: string; sku: string | null; updatedAt: string | null }> = []
+    let cursor: string | null = null
+    let hasNext = true
+
+    while (hasNext) {
+      const query = `
+        query ProductsForZero($cursor: String) {
+          products(first: 50, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              updatedAt
+              variants(first: 1) { nodes { sku } }
+            }
+          }
+        }
+      `
+      const data = await this.graphql<{
+        products: {
+          pageInfo: { hasNextPage: boolean; endCursor: string }
+          nodes: Array<{ id: string; updatedAt?: string; variants?: { nodes?: Array<{ sku?: string | null }> } }>
+        }
+      }>(query, { cursor })
+
+      for (const n of data.products.nodes) {
+        out.push({
+          platformId: n.id,
+          sku: n.variants?.nodes?.[0]?.sku ?? null,
+          updatedAt: n.updatedAt ?? null,
+        })
+      }
+      hasNext = data.products.pageInfo.hasNextPage
+      cursor = data.products.pageInfo.endCursor
+    }
+
+    return out
+  }
+
   // -------------------------------------------------------------------------
   // Status
   // -------------------------------------------------------------------------
@@ -537,7 +691,7 @@ export class ShopifyWarehouseConnector {
     private readonly token: string,
     private readonly locationId: string
   ) {
-    this.baseUrl = `https://${shop}/admin/api/2024-01`
+    this.baseUrl = `https://${shop}/admin/api/2025-01`
   }
 
   private async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
@@ -561,7 +715,7 @@ export class ShopifyWarehouseConnector {
   }
 
   async getStock() {
-    const snapshots: Array<{ sku: string; quantity: number; sourceName?: string }> = []
+    const snapshots: Array<{ sku: string; quantity: number; sourceName?: string; importPrice?: number | null; importPromoPrice?: number | null }> = []
     let cursor: string | null = null
     let hasNext = true
 
@@ -572,7 +726,7 @@ export class ShopifyWarehouseConnector {
             pageInfo { hasNextPage endCursor }
             nodes {
               sku
-              variant { product { title } }
+              variant { price compareAtPrice product { title } }
               inventoryLevel(locationId: $locationId) { quantities(names: ["available"]) { quantity } }
             }
           }
@@ -583,7 +737,7 @@ export class ShopifyWarehouseConnector {
           pageInfo: { hasNextPage: boolean; endCursor: string }
           nodes: Array<{
             sku: string
-            variant: { product: { title: string } } | null
+            variant: { price: string | null; compareAtPrice: string | null; product: { title: string } } | null
             inventoryLevel: { quantities: Array<{ quantity: number }> } | null
           }>
         }
@@ -593,9 +747,11 @@ export class ShopifyWarehouseConnector {
         if (item.sku) {
           const qty = item.inventoryLevel?.quantities[0]?.quantity ?? 0
           snapshots.push({
-            sku: item.sku,
-            quantity: qty,
-            sourceName: item.variant?.product?.title ?? undefined,
+            sku:              item.sku,
+            quantity:         qty,
+            sourceName:       item.variant?.product?.title ?? undefined,
+            importPrice:      item.variant?.price ? parseFloat(item.variant.price) : null,
+            importPromoPrice: item.variant?.compareAtPrice ? parseFloat(item.variant.compareAtPrice) : null,
           })
         }
       }

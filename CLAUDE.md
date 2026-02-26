@@ -6,8 +6,10 @@
 
 **Name:** Wizhard
 **Description:** Internal dashboard to sync product catalogues across COINCART.STORE (WooCommerce), KOMPUTERZZ.COM (Shopify), and a TikTok Shop Shopify account — plus warehouse stock management (Ireland, Poland, ACER Store), supplier tracking, and purchase order management.
-**Stack:** Next.js 14, TypeScript, Tailwind, shadcn/ui, Drizzle ORM, Cloudflare D1, Cloudflare Pages
+**Stack:** Next.js 14, TypeScript, Tailwind, shadcn/ui, Drizzle ORM, Cloudflare Workers, Cloudflare D1, Cloudflare R2
 **Auth:** Cloudflare Access (SSO) for the web UI. Bearer token for all `/api/*` routes.
+Cloudflare runtime architecture: Worker uses D1 binding `DB` (`syncdash-db`) for app data and R2 binding `R2_IMAGES` (`syncdash-images`) for product media; browser channels (`xmr_bazaar`, `libre_market`) are manual/local script pushes.
+Live Worker ops: script name `syncdash`, custom domain `wizhard.store`, workers.dev subdomain `hadrien-noci`, cron schedules at `0 5 * * *` (daily sync) and `0 6 * * *` (daily health check).
 
 ---
 
@@ -69,11 +71,32 @@ Same pattern as platforms. Adding a warehouse = implement `WarehouseConnector` +
 ### pendingReview flag
 When a product is auto-created from ACER Store scraping (new SKU found in stock with no D1 record), it is created with `pendingReview: 1`. The home page surfaces these for manual verification before publishing. Always set `pendingReview: 1` on auto-created products; never set it on manually created ones.
 
+### Browser channels runtime (local only)
+- `xmr_bazaar` and `libre_market` are browser channels and are processed by the local script/runner (`scripts/push-browser-channels.ts`), not by Worker connectors.
+- Push lifecycle for browser channels is `2push -> done/FAIL` in `products` push-status fields.
+- End-of-run reconciliation:
+  - XMR: listings not opened during the run are set to `Out of Stock`.
+  - Libre: listings not opened during the run are edited with stock `0`.
+
+### Missing mapped listing/product recovery
+- If a mapped browser listing is missing remotely (`Listing not found` / `Produit non trouvé`), recreate from scratch and replace `platform_mappings.platform_id` with the new ID.
+- For API channels (Shopify/WooCommerce), if mapped ID update fails, fallback is: search by SKU -> remap and update; if SKU not found -> create and remap.
+
+### ACER health check nuance
+- Direct server-side fetch to ACER URLs may fail due to JS/challenge/consent flow.
+- Health check uses progressive URL attempts (`3s/5s/7s/10s`) and still verifies Firecrawl communication.
+- If Firecrawl succeeds, ACER is considered healthy even when direct URL fetch is blocked.
+
+### Local runner behavior
+- Runner watches `/api/runner/wake` and triggers browser push quickly on wake signal; fallback cycle remains available.
+- Idle heartbeat is logged every 5 minutes so background wait state is visible.
+
 ---
 
 ## Environment Variables
 
-All secrets live in `.env.local` (local dev) or Cloudflare Pages environment (production).
+All secrets live in `.env.local` / `.dev.vars` (local dev) or Cloudflare Worker secrets/vars (production).
+For local Cloudflare/Wrangler runs, `.dev.vars` stores local auth and environment values and must never be committed.
 
 ```bash
 # API auth
@@ -376,12 +399,13 @@ describe('overrideWarehouseStock', () => {
 ```bash
 # Development
 # Two modes — choose based on what you need:
+# Agent rule: if user asks to "start local server", assume full stack with databases (use `npm run dev:cf`).
 npm run dev            # UI only — fast HMR, no D1 (all API routes return 500)
-npm run dev:cf         # Full stack — builds with next-on-pages then runs via Wrangler
+npm run dev:cf         # Full stack worker runtime (OpenNext build + Wrangler dev)
                        # Slower (requires full build) but D1 + all bindings work
                        # Run db:migrate + db:seed first if local DB is empty
-npm run build          # Build for Cloudflare Pages
-npm run deploy         # Deploy to Cloudflare Pages
+npm run build          # Build app artifacts
+npm run deploy         # Deploy Worker via OpenNext/Cloudflare
 
 # Quality
 npm run lint           # ESLint
@@ -389,12 +413,15 @@ npm run type-check     # TypeScript check
 npm run test           # Vitest unit tests
 
 # Database — run all in order on first setup
+npm run db:bootstrap   # Recommended local bootstrap (applies migrations + seed, tolerant on re-runs)
 npm run db:migrate     # Migration 1 — base schema
 npm run db:migrate2    # Migration 2 — product custom fields
 npm run db:migrate4    # Migration 4 — warehouse channel priority
 npm run db:migrate5    # Migration 5 — warehouse_stock source_url/source_name + pending_review
 npm run db:migrate6    # Migration 6 — suppliers contact_first_name/contact_last_name
 npm run db:migrate7    # Migration 7 — products pushed_woocommerce/pushed_shopify_komputerzz/pushed_shopify_tiktok
+npm run db:migrate8    # Migration 8 — drop deprecated short_description
+npm run db:migrate9    # Migration 9 — warehouse_stock import_price/import_promo_price
 npm run db:seed        # Seed suppliers + warehouses + channel rules
 npm run db:studio      # Drizzle Studio (visual DB browser)
 npm run db:generate    # Generate new migration from schema changes
@@ -402,6 +429,27 @@ npm run db:generate    # Generate new migration from schema changes
 # Wrangler (Cloudflare)
 npx wrangler d1 list                          # List D1 databases
 npx wrangler d1 execute syncdash-db --local   # Run SQL locally
+```
+
+---
+
+## Ops Runbook (Quick)
+
+Use these read-only checks at the start of future sessions when needed:
+
+```bash
+# Auth/account
+npx wrangler whoami
+
+# Worker status
+npx wrangler deployments status --name syncdash
+npx wrangler deployments list --name syncdash
+
+# Data stores
+npx wrangler d1 list
+npx wrangler d1 execute syncdash-db --remote --command "SELECT COUNT(*) AS products FROM products;"
+npx wrangler r2 bucket info syncdash-images
+npx wrangler r2 bucket dev-url get syncdash-images
 ```
 
 ---
@@ -415,3 +463,25 @@ npx wrangler d1 execute syncdash-db --local   # Run SQL locally
 - [API Contracts](./api-contracts.md)
 - [Tech Stack](./tech-stack.md)
 - [User Flows](./user-flows.md)
+
+---
+
+## Deferred Decisions (Remind Next Sessions)
+
+- Wrangler upgrade to v4: deferred for now (do not perform yet; remind before future deploy/tooling changes).
+- `/api/cron` hardening (scheduled-only enforcement): deferred for now (keep current behavior; revisit later).
+- Add a short ops runbook section only if it will help continuity across future sessions.
+
+## Session Shortcut Rule
+
+- If the user asks for **"Test restart"**, always execute this full sequence in order:
+  1. Close every running instance of the local test server.
+  2. Close every running instance of the local browser runner.
+  3. Close all open PowerShell windows.
+  4. Clear the local **product database data only** (products and dependent product tables; keep config/reference tables).
+  5. Restart the local test server.
+  6. Restart the local browser runner.
+  7. Sync **Ireland** warehouse only.
+- Runner visibility constraint (current user preference):
+  - Always launch runner in a **visible terminal window**.
+  - Always run browser automation in **headed mode** (browser windows visible), not headless.

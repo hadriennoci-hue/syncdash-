@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
-import { paginatedResponse } from '@/lib/utils/api-response'
+import { paginatedResponse, apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { syncLog } from '@/lib/db/schema'
 import { eq, desc, and, SQL } from 'drizzle-orm'
+import { logOperation } from '@/lib/functions/log'
 
 
 // GET — list sync log entries (paginated, filterable)
@@ -36,4 +38,35 @@ export async function GET(req: NextRequest) {
   ])
 
   return paginatedResponse(rows, totalRows.length, page, perPage)
+}
+
+const postSchema = z.object({
+  productId: z.string().optional(),
+  platform: z.string().optional(),
+  action: z.string().min(1).max(100),
+  status: z.enum(['success', 'error']),
+  message: z.string().max(5000).optional(),
+  triggeredBy: z.enum(['human', 'agent', 'system']).default('agent'),
+})
+
+// POST â€” append a sync log entry (used by local browser runner/script)
+export async function POST(req: NextRequest) {
+  const auth = verifyBearer(req)
+  if (auth) return auth
+
+  const body = await req.json().catch(() => ({}))
+  const parsed = postSchema.safeParse(body)
+  if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
+
+  await logOperation({
+    productId: parsed.data.productId,
+    platform: parsed.data.platform,
+    action: parsed.data.action,
+    status: parsed.data.status,
+    message: parsed.data.message,
+    // logOperation currently accepts human|agent. Keep system mapped to agent.
+    triggeredBy: parsed.data.triggeredBy === 'system' ? 'agent' : parsed.data.triggeredBy,
+  })
+
+  return apiResponse({ success: true }, 201)
 }

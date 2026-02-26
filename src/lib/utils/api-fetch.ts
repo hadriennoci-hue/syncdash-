@@ -1,6 +1,12 @@
 const BEARER = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN ?? ''
 
-export async function apiFetch(path: string, options?: RequestInit) {
+type ApiErrorBody = {
+  error?: {
+    message?: string
+  }
+}
+
+export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...options,
     headers: {
@@ -10,10 +16,12 @@ export async function apiFetch(path: string, options?: RequestInit) {
     },
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const rawBody: unknown = await res.json().catch(() => undefined)
+    const body: ApiErrorBody | undefined =
+      rawBody && typeof rawBody === 'object' ? (rawBody as ApiErrorBody) : undefined
     throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
   }
-  return res.json()
+  return (await res.json()) as T
 }
 
 export async function apiPost(path: string, data: unknown) {

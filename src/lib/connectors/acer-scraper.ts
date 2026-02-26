@@ -75,59 +75,44 @@ export class AcerScraperConnector implements WarehouseConnector {
   }
 
   async getStock(): Promise<WarehouseStockSnapshot[]> {
-    const seen = new Set<string>()
-    const snapshots: WarehouseStockSnapshot[] = []
-
-    for (const baseUrl of this.urls) {
-      // Crawl the category including all paginated pages.
-      // includePaths constrains crawling to the same category path so we
-      // don't follow individual product detail pages or unrelated sections.
-      const categoryPath = new URL(baseUrl).pathname
-      const crawlResult = await this.firecrawl.crawlUrl(baseUrl, {
-        limit: 20,
-        includePaths: [`${categoryPath}*`],
-        scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
-      }, true)
-
-      if (!crawlResult.success || !('data' in crawlResult) || !crawlResult.data?.length) {
-        throw new Error(`Firecrawl crawl failed for ${baseUrl}`)
-      }
-
-      const pageUrls = (crawlResult.data as Array<{ metadata?: { sourceURL?: string } }>)
-        .map((d) => d.metadata?.sourceURL)
-        .filter((u): u is string => Boolean(u))
-
-      if (pageUrls.length === 0) continue
-
-      // Extract structured product data from all discovered pages at once
-      const result = await this.firecrawl.extract(pageUrls, {
+    // Single extract across all category URLs — avoids per-category crawl+extract
+    // pairs that hit Firecrawl concurrent-job limits.
+    let result: Awaited<ReturnType<typeof this.firecrawl.extract>>
+    try {
+      result = await this.firecrawl.extract(this.urls, {
         prompt: EXTRACT_PROMPT,
         schema: AcerProductSchema,
       })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Firecrawl extract failed: ${msg}`)
+    }
 
-      if (!result.success) {
-        const msg = 'error' in result ? String(result.error) : 'Unknown Firecrawl error'
-        throw new Error(`Firecrawl extraction failed for ${baseUrl}: ${msg}`)
-      }
+    if (!result.success) {
+      const msg = 'error' in result ? String(result.error) : 'Unknown Firecrawl error'
+      throw new Error(`Firecrawl extraction failed: ${msg}`)
+    }
 
-      const parsed = AcerProductSchema.safeParse(result.data)
-      if (!parsed.success) {
-        throw new Error(`Unexpected Firecrawl response shape for ${baseUrl}: ${parsed.error.message}`)
-      }
+    const parsed = AcerProductSchema.safeParse(result.data)
+    if (!parsed.success) {
+      throw new Error(`Unexpected Firecrawl response shape: ${parsed.error.message}`)
+    }
 
-      for (const product of parsed.data.products) {
-        const sku = product.sku.trim()
-        if (!sku || seen.has(sku)) continue
-        seen.add(sku)
-        snapshots.push({
-          sku,
-          quantity:         product.inStock ? 2 : 0,
-          sourceUrl:        product.url,
-          sourceName:       product.name,
-          importPrice:      product.price ?? null,
-          importPromoPrice: product.promoPrice ?? null,
-        })
-      }
+    const seen = new Set<string>()
+    const snapshots: WarehouseStockSnapshot[] = []
+
+    for (const product of parsed.data.products) {
+      const sku = product.sku.trim()
+      if (!sku || seen.has(sku)) continue
+      seen.add(sku)
+      snapshots.push({
+        sku,
+        quantity:         product.inStock ? 2 : 0,
+        sourceUrl:        product.url,
+        sourceName:       product.name,
+        importPrice:      product.price ?? null,
+        importPromoPrice: product.promoPrice ?? null,
+      })
     }
 
     return snapshots
@@ -136,16 +121,32 @@ export class AcerScraperConnector implements WarehouseConnector {
   async healthCheck(): Promise<HealthCheckResult> {
     const start = Date.now()
     try {
-      const result = await this.firecrawl.extract([this.urls[0]], {
+      const firstUrl = this.urls[0]
+      if (!firstUrl) {
+        return {
+          ok: false,
+          latencyMs: Date.now() - start,
+          error: 'No ACER_STORE_SCRAPE_URLS configured',
+        }
+      }
+      // ACER URL is considered live by policy for health checks.
+      // Verify only Firecrawl API communication with a minimal extract request.
+      const result = await this.firecrawl.extract([firstUrl], {
         prompt: 'Return the name and SKU of the first product visible on the page.',
         schema: HealthSchema,
       })
+      if (!result.success) {
+        return {
+          ok: false,
+          latencyMs: Date.now() - start,
+          error: `Firecrawl communication failed: ${'error' in result ? String(result.error) : 'unknown error'}`,
+        }
+      }
+
       return {
-        ok: result.success,
+        ok: true,
         latencyMs: Date.now() - start,
-        error: result.success
-          ? null
-          : 'error' in result ? String(result.error) : 'Unknown error',
+        error: null,
       }
     } catch (err) {
       return {

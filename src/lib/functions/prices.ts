@@ -1,9 +1,18 @@
 import { db } from '@/lib/db/client'
-import { productPrices, platformMappings } from '@/lib/db/schema'
+import { productPrices, platformMappings, products } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, SyncResult, TriggeredBy } from '@/types/platform'
+
+function getPushStatusUpdate(platform: Platform): Record<string, string> {
+  if (platform === 'woocommerce')        return { pushedWoocommerce: '2push' }
+  if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: '2push' }
+  if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: '2push' }
+  if (platform === 'xmr_bazaar')         return { pushedXmrBazaar: '2push' }
+  if (platform === 'libre_market')       return { pushedLibreMarket: '2push' }
+  return {}
+}
 
 export async function updateProductPrice(
   sku: string,
@@ -19,11 +28,15 @@ export async function updateProductPrice(
     const compareAt = compareAtPrices[platform] ?? null
 
     // Update D1
-    await db.insert(productPrices).values({ productId: sku, platform, price, compareAt })
+    const now = new Date().toISOString()
+    await db.insert(productPrices).values({ productId: sku, platform, price, compareAt, updatedAt: now })
       .onConflictDoUpdate({
         target: [productPrices.productId, productPrices.platform],
-        set: { price, compareAt },
+        set: { price, compareAt, updatedAt: now },
       })
+    await db.update(products)
+      .set(getPushStatusUpdate(platform) as Record<string, string>)
+      .where(eq(products.id, sku))
 
     // Push to platform
     try {
@@ -34,7 +47,8 @@ export async function updateProductPrice(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).updatePrice(mapping.platformId, price, compareAt)
+      const connector = await createConnector(platform)
+      await connector.updatePrice(mapping.platformId, price, compareAt)
       await logOperation({ productId: sku, platform, action: 'update_price', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {

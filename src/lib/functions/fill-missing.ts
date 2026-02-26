@@ -1,23 +1,26 @@
 import { db } from '@/lib/db/client'
-import { products, productImages, categories as categoriesTable, productCategories } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { products, productImages, categories as categoriesTable, productCategories, categoryMappings } from '@/lib/db/schema'
+import { eq, inArray, and, sql } from 'drizzle-orm'
 import { generateId } from '@/lib/utils/id'
 import { logOperation } from './log'
+import { createConnector } from '@/lib/connectors/registry'
+import type { Platform } from '@/types/platform'
+import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 
 export interface FillResult {
-  sku:     string
-  status:  'complete' | 'filled' | 'info'
-  filled:  string[]
+  sku: string
+  status: 'complete' | 'filled' | 'info'
+  filled: string[]
   missing: string[]
   sources: string[]
 }
 
 interface FetchedData {
-  title?:       string
+  title?: string
   description?: string
-  images?:      { url: string; alt: string | null }[]
-  categories?:  { platformId: string; name: string; slug: string | null }[]
+  images?: { url: string; alt: string | null }[]
+  categories?: { platformId: string; name: string; slug: string | null; platform: string }[]
 }
 
 // ---------------------------------------------------------------------------
@@ -31,25 +34,28 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
   })
   if (!product) throw new Error(`Product ${sku} not found`)
 
+  // Keep Shopify/Woo category links in sync even when the product already has categories.
+  await syncBidirectionalCategoryLinksForProduct(sku)
+
   const state = {
-    hasTitle:       product.title !== sku && product.title.trim().length > 0,
-    hasImages:      product.images.length >= 2,
+    hasTitle: product.title !== sku && product.title.trim().length > 0,
+    hasImages: product.images.length >= 2,
     hasDescription: !!product.description?.trim(),
-    hasCategories:  product.categories.length > 0,
+    hasCategories: product.categories.length > 0,
   }
 
   if (isComplete(state)) {
     return { sku, status: 'complete', filled: [], missing: [], sources: [] }
   }
 
-  const filled:  string[] = []
+  const filled: string[] = []
   const sources: string[] = []
 
-  // Priority order: Komputerzz → TikTok → WooCommerce → Acer (Firecrawl)
+  // Priority order: Komputerzz -> TikTok -> WooCommerce -> Acer (Firecrawl)
   const fetchOrder: Array<() => Promise<FetchedData | null>> = [
-    () => fetchFromShopify(sku, 'komputerzz'),
-    () => fetchFromShopify(sku, 'tiktok'),
-    () => fetchFromWooCommerce(sku),
+    () => fetchFromPlatformBySku(sku, 'shopify_komputerzz'),
+    () => fetchFromPlatformBySku(sku, 'shopify_tiktok'),
+    () => fetchFromPlatformBySku(sku, 'woocommerce'),
     () => fetchFromFirecrawl(sku),
   ]
   const sourceNames = ['shopify_komputerzz', 'shopify_tiktok', 'woocommerce', 'acer_store']
@@ -62,7 +68,7 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
       sources.push(sourceNames[i])
       await applyData(sku, data, state, filled)
     } catch {
-      // source unavailable — continue
+      // source unavailable -> continue
     }
   }
 
@@ -71,16 +77,26 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
     await db.update(products)
       .set({ status: 'info', updatedAt: new Date().toISOString() })
       .where(eq(products.id, sku))
-    await logOperation({ productId: sku, action: 'fill_missing', status: 'error',
-      message: `Still missing: ${missing.join(', ')}`, triggeredBy })
+    await logOperation({
+      productId: sku,
+      action: 'fill_missing',
+      status: 'error',
+      message: `Still missing: ${missing.join(', ')}`,
+      triggeredBy,
+    })
     return { sku, status: 'info', filled, missing, sources }
   }
 
   await db.update(products)
     .set({ updatedAt: new Date().toISOString() })
     .where(eq(products.id, sku))
-  await logOperation({ productId: sku, action: 'fill_missing', status: 'success',
-    message: `Filled: ${filled.join(', ')} from ${sources.join(', ')}`, triggeredBy })
+  await logOperation({
+    productId: sku,
+    action: 'fill_missing',
+    status: 'success',
+    message: `Filled: ${filled.join(', ')} from ${sources.join(', ')}`,
+    triggeredBy,
+  })
   return { sku, status: 'filled', filled, missing: [], sources }
 }
 
@@ -114,8 +130,8 @@ async function applyData(
   if (!state.hasImages && data.images && data.images.length >= 1) {
     // Get current count first
     const current = await db.query.productImages.findMany({ where: eq(productImages.productId, sku) })
-    const needed  = 5 - current.length
-    const toAdd   = data.images.slice(0, needed)
+    const needed = 5 - current.length
+    const toAdd = data.images.slice(0, needed)
     const startPos = current.length
 
     for (const [i, img] of toAdd.entries()) {
@@ -130,86 +146,168 @@ async function applyData(
   }
 
   if (!state.hasCategories && data.categories && data.categories.length > 0) {
+    const shopifyCatIds: string[] = []
+    const wooCatIds: string[] = []
     for (const cat of data.categories) {
       const catId = `${cat.platformId}`
       await db.insert(categoriesTable)
-        .values({ id: catId, name: cat.name, slug: cat.slug ?? catId, collectionType: 'product' })
+        .values({ id: catId, name: cat.name, slug: cat.slug ?? catId, platform: cat.platform, collectionType: 'product' })
         .onConflictDoUpdate({ target: categoriesTable.id, set: { name: cat.name } })
       await db.insert(productCategories)
         .values({ productId: sku, categoryId: catId })
         .onConflictDoNothing()
+      if (cat.platform.startsWith('shopify')) shopifyCatIds.push(catId)
+      if (cat.platform === 'woocommerce') wooCatIds.push(catId)
     }
+
+    // For Shopify collections: cross-populate WooCommerce equivalents
+    // Uses explicit category_mappings first, then falls back to case-insensitive name match.
+    // Name matches are auto-saved to category_mappings for future runs.
+    if (shopifyCatIds.length > 0) {
+      await linkWooCommerceCategories(sku, shopifyCatIds)
+    }
+    if (wooCatIds.length > 0) {
+      await linkShopifyCollections(sku, wooCatIds)
+    }
+
     state.hasCategories = true
     filled.push('categories')
   }
 }
 
 // ---------------------------------------------------------------------------
-// Shopify (Komputerzz or TikTok)
+// Cross-populate WooCommerce categories from Shopify collection IDs
 // ---------------------------------------------------------------------------
 
-async function fetchFromShopify(sku: string, account: 'komputerzz' | 'tiktok'): Promise<FetchedData | null> {
-  const shop  = account === 'komputerzz' ? process.env.SHOPIFY_KOMPUTERZZ_SHOP  : process.env.SHOPIFY_TIKTOK_SHOP
-  const token = account === 'komputerzz' ? process.env.SHOPIFY_KOMPUTERZZ_TOKEN : process.env.SHOPIFY_TIKTOK_TOKEN
-  if (!shop || !token) return null
-
-  const res = await fetch(`https://${shop}/admin/api/2024-01/graphql.json`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
-    body: JSON.stringify({
-      query: `query ($q: String!) {
-        productVariants(first: 1, query: $q) {
-          nodes {
-            product {
-              title descriptionHtml
-              images(first: 10) { nodes { url altText } }
-              collections(first: 10) { nodes { id title handle } }
-            }
-          }
-        }
-      }`,
-      variables: { q: `sku:${sku}` },
-    }),
+async function linkWooCommerceCategories(sku: string, shopifyCatIds: string[]) {
+  // Step 1: explicit mappings in category_mappings table
+  const mapped = await db.select({
+    shopifyCollectionId: categoryMappings.shopifyCollectionId,
+    wooCategoryId: categoryMappings.wooCategoryId,
   })
-  if (!res.ok) return null
+    .from(categoryMappings)
+    .where(inArray(categoryMappings.shopifyCollectionId, shopifyCatIds))
 
-  const json = await res.json() as { data?: { productVariants?: { nodes?: Array<{ product?: { title: string; descriptionHtml: string; images: { nodes: Array<{ url: string; altText?: string }> }; collections: { nodes: Array<{ id: string; title: string; handle: string }> } } }> } } }
-  const p = json.data?.productVariants?.nodes?.[0]?.product
-  if (!p) return null
+  for (const { wooCategoryId } of mapped) {
+    await db.insert(productCategories).values({ productId: sku, categoryId: wooCategoryId }).onConflictDoNothing()
+  }
 
-  return {
-    title:       p.title,
-    description: p.descriptionHtml || null,
-    images:      p.images.nodes.map((n) => ({ url: n.url, alt: n.altText ?? null })),
-    categories:  p.collections.nodes.map((c) => ({ platformId: `shopify_${account}_${c.id.split('/').pop()}`, name: c.title, slug: c.handle })),
+  // Step 2: for Shopify collections not yet in category_mappings, name-match WooCommerce categories
+  const alreadyMapped = new Set(mapped.map((m) => m.shopifyCollectionId))
+  const unmappedIds = shopifyCatIds.filter((id) => !alreadyMapped.has(id))
+  if (unmappedIds.length === 0) return
+
+  const shopifyCats = await db.select({ id: categoriesTable.id, name: categoriesTable.name })
+    .from(categoriesTable)
+    .where(inArray(categoriesTable.id, unmappedIds))
+
+  for (const shopifyCat of shopifyCats) {
+    const [wooMatch] = await db.select()
+      .from(categoriesTable)
+      .where(and(
+        eq(categoriesTable.platform, 'woocommerce'),
+        sql`lower(${categoriesTable.name}) = lower(${shopifyCat.name})`,
+      ))
+      .limit(1)
+
+    if (!wooMatch) continue
+
+    // Register mapping so future runs use the explicit table
+    await db.insert(categoryMappings)
+      .values({ shopifyCollectionId: shopifyCat.id, wooCategoryId: wooMatch.id })
+      .onConflictDoNothing()
+    await db.insert(productCategories)
+      .values({ productId: sku, categoryId: wooMatch.id })
+      .onConflictDoNothing()
   }
 }
 
+async function linkShopifyCollections(sku: string, wooCatIds: string[]) {
+  // Step 1: explicit reverse mappings in category_mappings table
+  const mapped = await db.select({
+    shopifyCollectionId: categoryMappings.shopifyCollectionId,
+    wooCategoryId: categoryMappings.wooCategoryId,
+  })
+    .from(categoryMappings)
+    .where(inArray(categoryMappings.wooCategoryId, wooCatIds))
+
+  for (const { shopifyCollectionId } of mapped) {
+    await db.insert(productCategories)
+      .values({ productId: sku, categoryId: shopifyCollectionId })
+      .onConflictDoNothing()
+  }
+
+  // Step 2: for Woo categories not yet in category_mappings, name-match Shopify collections
+  const alreadyMapped = new Set(mapped.map((m) => m.wooCategoryId))
+  const unmappedIds = wooCatIds.filter((id) => !alreadyMapped.has(id))
+  if (unmappedIds.length === 0) return
+
+  const wooCats = await db.select({ id: categoriesTable.id, name: categoriesTable.name })
+    .from(categoriesTable)
+    .where(inArray(categoriesTable.id, unmappedIds))
+
+  for (const wooCat of wooCats) {
+    const [shopifyMatch] = await db.select()
+      .from(categoriesTable)
+      .where(and(
+        inArray(categoriesTable.platform, ['shopify_komputerzz', 'shopify_tiktok']),
+        sql`lower(${categoriesTable.name}) = lower(${wooCat.name})`,
+      ))
+      .limit(1)
+
+    if (!shopifyMatch) continue
+
+    await db.insert(categoryMappings)
+      .values({ shopifyCollectionId: shopifyMatch.id, wooCategoryId: wooCat.id })
+      .onConflictDoNothing()
+    await db.insert(productCategories)
+      .values({ productId: sku, categoryId: shopifyMatch.id })
+      .onConflictDoNothing()
+  }
+}
+
+async function syncBidirectionalCategoryLinksForProduct(sku: string) {
+  const linked = await db.select({
+    categoryId: categoriesTable.id,
+    platform: categoriesTable.platform,
+  })
+    .from(productCategories)
+    .innerJoin(categoriesTable, eq(productCategories.categoryId, categoriesTable.id))
+    .where(eq(productCategories.productId, sku))
+
+  if (linked.length === 0) return
+
+  const shopifyCatIds = linked
+    .filter((c) => c.platform.startsWith('shopify'))
+    .map((c) => c.categoryId)
+  const wooCatIds = linked
+    .filter((c) => c.platform === 'woocommerce')
+    .map((c) => c.categoryId)
+
+  if (shopifyCatIds.length > 0) await linkWooCommerceCategories(sku, shopifyCatIds)
+  if (wooCatIds.length > 0) await linkShopifyCollections(sku, wooCatIds)
+}
+
 // ---------------------------------------------------------------------------
-// WooCommerce
+// Platform connectors (Shopify / WooCommerce)
 // ---------------------------------------------------------------------------
 
-async function fetchFromWooCommerce(sku: string): Promise<FetchedData | null> {
-  const baseUrl = process.env.WOO_BASE_URL
-  const key     = process.env.WOO_CONSUMER_KEY
-  const secret  = process.env.WOO_CONSUMER_SECRET
-  if (!baseUrl || !key || !secret) return null
+async function fetchFromPlatformBySku(sku: string, platform: Platform): Promise<FetchedData | null> {
+  const connector = await createConnector(platform)
+  const platformId = await connector.findProductIdBySku?.(sku)
+  if (!platformId) return null
 
-  const auth = 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64')
-  const search = await fetch(
-    `${baseUrl}/wp-json/wc/v3/products?sku=${encodeURIComponent(sku)}&per_page=1`,
-    { headers: { Authorization: auth } }
-  )
-  if (!search.ok) return null
-  const items = await search.json() as Array<{ id: number; name: string; description: string; images: Array<{ src: string; alt: string }>; categories: Array<{ id: number; name: string; slug: string }> }>
-  if (!items[0]) return null
-
-  const p = items[0]
+  const raw = await connector.getProduct(platformId)
   return {
-    title:       p.name,
-    description: p.description || null,
-    images:      p.images.map((img) => ({ url: img.src, alt: img.alt ?? null })),
-    categories:       p.categories.map((c) => ({ platformId: `woo_${c.id}`, name: c.name, slug: c.slug })),
+    title: raw.title,
+    description: raw.description ?? undefined,
+    images: raw.images.map((img) => ({ url: img.url, alt: img.alt ?? null })),
+    categories: raw.collections.map((col) => ({
+      platformId: platform === 'woocommerce' ? `woo_${col.platformId}` : col.platformId,
+      name: col.name,
+      slug: col.slug ?? null,
+      platform,
+    })),
   }
 }
 
@@ -227,30 +325,31 @@ async function fetchFromFirecrawl(sku: string): Promise<FetchedData | null> {
     where: (ws, { and, eq: weq, not, isNull }) =>
       and(weq(ws.productId, sku), weq(ws.warehouseId, 'acer_store'), not(isNull(ws.sourceUrl))),
   })
-  if (!row?.sourceUrl || row.sourceUrl === 'null') return null
+  const sourceUrl = row?.sourceUrl
+  if (!sourceUrl || sourceUrl === 'null') return null
 
   const app = new FirecrawlApp({ apiKey })
-  const result = await app.scrapeUrl(row.sourceUrl, {
+  const result = await firecrawlSemaphore.run(() => app.scrapeUrl(sourceUrl, {
     formats: ['extract'],
     extract: {
       prompt: 'Extract the product title, full description, and URLs of all product images. Return only high-resolution product images.',
       schema: {
         type: 'object',
         properties: {
-          title:       { type: 'string' },
+          title: { type: 'string' },
           description: { type: 'string' },
-          images:      { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, alt: { type: 'string' } }, required: ['url'] } },
+          images: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, alt: { type: 'string' } }, required: ['url'] } },
         },
       },
     },
-  })
+  }))
   if (!result.success) return null
 
   const data = (result as { extract?: { title?: string; description?: string; images?: Array<{ url: string; alt?: string }> } }).extract
   return {
-    title:       data?.title ?? undefined,
+    title: data?.title ?? undefined,
     description: data?.description ?? undefined,
-    images:      (data?.images ?? []).map((img) => ({ url: img.url, alt: img.alt ?? null })),
+    images: (data?.images ?? []).map((img) => ({ url: img.url, alt: img.alt ?? null })),
   }
 }
 
@@ -264,9 +363,9 @@ function isComplete(s: { hasTitle: boolean; hasImages: boolean; hasDescription: 
 
 function getMissing(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean }) {
   const m: string[] = []
-  if (!s.hasTitle)       m.push('title')
-  if (!s.hasImages)      m.push('images')
+  if (!s.hasTitle) m.push('title')
+  if (!s.hasImages) m.push('images')
   if (!s.hasDescription) m.push('description')
-  if (!s.hasCategories)  m.push('categories')
+  if (!s.hasCategories) m.push('categories')
   return m
 }

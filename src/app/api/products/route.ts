@@ -67,9 +67,14 @@ export async function GET(req: NextRequest) {
   if (pendingReview) conditions.push(eq(products.pendingReview, 1))
   if (pushedPlatform === 'libre_market') conditions.push(eq(products.pushedLibreMarket, '2push'))
   if (pushedPlatform === 'xmr_bazaar')  conditions.push(eq(products.pushedXmrBazaar, '2push'))
-  // missingFields: title = id (SKU used as title) OR no description
+  // missingFields: any field that fill-missing would want to fill
   if (missingFields) conditions.push(
-    or(eq(products.title, products.id), sql`${products.description} IS NULL OR ${products.description} = ''`)
+    or(
+      eq(products.title, products.id),
+      sql`${products.description} IS NULL OR ${products.description} = ''`,
+      sql`NOT EXISTS (SELECT 1 FROM product_categories pc WHERE pc.product_id = ${products.id})`,
+      sql`(SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = ${products.id}) < 2`
+    )
   )
   // hasStock: at least one warehouse (ireland or acer_store) has quantity > 0
   if (hasStock) conditions.push(
@@ -115,6 +120,7 @@ export async function GET(req: NextRequest) {
       qty:              ws.quantity,
       importPrice:      ws.importPrice      ?? null,
       importPromoPrice: ws.importPromoPrice ?? null,
+      purchasePrice:    ws.purchasePrice    ?? null,
     }]))
 
     return {
@@ -134,6 +140,7 @@ export async function GET(req: NextRequest) {
         acer_store:       stockMap.acer_store?.qty           ?? null,
         importPrice:      stockMap.acer_store?.importPrice      ?? null,
         importPromoPrice: stockMap.acer_store?.importPromoPrice ?? null,
+        purchasePrice:    stockMap.acer_store?.purchasePrice    ?? stockMap.ireland?.purchasePrice ?? null,
       },
       categories:     p.categories.map((c) => c.categoryId),
       collections:    [],
@@ -157,6 +164,7 @@ export async function POST(req: NextRequest) {
   const results = await createProduct({
     sku:          data.sku,
     title:        data.title,
+    ean:          data.ean,
     description:  data.description,
     vendor:       data.vendor,
     productType:  data.productType,

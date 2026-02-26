@@ -31,6 +31,7 @@ build/
 # Logs
 *.log
 npm-debug.log*
+.devserver-run.err
 
 # OS
 .DS_Store
@@ -43,3 +44,10 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/
+
+# Local browser runner artifacts
+scripts/screenshot-*.png
+scripts/lm-screenshot-*.png
+scripts/error-*.png
+scripts/test-img-*.jpg
+scripts/tmp-*.sql

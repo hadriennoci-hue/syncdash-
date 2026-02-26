@@ -26,11 +26,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { sku: strin
     return apiError('VALIDATION_ERROR', 'At least one of price or compareAt is required', 400)
   }
 
+  const pricesMap: Partial<Record<Platform, number | null>> = {}
+  const compareAtMap: Partial<Record<Platform, number | null>> = {}
+  for (const p of parsed.data.platforms as Platform[]) {
+    if (parsed.data.price     !== undefined) pricesMap[p]    = parsed.data.price
+    if (parsed.data.compareAt !== undefined) compareAtMap[p] = parsed.data.compareAt
+  }
+
   const results = await updateProductPrice(
     params.sku,
-    parsed.data.price,
-    parsed.data.compareAt,
-    parsed.data.platforms as Platform[],
+    pricesMap,
+    compareAtMap,
     parsed.data.triggeredBy
   )
   return apiResponse(results)

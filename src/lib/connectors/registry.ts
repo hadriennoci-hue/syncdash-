@@ -3,12 +3,14 @@ import type { PlatformConnector, WarehouseConnector } from './types'
 import { ShopifyConnector, ShopifyWarehouseConnector } from './shopify'
 import { WooCommerceConnector } from './woocommerce'
 import { AcerScraperConnector } from './acer-scraper'
+import { getStoredToken } from '@/lib/functions/tokens'
 
 // ---------------------------------------------------------------------------
-// Platform connector factory
+// Platform connector factory (synchronous — uses env var tokens)
+// Pass tokenOverride to use a dynamically-obtained OAuth token instead.
 // ---------------------------------------------------------------------------
 
-export function getConnector(platform: Platform): PlatformConnector {
+export function getConnector(platform: Platform, tokenOverride?: string): PlatformConnector {
   switch (platform) {
     case 'woocommerce':
       return new WooCommerceConnector(
@@ -20,15 +22,15 @@ export function getConnector(platform: Platform): PlatformConnector {
     case 'shopify_komputerzz':
       return new ShopifyConnector(
         process.env.SHOPIFY_KOMPUTERZZ_SHOP!,
-        process.env.SHOPIFY_KOMPUTERZZ_TOKEN!,
-        process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID  // optional; falls back to primary location
+        tokenOverride ?? process.env.SHOPIFY_KOMPUTERZZ_TOKEN!,
+        process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID
       )
 
     case 'shopify_tiktok':
       return new ShopifyConnector(
         process.env.SHOPIFY_TIKTOK_SHOP!,
-        process.env.SHOPIFY_TIKTOK_TOKEN!,
-        process.env.SHOPIFY_TIKTOK_LOCATION_ID  // optional; falls back to primary location
+        tokenOverride ?? process.env.SHOPIFY_TIKTOK_TOKEN!,
+        process.env.SHOPIFY_TIKTOK_LOCATION_ID
       )
 
     case 'xmr_bazaar':
@@ -50,8 +52,21 @@ export function getConnector(platform: Platform): PlatformConnector {
   }
 }
 
+/**
+ * Async connector factory — resolves the stored OAuth token from D1 first,
+ * falling back to the static env var token. Use this everywhere instead of
+ * getConnector() so that daily-refreshed Shopify tokens are always used.
+ */
+export async function createConnector(platform: Platform): Promise<PlatformConnector> {
+  if (platform === 'shopify_komputerzz' || platform === 'shopify_tiktok') {
+    const token = await getStoredToken(platform)
+    return getConnector(platform, token)
+  }
+  return getConnector(platform)
+}
+
 // ---------------------------------------------------------------------------
-// Warehouse connector factory
+// Warehouse connector factory (synchronous — uses env var tokens)
 // ---------------------------------------------------------------------------
 
 export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
@@ -84,6 +99,22 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
     default:
       throw new Error(`Unknown warehouse: ${warehouseId}`)
   }
+}
+
+/**
+ * Async warehouse connector factory — resolves stored OAuth token for Shopify-based
+ * warehouses (Ireland). Falls back to env var token if none stored.
+ */
+export async function createWarehouseConnector(warehouseId: string): Promise<WarehouseConnector> {
+  if (warehouseId === 'ireland') {
+    const token = await getStoredToken('shopify_tiktok')
+    return new ShopifyWarehouseConnector(
+      process.env.SHOPIFY_TIKTOK_SHOP!,
+      token ?? process.env.SHOPIFY_TIKTOK_TOKEN!,
+      process.env.SHOPIFY_TIKTOK_IRELAND_LOCATION_ID!
+    )
+  }
+  return getWarehouseConnector(warehouseId)
 }
 
 // ---------------------------------------------------------------------------

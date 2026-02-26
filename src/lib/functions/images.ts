@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
 import { productImages, platformMappings } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { createConnector } from '@/lib/connectors/registry'
 import { getR2Bucket, getR2PublicUrl, r2KeyFromUrl } from '@/lib/r2/client'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
@@ -65,7 +65,8 @@ export async function setProductImages(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).setImages(mapping.platformId, images)
+      const connector = await createConnector(platform)
+      await connector.setImages(mapping.platformId, images)
       await logOperation({ productId: sku, platform, action: 'set_images', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {
@@ -117,7 +118,8 @@ export async function addProductImages(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).addImages(mapping.platformId, images)
+      const connector = await createConnector(platform)
+      await connector.addImages(mapping.platformId, images)
       await logOperation({ productId: sku, platform, action: 'add_images', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {
@@ -157,7 +159,8 @@ export async function deleteProductImages(
         results.push({ platform, success: false, error: 'No platform mapping found' })
         continue
       }
-      await getConnector(platform).deleteImages(mapping.platformId)
+      const connector = await createConnector(platform)
+      await connector.deleteImages(mapping.platformId)
       await logOperation({ productId: sku, platform, action: 'delete_images', status: 'success', triggeredBy })
       results.push({ platform, success: true })
     } catch (err) {

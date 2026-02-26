@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
-import { products, platformMappings } from '@/lib/db/schema'
-import { eq, or } from 'drizzle-orm'
-import { getConnector } from '@/lib/connectors/registry'
+import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
+import { eq, or, gt } from 'drizzle-orm'
+import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 
@@ -10,14 +10,17 @@ export interface ChannelSyncResult {
   statusUpdated:      number
   newProductsCreated: number
   zeroedOutOfStock:   number
+  skippedRecentEdits: number
   newSkus:            string[]
   errors:             string[]
   incomplete:         Array<{ sku: string; missing: string[] }>
 }
 
-// ---------------------------------------------------------------------------
-// Internal types (shaped from Drizzle relation query)
-// ---------------------------------------------------------------------------
+interface ChannelSyncOptions {
+  // Optional protection window: when > 0, stock-zero is skipped for channel products
+  // whose own updated_at is newer than now - windowHours.
+  protectRecentChannelEditsHours?: number
+}
 
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
 interface CatRow     { category: { id: string; platform: string } }
@@ -29,6 +32,7 @@ interface EligibleProduct {
   id:                      string
   title:                   string
   description:             string | null
+  ean:                     string | null
   vendor:                  string | null
   productType:             string | null
   pushedWoocommerce:       string
@@ -43,12 +47,6 @@ interface EligibleProduct {
   platformMappings:        MappingRow[]
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Platforms that use browser automation (Playwright) rather than a REST connector.
-// These are handled separately — cannot run inside Cloudflare Workers.
 const BROWSER_PLATFORMS: Platform[] = ['xmr_bazaar', 'libre_market']
 
 function isPushable(p: EligibleProduct, platform: Platform): boolean {
@@ -79,26 +77,15 @@ function checkCompleteness(p: EligibleProduct, platform: Platform): string[] {
   const price = p.prices.find((r) => r.platform === platform)
   if (!price?.price)                 missing.push(`price (${platform})`)
 
-  if (platform === 'woocommerce') {
-    if (!p.categories.some((pc) => pc.category.platform === 'woocommerce'))
-      missing.push('woocommerce category')
-  } else if (platform.startsWith('shopify')) {
-    if (!p.categories.some((pc) => pc.category.platform === platform))
-      missing.push(`collection (${platform})`)
-  }
-
+  // Categories are optional - products can still push without categories.
   return missing
 }
 
-// ---------------------------------------------------------------------------
-// Main export
-// ---------------------------------------------------------------------------
-
 export async function syncChannelAvailability(
   platforms: Platform[],
-  triggeredBy: TriggeredBy = 'human'
+  triggeredBy: TriggeredBy = 'human',
+  options: ChannelSyncOptions = {}
 ): Promise<ChannelSyncResult[]> {
-  // Load all 2push candidates with full context
   const raw = await db.query.products.findMany({
     where: or(
       eq(products.pushedWoocommerce, '2push'),
@@ -116,12 +103,10 @@ export async function syncChannelAvailability(
     },
   })
 
-  // Only products with stock > 0 in at least one warehouse
   const eligible = raw.filter((p) =>
     p.warehouseStock.some((ws) => ws.quantity > 0)
   ) as unknown as EligibleProduct[]
 
-  // Completeness check across all platforms — aggregate by SKU, abort if any fail
   const incompleteMap = new Map<string, string[]>()
   for (const platform of platforms) {
     for (const product of eligible.filter((p) => isPushable(p, platform))) {
@@ -137,60 +122,84 @@ export async function syncChannelAvailability(
     const incomplete = Array.from(incompleteMap.entries()).map(([sku, missing]) => ({ sku, missing }))
     return platforms.map((platform) => ({
       platform,
-      statusUpdated: 0, newProductsCreated: 0, zeroedOutOfStock: 0, newSkus: [], errors: [],
+      statusUpdated: 0,
+      newProductsCreated: 0,
+      zeroedOutOfStock: 0,
+      skippedRecentEdits: 0,
+      newSkus: [],
+      errors: [],
       incomplete,
     }))
   }
 
-  // All complete — push each platform
   const results: ChannelSyncResult[] = []
   for (const platform of platforms) {
-    results.push(await pushPlatform(platform, eligible, triggeredBy))
+    results.push(await pushPlatform(platform, eligible, triggeredBy, options))
   }
   return results
 }
 
-// ---------------------------------------------------------------------------
-// Push one platform
-// ---------------------------------------------------------------------------
-
 async function pushPlatform(
   platform: Platform,
   eligible: EligibleProduct[],
-  triggeredBy: TriggeredBy
+  triggeredBy: TriggeredBy,
+  _options: ChannelSyncOptions
 ): Promise<ChannelSyncResult> {
-  // Browser channels require local Playwright automation — cannot run in CF Workers.
-  // Use the local push scripts (scripts/push-browser-channels.ts) instead.
   if (BROWSER_PLATFORMS.includes(platform)) {
     const count = eligible.filter((p) => isPushable(p, platform)).length
     return {
       platform,
-      statusUpdated: 0, newProductsCreated: 0, zeroedOutOfStock: 0, newSkus: [],
-      errors: [`browser channel — ${count} product(s) queued, run local push script to process`],
+      statusUpdated: 0,
+      newProductsCreated: 0,
+      zeroedOutOfStock: 0,
+      skippedRecentEdits: 0,
+      newSkus: [],
+      errors: [`browser channel - ${count} product(s) queued, run local push script to process`],
       incomplete: [],
     }
   }
 
   const toPush    = eligible.filter((p) => isPushable(p, platform))
-  const connector = getConnector(platform)
+  const connector = await createConnector(platform)
   const errors: string[] = []
-  const newSkus:  string[] = []
+  const newSkus: string[] = []
+  const touchedPlatformIds = new Set<string>()
   let statusUpdated = 0
 
   for (const product of toPush) {
-    const mapping    = product.platformMappings.find((m) => m.platform === platform)
+    const mapping = product.platformMappings.find((m) => m.platform === platform)
+    if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
     const totalStock = product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
-    const priceRow   = product.prices.find((r) => r.platform === platform)
+    const priceRow = product.prices.find((r) => r.platform === platform)
 
     try {
-      if (mapping) {
-        // Already listed — update price, stock, ensure published
-        await connector.updatePrice(mapping.platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-        await connector.updateStock(mapping.platformId, totalStock)
-        await connector.toggleStatus(mapping.platformId, 'active')
-        statusUpdated++
-      } else {
-        // New product — create with full data
+      const identityPatch = (
+        platform.startsWith('shopify')
+          ? { ean: product.ean?.trim() ? product.ean.trim() : undefined }
+          : { sku: product.id, ean: product.ean?.trim() ? product.ean.trim() : undefined }
+      )
+
+      const upsertMapping = async (platformId: string): Promise<void> => {
+        await db.insert(platformMappings).values({
+          productId: product.id,
+          platform,
+          platformId,
+          syncStatus: 'synced',
+          lastSynced: new Date().toISOString(),
+        }).onConflictDoUpdate({
+          target: [platformMappings.productId, platformMappings.platform],
+          set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
+        })
+      }
+
+      const updateExisting = async (platformId: string): Promise<void> => {
+        await connector.updateProduct(platformId, identityPatch)
+        await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+        await connector.updateStock(platformId, totalStock)
+        await connector.toggleStatus(platformId, 'active')
+      }
+
+      const createNew = async (): Promise<string> => {
         const images: ImageInput[] = product.images
           .sort((a, b) => a.position - b.position)
           .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
@@ -202,30 +211,69 @@ async function pushPlatform(
           .map((pc) => pc.category.id)
 
         const platformId = await connector.createProduct({
-          title:       product.title,
+          sku: product.id,
+          ean: product.ean?.trim() ? product.ean.trim() : null,
+          title: product.title,
           description: product.description,
-          status:      'active',
-          vendor:      product.vendor,
+          status: 'active',
+          vendor: product.vendor,
           productType: product.productType,
-          taxCode:     null,
-          price:       priceRow?.price ?? null,
-          compareAt:   priceRow?.compareAt ?? null,
+          taxCode: null,
+          price: priceRow?.price ?? null,
+          compareAt: priceRow?.compareAt ?? null,
           ...(platform.startsWith('shopify') ? { shopifyCategory: 'gid://shopify/TaxonomyCategory/el' } : {}),
           categoryIds,
         })
 
         if (images.length > 0) await connector.setImages(platformId, images)
         await connector.updateStock(platformId, totalStock)
+        return platformId
+      }
 
-        await db.insert(platformMappings).values({
-          productId: product.id, platform, platformId, syncStatus: 'synced',
-          lastSynced: new Date().toISOString(),
-        }).onConflictDoUpdate({
-          target: [platformMappings.productId, platformMappings.platform],
-          set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
-        })
+      let finalPlatformId: string | null = null
+      let successMessage = 'created'
+      const mappedId = mapping?.platformId ?? null
 
-        newSkus.push(product.id)
+      if (mappedId) {
+        try {
+          await updateExisting(mappedId)
+          finalPlatformId = mappedId
+          successMessage = 'updated by mapping'
+        } catch (mappedErr) {
+          const skuHit = await connector.findProductIdBySku?.(product.id) ?? null
+          if (skuHit) {
+            await upsertMapping(skuHit)
+            await updateExisting(skuHit)
+            finalPlatformId = skuHit
+            successMessage = skuHit === mappedId ? 'updated by mapping after retry' : 'updated by SKU remap'
+          } else {
+            const createdId = await createNew()
+            await upsertMapping(createdId)
+            finalPlatformId = createdId
+            newSkus.push(product.id)
+            successMessage = 'created after missing mapped ID'
+          }
+          if (!finalPlatformId) throw mappedErr
+        }
+      } else {
+        const skuHit = await connector.findProductIdBySku?.(product.id) ?? null
+        if (skuHit) {
+          await upsertMapping(skuHit)
+          await updateExisting(skuHit)
+          finalPlatformId = skuHit
+          successMessage = 'updated by SKU'
+        } else {
+          const createdId = await createNew()
+          await upsertMapping(createdId)
+          finalPlatformId = createdId
+          newSkus.push(product.id)
+          successMessage = 'created'
+        }
+      }
+
+      if (finalPlatformId) {
+        touchedPlatformIds.add(finalPlatformId)
+        if (!newSkus.includes(product.id)) statusUpdated++
       }
 
       await db.update(products)
@@ -233,9 +281,11 @@ async function pushPlatform(
         .where(eq(products.id, product.id))
 
       await logOperation({
-        productId: product.id, platform,
-        action: 'push_product', status: 'success',
-        message: mapping ? 'updated price/stock' : 'created',
+        productId: product.id,
+        platform,
+        action: 'push_product',
+        status: 'success',
+        message: successMessage,
         triggeredBy,
       })
     } catch (err) {
@@ -244,21 +294,32 @@ async function pushPlatform(
       await db.update(products)
         .set(getPushUpdate(platform, `FAIL: ${msg.slice(0, 200)}`) as Record<string, string>)
         .where(eq(products.id, product.id))
-      await logOperation({ productId: product.id, platform,
-        action: 'push_product', status: 'error', message: msg, triggeredBy })
+      await logOperation({
+        productId: product.id,
+        platform,
+        action: 'push_product',
+        status: 'error',
+        message: msg,
+        triggeredBy,
+      })
     }
   }
 
-  // Zero out products that are no longer in stock in any Wizhard warehouse.
-  // Uses platform-native batch APIs to minimise API calls.
   let zeroedOutOfStock = 0
+  let skippedRecentEdits = 0
   try {
-    const allMappings  = await db.query.platformMappings.findMany({
+    const inStockRows = await db.query.warehouseStock.findMany({
+      where: gt(warehouseStock.quantity, 0),
+      columns: { productId: true },
+    })
+    const inStockSkus = new Set(inStockRows.map((r) => r.productId))
+
+    const allMappings = await db.query.platformMappings.findMany({
       where: eq(platformMappings.platform, platform),
     })
-    const eligibleSkus = new Set(eligible.map((p) => p.id))
-    const toZero = allMappings
-      .filter((m) => !eligibleSkus.has(m.productId))
+    const toZero: Array<{ platformId: string; quantity: number }> = allMappings
+      .filter((m) => !inStockSkus.has(m.productId))
+      .filter((m) => !touchedPlatformIds.has(m.platformId))
       .map((m) => ({ platformId: m.platformId, quantity: 0 }))
 
     if (toZero.length > 0) {
@@ -271,11 +332,20 @@ async function pushPlatform(
 
   await logOperation({
     platform,
-    action:  'sync_channel_availability',
-    status:  errors.length === 0 ? 'success' : 'error',
-    message: `updated=${statusUpdated} created=${newSkus.length} zeroed=${zeroedOutOfStock} errors=${errors.length}`,
+    action: 'sync_channel_availability',
+    status: errors.length === 0 ? 'success' : 'error',
+    message: `updated=${statusUpdated} created=${newSkus.length} zeroed=${zeroedOutOfStock} protected=${skippedRecentEdits} errors=${errors.length}`,
     triggeredBy,
   })
 
-  return { platform, statusUpdated, newProductsCreated: newSkus.length, zeroedOutOfStock, newSkus, errors, incomplete: [] }
+  return {
+    platform,
+    statusUpdated,
+    newProductsCreated: newSkus.length,
+    zeroedOutOfStock,
+    skippedRecentEdits,
+    newSkus,
+    errors,
+    incomplete: [],
+  }
 }

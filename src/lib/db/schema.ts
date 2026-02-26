@@ -78,6 +78,7 @@ export const productPrices = sqliteTable('product_prices', {
   platform:  text('platform').notNull(),
   price:     real('price'),
   compareAt: real('compare_at'),
+  updatedAt: text('updated_at').notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
 
 export const productMetafields = sqliteTable('product_metafields', {
@@ -239,6 +240,17 @@ export const dailySyncLog = sqliteTable('daily_sync_log', {
   createdAt:        text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
+// ---------------------------------------------------------------------------
+// Platform Tokens (Shopify OAuth — refreshed daily via UI button)
+// ---------------------------------------------------------------------------
+
+export const platformTokens = sqliteTable('platform_tokens', {
+  platform:    text('platform').primaryKey(), // 'shopify_komputerzz' | 'shopify_tiktok'
+  accessToken: text('access_token').notNull(),
+  expiresAt:   text('expires_at').notNull(),   // ISO timestamp
+  refreshedAt: text('refreshed_at').notNull(), // ISO timestamp
+})
+
 export const syncLog = sqliteTable('sync_log', {
   id:          text('id').primaryKey(),
   productId:   text('product_id'),
@@ -248,6 +260,14 @@ export const syncLog = sqliteTable('sync_log', {
   message:     text('message'),
   triggeredBy: text('triggered_by').notNull().default('human'), // 'human' | 'agent' | 'system'
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const runnerSignals = sqliteTable('runner_signals', {
+  runner:      text('runner').primaryKey(), // e.g. 'browser'
+  wakeNonce:   integer('wake_nonce').notNull().default(0),
+  reason:      text('reason'),
+  requestedAt: text('requested_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:   text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 
 // ---------------------------------------------------------------------------

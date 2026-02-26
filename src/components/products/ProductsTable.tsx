@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS } from '@/types/platform'
 
-const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'shopify_tiktok'] as const
+const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'libre_market', 'xmr_bazaar'] as const
 
 interface FillResult {
   sku:     string
@@ -16,13 +16,16 @@ interface FillResult {
   sources: string[]
 }
 
-export function ProductsTable() {
+interface ProductsTableProps {
+  mode?: 'default' | 'warehouse_overview'
+}
+
+export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
   const qc = useQueryClient()
   const [page, setPage]     = useState(1)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
 
-  // Fill missing state
   const [filling, setFilling]       = useState(false)
   const [fillProgress, setProgress] = useState<{ done: number; total: number; results: FillResult[] } | null>(null)
   const abortRef = useRef(false)
@@ -40,7 +43,6 @@ export function ProductsTable() {
     abortRef.current = false
     setProgress({ done: 0, total: 0, results: [] })
 
-    // Fetch all products with missing fields (no pagination limit — use 200)
     const list = await apiFetch('/api/products?missingFields=1&hasStock=1&perPage=200&page=1')
     const skus: string[] = (list?.data ?? []).map((p: { id: string }) => p.id)
 
@@ -95,15 +97,14 @@ export function ProductsTable() {
         </div>
       </div>
 
-      {/* Fill progress */}
       {fillProgress && (
         <div className="border border-border rounded p-3 space-y-2 text-xs">
           <div className="flex items-center justify-between">
             <span className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
-              Fill missing info — {fillProgress.done} / {fillProgress.total}
+              Fill missing info - {fillProgress.done} / {fillProgress.total}
             </span>
             {!filling && fillProgress.done > 0 && (
-              <button onClick={() => setProgress(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+              <button onClick={() => setProgress(null)} className="text-muted-foreground hover:text-foreground">x</button>
             )}
           </div>
           {fillProgress.total > 0 && (
@@ -167,14 +168,19 @@ export function ProductsTable() {
                 <th className="text-left py-1.5 pr-3 font-medium">Title</th>
                 <th className="text-left py-1.5 pr-3 font-medium">Supplier</th>
                 <th className="text-left py-1.5 pr-3 font-medium">Status</th>
-                {PLATFORMS.map((p) => (
+                {mode === 'default' && PLATFORMS.map((p) => (
                   <th key={p} className="text-left py-1.5 pr-3 font-medium">{PLATFORM_LABELS[p]}</th>
                 ))}
                 <th className="text-left py-1.5 pr-3 font-medium">IE</th>
                 <th className="text-left py-1.5 pr-3 font-medium">PL</th>
                 <th className="text-left py-1.5 pr-3 font-medium">ACER</th>
-                <th className="text-left py-1.5 pr-3 font-medium">Import Price</th>
-                <th className="text-left py-1.5 pr-3 font-medium">Import PromoP</th>
+                {mode === 'warehouse_overview' && (
+                  <>
+                    <th className="text-left py-1.5 pr-3 font-medium">Import EUR</th>
+                    <th className="text-left py-1.5 pr-3 font-medium">Import promo EUR</th>
+                    <th className="text-left py-1.5 pr-3 font-medium">Purchase EUR</th>
+                  </>
+                )}
                 <th className="text-left py-1.5 pr-3 font-medium">Imgs</th>
               </tr>
             </thead>
@@ -188,30 +194,38 @@ export function ProductsTable() {
                   <td className="py-1 pr-3">
                     {p.supplier
                       ? <Link href={`/suppliers/${p.supplier.id}`} className="text-primary hover:underline">{p.supplier.name}</Link>
-                      : <span className="text-muted-foreground">—</span>
+                      : <span className="text-muted-foreground">-</span>
                     }
                   </td>
                   <td className="py-1 pr-3">
                     <StatusBadge status={p.status} />
                   </td>
-                  {PLATFORMS.map((pl) => {
+                  {mode === 'default' && PLATFORMS.map((pl) => {
                     const d = p.platforms?.[pl]
                     return (
                       <td key={pl} className="py-1 pr-3">
                         <Link href={`/channels/${pl}`} className="hover:underline">
                           <StatusDot status={d?.status} />
                         </Link>
-                        {d?.price != null && <span className="ml-1 text-muted-foreground">€{d.price}</span>}
+                        {d?.price != null && <span className="ml-1 text-muted-foreground">EUR {d.price}</span>}
                       </td>
                     )
                   })}
-                  <td className="py-1 pr-3">{p.stock?.ireland     ?? '—'}</td>
-                  <td className="py-1 pr-3">{p.stock?.poland      ?? '—'}</td>
-                  <td className="py-1 pr-3">{p.stock?.acer_store       ?? '—'}</td>
-                  <td className="py-1 pr-3">{p.stock?.importPrice      != null ? `€${p.stock.importPrice}` : '—'}</td>
-                  <td className="py-1 pr-3">{p.stock?.importPromoPrice != null ? `€${p.stock.importPromoPrice}` : '—'}</td>
+                  <td className="py-1 pr-3">{p.stock?.ireland ?? '-'}</td>
+                  <td className="py-1 pr-3">{p.stock?.poland ?? '-'}</td>
+                  <td className="py-1 pr-3">{p.stock?.acer_store ?? '-'}</td>
+                  {mode === 'warehouse_overview' && (
+                    <>
+                      <td className="py-1 pr-3">{p.stock?.importPrice != null ? `EUR ${p.stock.importPrice}` : '-'}</td>
+                      <td className="py-1 pr-3">{p.stock?.importPromoPrice != null ? `EUR ${p.stock.importPromoPrice}` : '-'}</td>
+                      <td className="py-1 pr-3">{p.stock?.purchasePrice != null ? `EUR ${p.stock.purchasePrice}` : '-'}</td>
+                    </>
+                  )}
                   <td className="py-1 pr-3">
-                    <span className={p.hasMinImages ? 'text-green-600' : 'text-amber-500'}>{p.imageCount}</span>
+                    {mode === 'warehouse_overview'
+                      ? <StockHealthDot product={p} />
+                      : <span className={p.hasMinImages ? 'text-green-600' : 'text-amber-500'}>{p.imageCount}</span>
+                    }
                   </td>
                 </tr>
               ))}
@@ -226,7 +240,7 @@ export function ProductsTable() {
           disabled={page === 1}
           className="px-2 py-1 border border-border rounded disabled:opacity-40"
         >Prev</button>
-        <span className="text-muted-foreground">Page {page} · {total} refs</span>
+        <span className="text-muted-foreground">Page {page} - {total} refs</span>
         <button
           onClick={() => setPage((p) => p + 1)}
           disabled={prods.length < 50}
@@ -238,12 +252,20 @@ export function ProductsTable() {
 }
 
 function StatusBadge({ status }: { status?: string }) {
-  if (status === 'info') return <span className="text-destructive font-semibold">INFO</span>
+  if (status === 'info') return <span className="text-muted-foreground font-semibold">INFO</span>
   if (status === 'active') return <span className="text-green-600">{status}</span>
-  return <span className="text-muted-foreground">{status ?? '—'}</span>
+  return <span className="text-muted-foreground">{status ?? '-'}</span>
 }
 
 function StatusDot({ status }: { status?: string }) {
   const color = status === 'synced' ? 'bg-green-500' : status === 'differences' ? 'bg-amber-500' : 'bg-muted-foreground/40'
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} title={status} />
+}
+
+function StockHealthDot({ product }: { product: any }) {
+  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0)
+  const incomplete = product.status === 'info' || !product.hasDescription || !product.hasMinImages
+  const color = totalStock > 0 ? 'bg-green-500' : (incomplete ? 'bg-muted-foreground/50' : 'bg-red-500')
+  const title = totalStock > 0 ? 'In stock' : (incomplete ? 'Incomplete' : 'Out of stock')
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} title={title} />
 }

@@ -126,7 +126,7 @@ export async function GET(
     localization,
     categories: product.categories
       .filter((c) => c.category)
-      .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType })),
+      .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType, platform: c.category!.platform })),
     pushStatus: {
       woocommerce:        product.pushedWoocommerce,
       shopify_komputerzz: product.pushedShopifyKomputerzz,

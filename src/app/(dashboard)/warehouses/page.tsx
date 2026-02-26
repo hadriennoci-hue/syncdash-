@@ -41,7 +41,7 @@ export default function WarehousesPage() {
       </div>
 
       <div className="border-t border-border pt-4">
-        <ProductsTable />
+        <ProductsTable mode="warehouse_overview" />
       </div>
     </div>
   )

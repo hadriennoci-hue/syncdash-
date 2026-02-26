@@ -107,19 +107,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
       <section className="border border-border rounded p-3 text-xs space-y-2">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Categories &amp; Collections</h2>
         {p.categories?.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {p.categories.map((c: any) => (
-              <span key={c.id}
-                className={`px-2 py-0.5 rounded text-xs border ${
-                  c.type === 'country_layout' ? 'border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' :
-                  'border-border bg-muted/40 text-foreground'
-                }`}
-                title={c.type}
-              >
-                {c.name}
-              </span>
-            ))}
-          </div>
+          <CategoryGroups categories={p.categories} />
         ) : (
           <p className="text-muted-foreground italic">No categories</p>
         )}
@@ -263,6 +251,52 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+
+const PLATFORM_GROUP_LABELS: Record<string, string> = {
+  shopify_komputerzz: 'Komputerzz collections',
+  shopify_tiktok:     'TikTok collections',
+  woocommerce:        'WooCommerce categories',
+}
+
+const PLATFORM_GROUP_STYLES: Record<string, string> = {
+  shopify_komputerzz: 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300',
+  shopify_tiktok:     'border-pink-300 bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-300',
+  woocommerce:        'border-purple-300 bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300',
+}
+
+function CategoryGroups({ categories }: { categories: Array<{ id: string; name: string; platform: string; type: string }> }) {
+  const groups = categories.reduce<Record<string, typeof categories>>((acc, c) => {
+    const key = c.platform || 'unknown'
+    ;(acc[key] = acc[key] ?? []).push(c)
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-2">
+      {Object.entries(groups).map(([platform, cats]) => (
+        <div key={platform}>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+            {PLATFORM_GROUP_LABELS[platform] ?? platform}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {cats.map((c) => (
+              <span key={c.id}
+                className={`px-2 py-0.5 rounded text-xs border ${PLATFORM_GROUP_STYLES[platform] ?? 'border-border bg-muted/40 text-foreground'}`}
+                title={c.id}
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (

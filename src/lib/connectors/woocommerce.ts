@@ -7,7 +7,6 @@ import type { ImageInput } from '@/types/platform'
 
 export class WooCommerceConnector implements PlatformConnector {
   private readonly baseUrl: string
-  private readonly auth: string
 
   constructor(
     private readonly siteUrl: string,
@@ -15,11 +14,18 @@ export class WooCommerceConnector implements PlatformConnector {
     private readonly consumerSecret: string
   ) {
     this.baseUrl = `${siteUrl}/wp-json/wc/v3`
-    this.auth = 'Basic ' + Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64')
   }
 
   // -------------------------------------------------------------------------
   // REST helper
+  //
+  // Auth via consumer_key/consumer_secret query params (not Authorization: Basic),
+  // which avoids Apache intercepting the header before PHP runs.
+  //
+  // coincart.store's Apache blocks PUT and DELETE methods at the HTTP level,
+  // returning 406 for those methods from any client. WooCommerce supports the
+  // _method query parameter to tunnel PUT/DELETE via POST requests.
+  // We use POST + ?_method=PUT / ?_method=DELETE for those verbs.
   // -------------------------------------------------------------------------
 
   private async request<T>(
@@ -28,13 +34,24 @@ export class WooCommerceConnector implements PlatformConnector {
     body?: Record<string, unknown>
   ): Promise<T> {
     await woocommerceLimiter.throttle()
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
+
+    // PUT and DELETE are blocked at the Apache level on coincart.store (406).
+    // Tunnel them via POST using WooCommerce's _method query parameter.
+    const httpMethod = (method === 'PUT' || method === 'DELETE') ? 'POST' : method
+    const methodOverride = (method === 'PUT' || method === 'DELETE') ? `&_method=${method}` : ''
+
+    const sep = path.includes('?') ? '&' : '?'
+    const finalUrl = `${this.baseUrl}${path}${sep}consumer_key=${encodeURIComponent(this.consumerKey)}&consumer_secret=${encodeURIComponent(this.consumerSecret)}${methodOverride}`
+
+    const res = await fetch(finalUrl, {
+      method: httpMethod,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: this.auth,
+        'Accept':       'application/json',
+        'User-Agent':   'Wizhard/1.0',
       },
-      body: body ? JSON.stringify(body) : undefined,
+      // DELETE via _method still needs a body for POST
+      body: body ? JSON.stringify(body) : (method === 'DELETE' ? '{}' : undefined),
     })
     if (!res.ok) throw new Error(`WooCommerce error: ${res.status} ${await res.text()}`)
     return res.json() as Promise<T>
@@ -165,6 +182,20 @@ export class WooCommerceConnector implements PlatformConnector {
     return product
   }
 
+  async getProductUpdatedAt(platformId: string): Promise<string | null> {
+    const p = await this.request<Record<string, unknown>>('GET', `/products/${platformId}`)
+    const updated = (p.date_modified_gmt as string | undefined) ?? (p.date_modified as string | undefined)
+    return updated ?? null
+  }
+
+  async findProductIdBySku(sku: string): Promise<string | null> {
+    const items = await this.request<Array<{ id: number }>>(
+      'GET',
+      `/products?sku=${encodeURIComponent(sku)}&per_page=1`
+    )
+    return items[0] ? String(items[0].id) : null
+  }
+
   // -------------------------------------------------------------------------
   // Create product
   //
@@ -189,13 +220,17 @@ export class WooCommerceConnector implements PlatformConnector {
       description:   data.description ?? '',
       status:        data.status === 'active' ? 'publish' : 'private',
       type:          data.variants && data.variants.length > 1 ? 'variable' : 'simple',
+      sku:           data.sku ?? '',
       regular_price: data.compareAt ? data.compareAt.toString() : (data.price?.toString() ?? ''),
       sale_price:    data.compareAt && data.price ? data.price.toString() : '',
-      categories:    data.categoryIds?.map((id) => ({ id: parseInt(id) })) ?? [],
+      categories:    data.categoryIds?.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) })) ?? [],
       // Stock: mark as 'instock' at creation — no specific quantity.
       // Actual warehouse quantities (Ireland, Poland) are synced later by the cron via updateStock().
       stock_status:  'instock',
       attributes,
+    }
+    if (data.ean) {
+      body.meta_data = [{ key: 'ean', value: data.ean }]
     }
     const result = await this.request<{ id: number }>('POST', '/products', body)
     return String(result.id)
@@ -210,7 +245,9 @@ export class WooCommerceConnector implements PlatformConnector {
     if (data.title)                   body.name = data.title
     if (data.description !== undefined) body.description = data.description ?? ''
     if (data.status)                  body.status = data.status === 'active' ? 'publish' : 'private'
-    if (data.categoryIds)             body.categories = data.categoryIds.map((id) => ({ id: parseInt(id) }))
+    if (data.sku)                     body.sku = data.sku
+    if (data.categoryIds)             body.categories = data.categoryIds.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) }))
+    if (data.ean)                     body.meta_data = [{ key: 'ean', value: data.ean }]
     await this.request('PUT', `/products/${platformId}`, body)
   }
 
@@ -287,6 +324,33 @@ export class WooCommerceConnector implements PlatformConnector {
     }
   }
 
+  async listProductsForZeroing(): Promise<Array<{ platformId: string; sku: string | null; updatedAt: string | null }>> {
+    const out: Array<{ platformId: string; sku: string | null; updatedAt: string | null }> = []
+    let page = 1
+    let hasMore = true
+
+    while (hasMore) {
+      const items = await this.request<Array<{
+        id: number
+        sku?: string | null
+        date_modified_gmt?: string | null
+        date_modified?: string | null
+      }>>('GET', `/products?per_page=100&page=${page}&status=any&_fields=id,sku,date_modified_gmt,date_modified`)
+
+      for (const item of items) {
+        out.push({
+          platformId: String(item.id),
+          sku: item.sku ?? null,
+          updatedAt: item.date_modified_gmt ?? item.date_modified ?? null,
+        })
+      }
+      hasMore = items.length === 100
+      page++
+    }
+
+    return out
+  }
+
   async toggleStatus(platformId: string, status: 'active' | 'archived'): Promise<void> {
     await this.request('PUT', `/products/${platformId}`, {
       status: status === 'active' ? 'publish' : 'private',
@@ -299,7 +363,7 @@ export class WooCommerceConnector implements PlatformConnector {
 
   async assignCategories(platformId: string, categoryIds: string[]): Promise<void> {
     await this.request('PUT', `/products/${platformId}`, {
-      categories: categoryIds.map((id) => ({ id: parseInt(id) })),
+      categories: categoryIds.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) })),
     })
   }
 
