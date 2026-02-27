@@ -1,8 +1,9 @@
 'use client'
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
+import { apiFetch, apiPatch, apiDelete } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
@@ -14,15 +15,72 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     queryFn:  () => apiFetch(`/api/products/${sku}`),
   })
 
+  const { data: categoryData } = useQuery({
+    queryKey: ['categories'],
+    queryFn:  () => apiFetch('/api/categories'),
+  })
+
+  const [description, setDescription] = useState('')
+  const [savingDesc, setSavingDesc] = useState(false)
+  const [savingCats, setSavingCats] = useState(false)
+  const [selectedCats, setSelectedCats] = useState<string[]>([])
+  const [catFilter, setCatFilter] = useState('')
+
   async function setPushStatus(platform: Platform, status: 'N' | '2push' | 'done') {
     await apiPatch(`/api/products/${sku}/push-status`, { platform, status })
     qc.invalidateQueries({ queryKey: ['product', sku] })
+  }
+
+  async function deleteImage(imageId: string) {
+    if (!confirm('Delete this image?')) return
+    await apiDelete(`/api/products/${sku}/images/${imageId}`, { triggeredBy: 'human' })
+    qc.invalidateQueries({ queryKey: ['product', sku] })
+  }
+
+  async function saveDescription() {
+    setSavingDesc(true)
+    try {
+      await apiPatch(`/api/products/${sku}/local`, {
+        fields: { description },
+        triggeredBy: 'human',
+      })
+      qc.invalidateQueries({ queryKey: ['product', sku] })
+    } finally {
+      setSavingDesc(false)
+    }
+  }
+
+  async function saveCategories() {
+    setSavingCats(true)
+    try {
+      await apiPatch(`/api/products/${sku}/local`, {
+        fields: { categoryIds: selectedCats },
+        triggeredBy: 'human',
+      })
+      qc.invalidateQueries({ queryKey: ['product', sku] })
+    } finally {
+      setSavingCats(false)
+    }
   }
 
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
   if (error || !data?.data) return <p className="text-xs text-destructive">Product not found</p>
 
   const p = data.data
+  const categories = (categoryData?.data ?? []) as Array<{ id: string; name: string; platform: string }>
+
+  useEffect(() => {
+    setDescription(p.description ?? '')
+    setSelectedCats(p.categories?.map((c: any) => c.id) ?? [])
+  }, [p.description, p.categories])
+
+  const filteredCategories = useMemo(() => {
+    const q = catFilter.trim().toLowerCase()
+    if (!q) return categories
+    return categories.filter((c) =>
+      c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+    )
+  }, [categories, catFilter])
 
   return (
     <div className="space-y-4 max-w-5xl">
@@ -84,6 +142,14 @@ export function ProductDetailPage({ sku }: { sku: string }) {
                       />
                     </a>
                     {dims && <span className="text-[10px] text-muted-foreground text-center">{dims}</span>}
+                    {img.id && (
+                      <button
+                        onClick={() => deleteImage(String(img.id))}
+                        className="text-[10px] text-destructive hover:underline"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -96,18 +162,65 @@ export function ProductDetailPage({ sku }: { sku: string }) {
 
       {/* Row 2 — Description */}
       <section className="border border-border rounded p-3 space-y-1 text-xs">
-        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Description</h2>
-        {p.description
-          ? <div className="whitespace-pre-wrap prose-none" dangerouslySetInnerHTML={{ __html: p.description }} />
-          : <p className="text-muted-foreground italic">—</p>
-        }
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Description</h2>
+          <button
+            onClick={saveDescription}
+            disabled={savingDesc}
+            className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
+          >
+            {savingDesc ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={8}
+          className="w-full text-xs border border-border rounded p-2 bg-background"
+          placeholder="Enter product description..."
+        />
       </section>
 
       {/* Row 3 — Categories & Collections */}
       <section className="border border-border rounded p-3 text-xs space-y-2">
-        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Categories &amp; Collections</h2>
-        {p.categories?.length > 0 ? (
-          <CategoryGroups categories={p.categories} />
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Categories &amp; Collections</h2>
+          <button
+            onClick={saveCategories}
+            disabled={savingCats}
+            className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
+          >
+            {savingCats ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <input
+          type="text"
+          placeholder="Filter categories..."
+          value={catFilter}
+          onChange={(e) => setCatFilter(e.target.value)}
+          className="text-[11px] border border-border rounded px-2 py-1 bg-background w-full"
+        />
+        {filteredCategories.length > 0 ? (
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {filteredCategories.map((c) => {
+              const checked = selectedCats.includes(c.id)
+              return (
+                <label key={c.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      setSelectedCats((prev) =>
+                        e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id)
+                      )
+                    }}
+                  />
+                  <span className="text-muted-foreground">[{c.platform}]</span>
+                  <span>{c.name}</span>
+                </label>
+              )
+            })}
+          </div>
         ) : (
           <p className="text-muted-foreground italic">No categories</p>
         )}

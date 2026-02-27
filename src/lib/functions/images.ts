@@ -174,6 +174,34 @@ export async function deleteProductImages(
 }
 
 // ---------------------------------------------------------------------------
+// deleteProductImageById — delete one image from D1 (and R2 if applicable)
+// ---------------------------------------------------------------------------
+
+export async function deleteProductImageById(
+  sku: string,
+  imageId: string,
+  triggeredBy: TriggeredBy = 'human'
+): Promise<{ id: string; sku: string }> {
+  const image = await db.query.productImages.findFirst({
+    where: and(eq(productImages.id, imageId), eq(productImages.productId, sku)),
+  })
+  if (!image) throw new Error('Image not found')
+
+  await deleteR2Keys([image.url])
+  await db.delete(productImages).where(eq(productImages.id, imageId))
+
+  await logOperation({
+    productId: sku,
+    action:    'delete_image',
+    status:    'success',
+    message:   `image_id=${imageId}`,
+    triggeredBy,
+  })
+
+  return { id: imageId, sku }
+}
+
+// ---------------------------------------------------------------------------
 // copyImagesBetweenPlatforms
 // ---------------------------------------------------------------------------
 

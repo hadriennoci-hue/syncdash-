@@ -7,7 +7,7 @@ const isBlockedAcerSku = (sku: string) =>
 
 import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers } from '@/lib/db/schema'
-import { eq, and, isNull, notInArray } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy } from '@/types/platform'
@@ -19,8 +19,6 @@ interface SyncResult {
   errors: string[]
   syncedAt: string
 }
-
-const ZERO_UNTOUCHED_WAREHOUSES = new Set(['ireland', 'acer_store'])
 
 // ---------------------------------------------------------------------------
 // syncWarehouse — reads stock from source and updates D1
@@ -38,18 +36,17 @@ export async function syncWarehouse(
   const connector = await createWarehouseConnector(warehouseId)
   const snapshots = await connector.getStock()
 
-  // For ACER Store: zero all existing stock before applying the new scrape.
-  // Firecrawl only returns in-stock SKUs, so anything not returned is now out of stock.
+  // For warehouses that return only in-stock items, zero existing stock first,
+  // then upsert the returned SKUs. This avoids NOT IN with too many variables.
   // This only runs after a fully successful getStock() — if it throws, we never reach here.
-  if (warehouseId === 'acer_store') {
+  if (warehouseId === 'acer_store' || warehouseId === 'ireland') {
     await db.update(warehouseStock)
       .set({ quantity: 0, updatedAt: new Date().toISOString() })
-      .where(eq(warehouseStock.warehouseId, 'acer_store'))
+      .where(eq(warehouseStock.warehouseId, warehouseId))
   }
 
   const errors: string[] = []
   let productsUpdated = 0
-  const touchedSkus = new Set<string>()
 
   // Ireland and ACER Store products are always supplied by ACER — ensure supplier row exists
   const isAcerSource = warehouseId === 'ireland' || warehouseId === 'acer_store'
@@ -61,8 +58,6 @@ export async function syncWarehouse(
 
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
-    touchedSkus.add(snap.sku)
-
     if (snap.quantity <= 0) {
       // Zero out existing warehouse_stock if this product is already tracked,
       // but never auto-create a product record for zero-stock items.
@@ -127,23 +122,7 @@ export async function syncWarehouse(
     }
   }
 
-  // For warehouses that report only in-stock items, anything not returned by the scan
-  // must be considered out of stock in our local DB.
-  if (ZERO_UNTOUCHED_WAREHOUSES.has(warehouseId)) {
-    const now = new Date().toISOString()
-    if (touchedSkus.size === 0) {
-      await db.update(warehouseStock)
-        .set({ quantity: 0, updatedAt: now })
-        .where(eq(warehouseStock.warehouseId, warehouseId))
-    } else {
-      await db.update(warehouseStock)
-        .set({ quantity: 0, updatedAt: now })
-        .where(and(
-          eq(warehouseStock.warehouseId, warehouseId),
-          notInArray(warehouseStock.productId, Array.from(touchedSkus))
-        ))
-    }
-  }
+  // Post-scan zeroing is no longer needed for Ireland/ACER because we zeroed up front.
 
   const syncedAt = new Date().toISOString()
   await db.update(warehouses)

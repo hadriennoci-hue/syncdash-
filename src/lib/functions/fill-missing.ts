@@ -45,6 +45,18 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
   }
 
   if (isComplete(state)) {
+    if (product.status === 'info') {
+      await db.update(products)
+        .set({ status: 'active', updatedAt: new Date().toISOString() })
+        .where(eq(products.id, sku))
+      await logOperation({
+        productId: sku,
+        action: 'fill_missing',
+        status: 'success',
+        message: 'Already complete — status set to active',
+        triggeredBy,
+      })
+    }
     return { sku, status: 'complete', filled: [], missing: [], sources: [] }
   }
 
@@ -88,7 +100,7 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
   }
 
   await db.update(products)
-    .set({ updatedAt: new Date().toISOString() })
+    .set({ status: product.status === 'info' ? 'active' : product.status, updatedAt: new Date().toISOString() })
     .where(eq(products.id, sku))
   await logOperation({
     productId: sku,

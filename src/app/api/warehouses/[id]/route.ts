@@ -28,6 +28,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     orderBy: (t, { asc }) => [sql`CASE WHEN ${t.quantity} > 0 THEN 0 ELSE 1 END`, asc(t.productId)],
   })
 
+  const [lastUpdatedRow] = await db.select({
+    lastUpdated: sql<string | null>`MAX(${warehouseStock.updatedAt})`,
+  })
+    .from(warehouseStock)
+    .where(eq(warehouseStock.warehouseId, params.id))
+
   return apiResponse({
     id:             warehouse.id,
     displayName:    warehouse.displayName,
@@ -35,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     sourceType:     warehouse.sourceType,
     canModifyStock: !!warehouse.canModifyStock,
     autoSync:       !!warehouse.autoSync,
-    lastSynced:     warehouse.lastSynced,
+    lastSynced:     warehouse.lastSynced ?? lastUpdatedRow?.lastUpdated ?? null,
     createdAt:      warehouse.createdAt,
     stock:          stock.map((s) => ({
       productId:                s.productId,

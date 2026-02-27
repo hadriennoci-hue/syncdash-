@@ -105,8 +105,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       pushStatus,
       price:            priceRow?.price    ?? null,
       compareAt:        priceRow?.compareAt ?? null,
-      importPrice:      stockMap.acer_store.importPrice ?? stockMap.ireland.importPrice ?? null,
-      importPromoPrice: stockMap.acer_store.importPromoPrice ?? stockMap.ireland.importPromoPrice ?? null,
+      importPrice:      stockMap.ireland.importPrice ?? stockMap.acer_store.importPrice ?? null,
+      importPromoPrice: stockMap.ireland.importPromoPrice ?? stockMap.acer_store.importPromoPrice ?? null,
       stock: {
         ireland:    stockMap.ireland.qty,
         acer_store: stockMap.acer_store.qty,

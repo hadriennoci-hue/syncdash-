@@ -197,7 +197,7 @@ export function DashboardHome() {
               disabled={scanning}
               className="text-xs px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {scanning ? 'Scanningâ€¦' : 'Scan stocks'}
+              {scanning ? 'Scanning...' : 'Scan stocks'}
             </button>
           </div>
           {scanError && (

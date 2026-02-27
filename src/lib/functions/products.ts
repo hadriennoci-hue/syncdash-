@@ -248,6 +248,52 @@ export async function updateProduct(
 }
 
 // ---------------------------------------------------------------------------
+// updateProductLocal — update D1 only (no platform push)
+// ---------------------------------------------------------------------------
+
+interface UpdateProductLocalInput {
+  fields: {
+    title?: string
+    description?: string
+    status?: 'active' | 'archived'
+    isFeatured?: boolean
+    categoryIds?: string[]
+  }
+  triggeredBy?: TriggeredBy
+}
+
+export async function updateProductLocal(
+  sku: string,
+  input: UpdateProductLocalInput
+): Promise<void> {
+  const triggeredBy = input.triggeredBy ?? 'human'
+
+  const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+  if (input.fields.title !== undefined)       d1Update.title = input.fields.title
+  if (input.fields.description !== undefined) d1Update.description = input.fields.description
+  if (input.fields.status !== undefined)      d1Update.status = input.fields.status
+  if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
+
+  await db.update(products)
+    .set(d1Update)
+    .where(eq(products.id, sku))
+
+  if (input.fields.categoryIds) {
+    await db.delete(productCategories).where(eq(productCategories.productId, sku))
+    for (const catId of input.fields.categoryIds) {
+      await db.insert(productCategories).values({ productId: sku, categoryId: catId }).onConflictDoNothing()
+    }
+  }
+
+  await logOperation({
+    productId: sku,
+    action:    'update_local',
+    status:    'success',
+    triggeredBy,
+  })
+}
+
+// ---------------------------------------------------------------------------
 // toggleProductStatus
 // ---------------------------------------------------------------------------
 

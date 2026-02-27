@@ -3,11 +3,15 @@ import { z } from 'zod'
 import type { WarehouseConnector, WarehouseStockSnapshot, HealthCheckResult } from './types'
 
 const EXTRACT_PROMPT =
-  'Extract product information across all paginated results. ' +
+  'Extract product information from this page only. ' +
   'For each product, capture: name, SKU reference from the SKU-wrapper element, ' +
   'price, product URL, and the promo price from the b2c-2025-promo-text-block1 element. ' +
   'If a product appears out of stock (greyed out, unavailable badge, disabled add-to-cart), ' +
   'set inStock to false. Output a flat list of all products found.'
+
+const PAGINATION_PROMPT =
+  'Extract all pagination page URLs for this category (including the current page). ' +
+  'Return a list of absolute URLs in display order. If no pagination exists, return an empty list.'
 
 const AcerProductSchema = z.object({
   products: z.array(
@@ -20,6 +24,10 @@ const AcerProductSchema = z.object({
       inStock: z.boolean().default(true),
     })
   ),
+})
+
+const PaginationSchema = z.object({
+  pageUrls: z.array(z.string().url()).default([]),
 })
 
 const HealthSchema = z.object({
@@ -75,44 +83,69 @@ export class AcerScraperConnector implements WarehouseConnector {
   }
 
   async getStock(): Promise<WarehouseStockSnapshot[]> {
-    // Single extract across all category URLs — avoids per-category crawl+extract
-    // pairs that hit Firecrawl concurrent-job limits.
-    let result: Awaited<ReturnType<typeof this.firecrawl.extract>>
-    try {
-      result = await this.firecrawl.extract(this.urls, {
-        prompt: EXTRACT_PROMPT,
-        schema: AcerProductSchema,
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      throw new Error(`Firecrawl extract failed: ${msg}`)
-    }
-
-    if (!result.success) {
-      const msg = 'error' in result ? String(result.error) : 'Unknown Firecrawl error'
-      throw new Error(`Firecrawl extraction failed: ${msg}`)
-    }
-
-    const parsed = AcerProductSchema.safeParse(result.data)
-    if (!parsed.success) {
-      throw new Error(`Unexpected Firecrawl response shape: ${parsed.error.message}`)
-    }
-
     const seen = new Set<string>()
     const snapshots: WarehouseStockSnapshot[] = []
+    const blockedNameTokens = ['trouver', 'réparation', 'mcafee']
 
-    for (const product of parsed.data.products) {
-      const sku = product.sku.trim()
-      if (!sku || seen.has(sku)) continue
-      seen.add(sku)
-      snapshots.push({
-        sku,
-        quantity:         product.inStock ? 2 : 0,
-        sourceUrl:        product.url,
-        sourceName:       product.name,
-        importPrice:      product.price ?? null,
-        importPromoPrice: product.promoPrice ?? null,
-      })
+    for (const baseUrl of this.urls) {
+      // Pagination discovery is per-category and sequential to avoid Firecrawl concurrency limits.
+      let pageUrls: string[] = []
+      try {
+        const pageResult = await this.firecrawl.extract([baseUrl], {
+          prompt: PAGINATION_PROMPT,
+          schema: PaginationSchema,
+        })
+        if (pageResult.success) {
+          const parsedPages = PaginationSchema.safeParse(pageResult.data)
+          if (parsedPages.success) {
+            pageUrls = parsedPages.data.pageUrls
+          }
+        }
+      } catch {
+        pageUrls = []
+      }
+
+      const urlsToFetch = pageUrls.length > 0 ? pageUrls : [baseUrl]
+
+      for (const pageUrl of urlsToFetch) {
+        let result: Awaited<ReturnType<typeof this.firecrawl.extract>>
+        try {
+          result = await this.firecrawl.extract([pageUrl], {
+            prompt: EXTRACT_PROMPT,
+            schema: AcerProductSchema,
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          throw new Error(`Firecrawl extract failed: ${msg}`)
+        }
+
+        if (!result.success) {
+          const msg = 'error' in result ? String(result.error) : 'Unknown Firecrawl error'
+          throw new Error(`Firecrawl extraction failed: ${msg}`)
+        }
+
+        const parsed = AcerProductSchema.safeParse(result.data)
+        if (!parsed.success) {
+          throw new Error(`Unexpected Firecrawl response shape: ${parsed.error.message}`)
+        }
+
+        for (const product of parsed.data.products) {
+          const name = product.name.trim()
+          const nameLower = name.toLowerCase()
+          if (blockedNameTokens.some((token) => nameLower.includes(token))) continue
+          const sku = product.sku.trim()
+          if (!sku || seen.has(sku)) continue
+          seen.add(sku)
+          snapshots.push({
+            sku,
+            quantity:         product.inStock ? 2 : 0,
+            sourceUrl:        product.url,
+            sourceName:       name,
+            importPrice:      product.price ?? null,
+            importPromoPrice: product.promoPrice ?? null,
+          })
+        }
+      }
     }
 
     return snapshots
