@@ -16,6 +16,32 @@ interface ImportResult {
   errors: string[]
 }
 
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+}
+
+function toPlainTextLines(html: string): string {
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/\s*p\s*>/gi, '\n')
+    .replace(/<\/\s*div\s*>/gi, '\n')
+  const stripped = withBreaks.replace(/<[^>]+>/g, ' ')
+  const decoded = decodeHtmlEntities(stripped)
+  return decoded
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n\s+/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
 export async function importFromPlatform(
   platform: Platform,
   _mode: 'full' | 'new_changed' = 'new_changed',
@@ -42,11 +68,15 @@ export async function importFromPlatform(
 
   for (const raw of rawProducts) {
     try {
+      const description = (isAcerPlatform && raw.description)
+        ? toPlainTextLines(raw.description)
+        : raw.description
+
       // Upsert product
       await db.insert(products).values({
         id:          raw.sku,
         title:       raw.title,
-        description: raw.description,
+        description,
         status:      raw.status,
         taxCode:     raw.taxCode,
         weight:      raw.weight,
@@ -59,7 +89,7 @@ export async function importFromPlatform(
         target: products.id,
         set: {
           title:       raw.title,
-          description: raw.description,
+          description,
           status:      raw.status,
           vendor:      raw.vendor,
           productType: raw.productType,

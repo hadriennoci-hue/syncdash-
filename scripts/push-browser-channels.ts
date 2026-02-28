@@ -479,15 +479,26 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   await lmSuivant(page, 'step 2')
 
   // Step 3 - photos
-  // Always pick the highest-quality image (largest dimensions, then file size).
+  // Prefer >=800x800, but if none match keep going with the largest available image.
   let chosenPath: string | null = null
-  const ranked = await lmRankImagesByQuality(page, imagePaths)
-  if (ranked.length > 0) chosenPath = ranked[0]
+  let fallback: { path: string; area: number } | null = null
+  for (const imgPath of imagePaths) {
+    const dims = await imgDims(page, imgPath)
+    const area = Math.max(0, dims.w) * Math.max(0, dims.h)
+    if (!fallback || area > fallback.area) fallback = { path: imgPath, area }
+    if (dims.w >= 800 && dims.h >= 800) {
+      chosenPath = imgPath
+      break
+    }
+  }
+  if (!chosenPath && fallback) {
+    chosenPath = fallback.path
+    console.log('    Warning: no image >=800x800, using best available fallback image')
+  }
   if (chosenPath) {
     const fileInput = page.locator('input[type="file"]').first()
     if (await fileInput.count() > 0) {
       await fileInput.setInputFiles(chosenPath)
-      await lmWarnIfImageRejected(page, 'create', fileInput)
     } else {
       await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[2]/div[1]/div')
         .first().click().catch(() => {})
@@ -664,7 +675,7 @@ async function xmrFillForm(
   moneroAddress: string,
   isEdit = false
 ): Promise<void> {
-  const price = product.prices.xmr_bazaar?.price ?? 0
+  const price = Math.floor(product.prices.xmr_bazaar?.price ?? 0)
   const desc  = stripHtml(product.description ?? product.title)
 
   await page.locator('select[name="category"]').selectOption({ label: 'Electronics' }).catch(() => {})
@@ -856,9 +867,9 @@ async function xmrEdit(
   if (status === 'active' && price != null) {
     await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[1]/div[4]/div[1]/input')
       .first()
-      .fill(String(price))
+      .fill(String(Math.floor(price)))
       .catch(async () => {
-        await page.locator('input[name="price"]').first().fill(String(price)).catch(() => {})
+        await page.locator('input[name="price"]').first().fill(String(Math.floor(price))).catch(() => {})
       })
   }
 

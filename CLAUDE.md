@@ -486,3 +486,4 @@ npx wrangler r2 bucket dev-url get syncdash-images
 - Runner visibility constraint (current user preference):
   - Always launch runner in a **visible terminal window**.
   - Always run browser automation in **headed mode** (browser windows visible), not headless.
+I can access Production using the same service token Cloudflare ID & Secret as runner, its written in .dev.vars
