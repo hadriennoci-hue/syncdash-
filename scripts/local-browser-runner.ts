@@ -27,6 +27,7 @@ const HEADLESS = hasFlag('--headless') || !hasFlag('--headed')
 const INTERVAL_MIN = Number(argValue('--interval-min', '5'))
 const WAKE_POLL_SEC = Number(argValue('--wake-poll-sec', '10'))
 const NO_WAKE = hasFlag('--no-wake')
+const ALLOW_INTERVAL = hasFlag('--allow-interval')
 const HEARTBEAT_MIN = Number(argValue('--heartbeat-min', '5'))
 const STALE_LOCK_MIN = Number(argValue('--stale-lock-min', '360'))
 
@@ -186,7 +187,7 @@ process.on('SIGINT', () => { stopRequested = true })
 process.on('SIGTERM', () => { stopRequested = true })
 
 async function main(): Promise<void> {
-  if (!Number.isFinite(INTERVAL_MIN) || INTERVAL_MIN <= 0) {
+  if (ALLOW_INTERVAL && (!Number.isFinite(INTERVAL_MIN) || INTERVAL_MIN <= 0)) {
     throw new Error(`Invalid --interval-min value: ${INTERVAL_MIN}`)
   }
   if (!Number.isFinite(WAKE_POLL_SEC) || WAKE_POLL_SEC <= 0) {
@@ -202,8 +203,9 @@ async function main(): Promise<void> {
     : (vars['WIZHARD_URL'] ?? '')
   const token = vars['AGENT_BEARER_TOKEN'] ?? ''
   const wakeEnabled = !NO_WAKE && !!apiBase && !!token
+  const intervalEnabled = !wakeEnabled || ALLOW_INTERVAL
 
-  log(`Runner started (interval=${INTERVAL_MIN}m, wakePoll=${WAKE_POLL_SEC}s, heartbeat=${HEARTBEAT_MIN}m, local=${USE_LOCAL}, headless=${HEADLESS}, dryRun=${DRY_RUN}, once=${ONCE}, wake=${wakeEnabled})`)
+  log(`Runner started (interval=${intervalEnabled ? `${INTERVAL_MIN}m` : 'disabled'}, wakePoll=${WAKE_POLL_SEC}s, heartbeat=${HEARTBEAT_MIN}m, local=${USE_LOCAL}, headless=${HEADLESS}, dryRun=${DRY_RUN}, once=${ONCE}, wake=${wakeEnabled})`)
 
   if (ONCE) {
     const code = await runPushOnce()
@@ -244,7 +246,7 @@ async function main(): Promise<void> {
       }
     }
 
-    if (!ran && (Date.now() - lastRunAt >= INTERVAL_MIN * 60 * 1000)) {
+    if (!ran && intervalEnabled && (Date.now() - lastRunAt >= INTERVAL_MIN * 60 * 1000)) {
       await runPushOnce()
       lastRunAt = Date.now()
       ran = true

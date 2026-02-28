@@ -13,6 +13,11 @@ const PAGINATION_PROMPT =
   'Extract all pagination page URLs for this category (including the current page). ' +
   'Return a list of absolute URLs in display order. If no pagination exists, return an empty list.'
 
+const PAGINATION_FALLBACK_PROMPT =
+  'Return the absolute URL of the page 2 pagination link if present. ' +
+  'Use the XPath /html/body/div[3]/main/div[3]/div[2]/div[4]/div[3]/div[1]/div/ul/li[2]/a/span[2] to locate it, ' +
+  'and return null if not found.'
+
 const AcerProductSchema = z.object({
   products: z.array(
     z.object({
@@ -28,6 +33,10 @@ const AcerProductSchema = z.object({
 
 const PaginationSchema = z.object({
   pageUrls: z.array(z.string().url()).default([]),
+})
+
+const PaginationFallbackSchema = z.object({
+  page2Url: z.string().url().nullable(),
 })
 
 const HealthSchema = z.object({
@@ -103,6 +112,41 @@ export class AcerScraperConnector implements WarehouseConnector {
         }
       } catch {
         pageUrls = []
+      }
+
+      if (pageUrls.length === 0) {
+        try {
+          const fallbackResult = await this.firecrawl.extract([baseUrl], {
+            prompt: PAGINATION_FALLBACK_PROMPT,
+            schema: PaginationFallbackSchema,
+          })
+          if (fallbackResult.success) {
+            const parsedFallback = PaginationFallbackSchema.safeParse(fallbackResult.data)
+            const page2Url = parsedFallback.success ? parsedFallback.data.page2Url : null
+            if (page2Url) {
+              try {
+                const page2Result = await this.firecrawl.extract([page2Url], {
+                  prompt: PAGINATION_PROMPT,
+                  schema: PaginationSchema,
+                })
+                if (page2Result.success) {
+                  const parsedPage2 = PaginationSchema.safeParse(page2Result.data)
+                  if (parsedPage2.success && parsedPage2.data.pageUrls.length > 0) {
+                    pageUrls = parsedPage2.data.pageUrls
+                  }
+                }
+              } catch {
+                // ignore and fall back to minimal list
+              }
+
+              if (pageUrls.length === 0) {
+                pageUrls = [baseUrl, page2Url]
+              }
+            }
+          }
+        } catch {
+          // ignore fallback failures
+        }
       }
 
       const urlsToFetch = pageUrls.length > 0 ? pageUrls : [baseUrl]

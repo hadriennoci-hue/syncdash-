@@ -63,16 +63,17 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     }
   }
 
-  if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
-  if (error || !data?.data) return <p className="text-xs text-destructive">Product not found</p>
-
-  const p = data.data
+  const p = data?.data
   const categories = (categoryData?.data ?? []) as Array<{ id: string; name: string; platform: string }>
 
   useEffect(() => {
+    if (!p) return
     setDescription(p.description ?? '')
     setSelectedCats(p.categories?.map((c: any) => c.id) ?? [])
-  }, [p.description, p.categories])
+  }, [p?.description, p?.categories, p])
+
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
+  if (error || !p) return <p className="text-xs text-destructive">Product not found</p>
 
   const filteredCategories = useMemo(() => {
     const q = catFilter.trim().toLowerCase()
