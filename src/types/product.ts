@@ -110,7 +110,7 @@ export interface ProductRow {
   hasDescription: boolean
   isFeatured: boolean
   imageCount: number
-  hasMinImages: boolean  // >= 5 images
+  hasMinImages: boolean  // >= 2 images
   localization: string | null
   platforms: Record<Platform, {
     status: PlatformStatus

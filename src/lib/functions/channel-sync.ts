@@ -28,6 +28,23 @@ interface StockRow   { quantity: number }
 interface MappingRow { platform: string; platformId: string }
 interface ImageRow   { url: string; position: number; alt: string | null }
 
+type WooSkuAware = {
+  updateProductForSku: (platformId: string, sku: string, data: Partial<import('@/lib/connectors/types').ProductPayload>) => Promise<void>
+  updatePriceForSku: (platformId: string, sku: string, price: number | null, compareAt?: number | null) => Promise<void>
+  updateStockForSku: (platformId: string, sku: string, quantity: number) => Promise<void>
+  toggleStatusForSku: (platformId: string, sku: string, status: 'active' | 'archived') => Promise<void>
+  bulkSetStockForSkus: (items: Array<{ platformId: string; sku: string; quantity: number }>) => Promise<void>
+}
+
+function isWooSkuAware(connector: unknown): connector is WooSkuAware {
+  return !!connector
+    && typeof (connector as WooSkuAware).updateProductForSku === 'function'
+    && typeof (connector as WooSkuAware).updatePriceForSku === 'function'
+    && typeof (connector as WooSkuAware).updateStockForSku === 'function'
+    && typeof (connector as WooSkuAware).toggleStatusForSku === 'function'
+    && typeof (connector as WooSkuAware).bulkSetStockForSkus === 'function'
+}
+
 interface EligibleProduct {
   id:                      string
   title:                   string
@@ -72,7 +89,7 @@ function checkCompleteness(p: EligibleProduct, platform: Platform): string[] {
 
   if (!p.title || p.title === p.id) missing.push('title')
   if (!p.description?.trim())        missing.push('description')
-  if (p.images.length < 3)           missing.push(`images (${p.images.length}/3)`)
+  if (p.images.length < 2)           missing.push(`images (${p.images.length}/2)`)
 
   const price = p.prices.find((r) => r.platform === platform)
   if (!price?.price)                 missing.push(`price (${platform})`)
@@ -193,10 +210,17 @@ async function pushPlatform(
       }
 
       const updateExisting = async (platformId: string): Promise<void> => {
-        await connector.updateProduct(platformId, identityPatch)
-        await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-        await connector.updateStock(platformId, totalStock)
-        await connector.toggleStatus(platformId, 'active')
+        if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+          await connector.updateProductForSku(platformId, product.id, identityPatch)
+          await connector.updatePriceForSku(platformId, product.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+          await connector.updateStockForSku(platformId, product.id, totalStock)
+          await connector.toggleStatusForSku(platformId, product.id, 'active')
+        } else {
+          await connector.updateProduct(platformId, identityPatch)
+          await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+          await connector.updateStock(platformId, totalStock)
+          await connector.toggleStatus(platformId, 'active')
+        }
       }
 
       const createNew = async (): Promise<string> => {
@@ -317,13 +341,17 @@ async function pushPlatform(
     const allMappings = await db.query.platformMappings.findMany({
       where: eq(platformMappings.platform, platform),
     })
-    const toZero: Array<{ platformId: string; quantity: number }> = allMappings
+    const toZero = allMappings
       .filter((m) => !inStockSkus.has(m.productId))
       .filter((m) => !touchedPlatformIds.has(m.platformId))
-      .map((m) => ({ platformId: m.platformId, quantity: 0 }))
+      .map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
 
     if (toZero.length > 0) {
-      await connector.bulkSetStock(toZero)
+      if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+        await connector.bulkSetStockForSkus(toZero)
+      } else {
+        await connector.bulkSetStock(toZero.map(({ platformId, quantity }) => ({ platformId, quantity })))
+      }
       zeroedOutOfStock = toZero.length
     }
   } catch (err) {

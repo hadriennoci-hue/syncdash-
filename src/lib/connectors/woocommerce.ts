@@ -57,6 +57,50 @@ export class WooCommerceConnector implements PlatformConnector {
     return res.json() as Promise<T>
   }
 
+  private async findParentProductIdBySku(sku: string): Promise<string | null> {
+    const exact = await this.request<Array<{ id: number }>>(
+      'GET',
+      `/products?sku=${encodeURIComponent(sku)}&per_page=1&status=any`
+    )
+    if (exact[0]?.id) return String(exact[0].id)
+
+    const search = await this.request<Array<{ id: number; type?: string }>>(
+      'GET',
+      `/products?search=${encodeURIComponent(sku)}&per_page=20&status=any`
+    )
+    for (const p of search) {
+      if (p?.id) return String(p.id)
+    }
+    return null
+  }
+
+  private async findVariationIdBySku(parentId: string, sku: string): Promise<string | null> {
+    let page = 1
+    while (true) {
+      const vars = await this.request<Array<{ id: number; sku?: string | null }>>(
+        'GET',
+        `/products/${parentId}/variations?per_page=100&page=${page}`
+      )
+      for (const v of vars) {
+        if ((v.sku ?? '').trim() === sku) return String(v.id)
+      }
+      if (vars.length < 100) break
+      page++
+    }
+    return null
+  }
+
+  private async resolveVariationContext(
+    platformId: string,
+    sku: string
+  ): Promise<{ parentId: string; variationId: string } | null> {
+    const parentId = await this.findParentProductIdBySku(sku)
+    if (!parentId) return null
+    const variationId = await this.findVariationIdBySku(parentId, sku)
+    if (!variationId) return null
+    return { parentId, variationId }
+  }
+
   // -------------------------------------------------------------------------
   // Import (paginated — max 100 per page)
   // -------------------------------------------------------------------------
@@ -251,6 +295,12 @@ export class WooCommerceConnector implements PlatformConnector {
     await this.request('PUT', `/products/${platformId}`, body)
   }
 
+  async updateProductForSku(platformId: string, sku: string, data: Partial<ProductPayload>): Promise<void> {
+    const ctx = await this.resolveVariationContext(platformId, sku)
+    const targetId = ctx?.parentId ?? platformId
+    await this.updateProduct(targetId, data)
+  }
+
   // -------------------------------------------------------------------------
   // Delete
   // -------------------------------------------------------------------------
@@ -297,12 +347,37 @@ export class WooCommerceConnector implements PlatformConnector {
     })
   }
 
+  async updatePriceForSku(platformId: string, sku: string, price: number | null, compareAt?: number | null): Promise<void> {
+    const ctx = await this.resolveVariationContext(platformId, sku)
+    if (!ctx) {
+      await this.updatePrice(platformId, price, compareAt)
+      return
+    }
+    await this.request('PUT', `/products/${ctx.parentId}/variations/${ctx.variationId}`, {
+      regular_price: compareAt ? compareAt.toString() : (price?.toString() ?? ''),
+      sale_price:    compareAt && price ? price.toString() : '',
+    })
+  }
+
   // -------------------------------------------------------------------------
   // Status
   // -------------------------------------------------------------------------
 
   async updateStock(platformId: string, quantity: number): Promise<void> {
     await this.request('PUT', `/products/${platformId}`, {
+      manage_stock:   true,
+      stock_quantity: quantity,
+      in_stock:       quantity > 0,
+    })
+  }
+
+  async updateStockForSku(platformId: string, sku: string, quantity: number): Promise<void> {
+    const ctx = await this.resolveVariationContext(platformId, sku)
+    if (!ctx) {
+      await this.updateStock(platformId, quantity)
+      return
+    }
+    await this.request('PUT', `/products/${ctx.parentId}/variations/${ctx.variationId}`, {
       manage_stock:   true,
       stock_quantity: quantity,
       in_stock:       quantity > 0,
@@ -321,6 +396,25 @@ export class WooCommerceConnector implements PlatformConnector {
           stock_quantity: quantity,
         })),
       })
+    }
+  }
+
+  async bulkSetStockForSkus(items: Array<{ platformId: string; sku: string; quantity: number }>): Promise<void> {
+    const simple: Array<{ platformId: string; quantity: number }> = []
+    for (const item of items) {
+      const ctx = await this.resolveVariationContext(item.platformId, item.sku)
+      if (!ctx) {
+        simple.push({ platformId: item.platformId, quantity: item.quantity })
+        continue
+      }
+      await this.request('PUT', `/products/${ctx.parentId}/variations/${ctx.variationId}`, {
+        manage_stock:   true,
+        stock_quantity: item.quantity,
+        in_stock:       item.quantity > 0,
+      })
+    }
+    if (simple.length > 0) {
+      await this.bulkSetStock(simple)
     }
   }
 
@@ -355,6 +449,12 @@ export class WooCommerceConnector implements PlatformConnector {
     await this.request('PUT', `/products/${platformId}`, {
       status: status === 'active' ? 'publish' : 'private',
     })
+  }
+
+  async toggleStatusForSku(platformId: string, sku: string, status: 'active' | 'archived'): Promise<void> {
+    const ctx = await this.resolveVariationContext(platformId, sku)
+    const targetId = ctx?.parentId ?? platformId
+    await this.toggleStatus(targetId, status)
   }
 
   // -------------------------------------------------------------------------

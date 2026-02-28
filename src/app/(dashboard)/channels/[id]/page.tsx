@@ -99,8 +99,11 @@ function handleCopyCmd() {
   const dirtyCount = Object.values(dirty).reduce((n, m) =>
     n + (m.price !== undefined ? 1 : 0) + (m.compareAt !== undefined ? 1 : 0), 0)
 
+  const normalizeDecimalInput = (value: string) =>
+    value.replace(',', '.')
+
   const handleChange = useCallback((sku: string, field: 'price' | 'compareAt', value: string) => {
-    setDirty((prev) => ({ ...prev, [sku]: { ...prev[sku], [field]: value } }))
+    setDirty((prev) => ({ ...prev, [sku]: { ...prev[sku], [field]: normalizeDecimalInput(value) } }))
   }, [])
 
   const handleFieldDiscard = useCallback((sku: string, field: 'price' | 'compareAt') => {
@@ -128,7 +131,13 @@ function handleCopyCmd() {
         const n = parseFloat(fields.price); if (!isNaN(n) && n > 0) body.price = n
       }
       if (fields.compareAt !== undefined) {
-        const n = parseFloat(fields.compareAt); if (!isNaN(n) && n > 0) body.compareAt = n
+        const raw = fields.compareAt.trim()
+        if (raw === '') {
+          body.compareAt = null
+        } else {
+          const n = parseFloat(raw)
+          if (!isNaN(n) && n > 0) body.compareAt = n
+        }
       }
       if (body.price !== undefined || body.compareAt !== undefined) {
         calls.push(apiPatch(`/api/products/${sku}/prices`, body).catch(() => { errs.push(sku) }))

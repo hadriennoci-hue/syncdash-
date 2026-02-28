@@ -330,6 +330,59 @@ async function lmWaitImageSettled(page: Page): Promise<void> {
   await page.waitForTimeout(2500)
 }
 
+const LM_SIZE_ERROR_PATTERNS = [
+  /taille.*(max|maximum|limite)/i,
+  /trop.*(grand|grande)/i,
+  /fichier.*(grand|lourd|poids)/i,
+  /size.*(limit|max|too large)/i,
+  /exceed(ed)?/i,
+]
+
+async function lmWarnIfImageRejected(page: Page, context: string, input?: ReturnType<Page['locator']>) {
+  let filesCount = -1
+  if (input) {
+    filesCount = await input.evaluate((el) => (el as HTMLInputElement).files?.length ?? 0).catch(() => -1)
+  }
+
+  const selectors = [
+    '[role="alert"]',
+    '.alert',
+    '.error',
+    '.text-danger',
+    '.text-red-500',
+    '.form-error',
+    '.invalid-feedback',
+  ]
+  const messages: string[] = []
+  for (const sel of selectors) {
+    const nodes = await page.locator(sel).all().catch(() => [])
+    for (const node of nodes) {
+      const txt = (await node.textContent().catch(() => ''))?.trim()
+      if (txt) messages.push(txt)
+    }
+  }
+
+  const bodyText = (await page.textContent('body').catch(() => '')) ?? ''
+  const candidates = [...messages, bodyText]
+  const matched = candidates.find((txt) => LM_SIZE_ERROR_PATTERNS.some((re) => re.test(txt)))
+
+  if (filesCount === 0 || matched) {
+    console.log(`    Warning: Libre Market rejected image upload (${context})${matched ? ` — ${matched.slice(0, 120)}` : ''}`)
+  }
+}
+
+async function lmRankImagesByQuality(page: Page, imagePaths: string[]): Promise<string[]> {
+  const scored: Array<{ path: string; area: number; bytes: number }> = []
+  for (const p of imagePaths) {
+    const dims = await imgDims(page, p)
+    const area = Math.max(0, dims.w) * Math.max(0, dims.h)
+    const bytes = fs.statSync(p).size
+    scored.push({ path: p, area, bytes })
+  }
+  scored.sort((a, b) => (b.area - a.area) || (b.bytes - a.bytes))
+  return scored.map((s) => s.path)
+}
+
 async function xmrIsListingNotFound(page: Page): Promise<boolean> {
   const candidates = [
     'xpath=/html/body/div[3]/div/div[2]/h2',
@@ -425,27 +478,16 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   await lmSetCreateStockOne(page)
   await lmSuivant(page, 'step 2')
 
-    // Step 3 - photos
-  // Prefer >=800x800, but if none match keep going with the largest available image.
+  // Step 3 - photos
+  // Always pick the highest-quality image (largest dimensions, then file size).
   let chosenPath: string | null = null
-  let fallback: { path: string; area: number } | null = null
-  for (const imgPath of imagePaths) {
-    const dims = await imgDims(page, imgPath)
-    const area = Math.max(0, dims.w) * Math.max(0, dims.h)
-    if (!fallback || area > fallback.area) fallback = { path: imgPath, area }
-    if (dims.w >= 800 && dims.h >= 800) {
-      chosenPath = imgPath
-      break
-    }
-  }
-  if (!chosenPath && fallback) {
-    chosenPath = fallback.path
-    console.log('    Warning: no image >=800x800, using best available fallback image')
-  }
+  const ranked = await lmRankImagesByQuality(page, imagePaths)
+  if (ranked.length > 0) chosenPath = ranked[0]
   if (chosenPath) {
     const fileInput = page.locator('input[type="file"]').first()
     if (await fileInput.count() > 0) {
       await fileInput.setInputFiles(chosenPath)
+      await lmWarnIfImageRejected(page, 'create', fileInput)
     } else {
       await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[2]/div[1]/div')
         .first().click().catch(() => {})

@@ -8,7 +8,7 @@ import type { Platform } from '@/types/platform'
 
 const patchSchema = z.object({
   price:       z.number().positive().optional(),
-  compareAt:   z.number().positive().optional(),
+  compareAt:   z.union([z.number().positive(), z.null()]).optional(),
   platforms:   z.array(z.string()).min(1),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })

@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
       hasDescription: !!(p.description?.trim()),
       isFeatured:     !!p.isFeatured,
       imageCount,
-      hasMinImages:   imageCount >= 5,
+      hasMinImages:   imageCount >= 2,
       localization:   null, // derived from categories — computed separately
       platforms:      platformData,
       stock: {

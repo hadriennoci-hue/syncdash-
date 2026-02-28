@@ -5,7 +5,7 @@ import type { WarehouseConnector, WarehouseStockSnapshot, HealthCheckResult } fr
 const EXTRACT_PROMPT =
   'Extract product information from this page only. ' +
   'For each product, capture: name, SKU reference from the SKU-wrapper element, ' +
-  'price, product URL, and the promo price from the b2c-2025-promo-text-block1 element. ' +
+  'price, product URL, and the promotion amount (discount amount) from the b2c-2025-promo-text-block1 element. ' +
   'If a product appears out of stock (greyed out, unavailable badge, disabled add-to-cart), ' +
   'set inStock to false. Output a flat list of all products found.'
 
@@ -136,13 +136,18 @@ export class AcerScraperConnector implements WarehouseConnector {
           const sku = product.sku.trim()
           if (!sku || seen.has(sku)) continue
           seen.add(sku)
+          const promoPrice =
+            product.price != null && product.promoPrice != null
+              ? Math.max(product.price - product.promoPrice, 0)
+              : null
+
           snapshots.push({
             sku,
             quantity:         product.inStock ? 2 : 0,
             sourceUrl:        product.url,
             sourceName:       name,
             importPrice:      product.price ?? null,
-            importPromoPrice: product.promoPrice ?? null,
+            importPromoPrice: promoPrice,
           })
         }
       }

@@ -1,3 +1,4 @@
+Read actor developement and ultimate scraper skill.md files. I should prioritize calling them if the tasks need it.
 # CLAUDE.md
 
 > Rules and patterns for AI assistants working on this codebase
