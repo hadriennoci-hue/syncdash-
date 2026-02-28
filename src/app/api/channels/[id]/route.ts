@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { products, salesChannels } from '@/lib/db/schema'
-import { eq, or, and, desc, sql } from 'drizzle-orm'
+import { products, salesChannels, warehouseStock } from '@/lib/db/schema'
+import { eq, or, inArray, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
 const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
@@ -69,9 +69,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const pushCol = getPushCol(platform)
 
   const pushStatusWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
-  const where = platform === 'shopify_tiktok'
-    ? sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id = 'ireland')`
-    : pushStatusWhere
+  let where = pushStatusWhere
+
+  if (platform === 'shopify_tiktok') {
+    const irelandRows = await db
+      .select({ productId: warehouseStock.productId })
+      .from(warehouseStock)
+      .where(eq(warehouseStock.warehouseId, 'ireland'))
+    const irelandIds = Array.from(new Set(irelandRows.map((r) => r.productId)))
+    where = irelandIds.length > 0 ? inArray(products.id, irelandIds) : sql`1=0`
+  }
 
   const rows = await db.query.products.findMany({
     where,
