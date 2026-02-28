@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { products, salesChannels, warehouseStock, productPrices, platformMappings } from '@/lib/db/schema'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
+import { products, salesChannels } from '@/lib/db/schema'
 import { eq, or, inArray, and, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
@@ -83,34 +84,70 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }>
 
   if (platform === 'shopify_tiktok') {
-    const joined = await db
-      .select()
-      .from(products)
-      .innerJoin(
-        warehouseStock,
-        and(eq(warehouseStock.productId, products.id), eq(warehouseStock.warehouseId, 'ireland'))
-      )
-      .orderBy(desc(products.updatedAt))
-      .limit(perPage)
-      .offset(offset)
+    // Use direct D1 queries to avoid join/inArray quirks in this endpoint.
+    const { env } = getCloudflareContext()
+    const binding = (env as Record<string, unknown>).DB as D1Database | undefined
+    if (!binding) throw new Error('D1 binding "DB" not found.')
 
-    const baseProducts = joined.map((row) => row.products)
-    const skus = baseProducts.map((p) => p.id)
+    const baseRes = await binding.prepare(
+      `SELECT p.*
+       FROM products p
+       INNER JOIN warehouse_stock ws
+         ON ws.product_id = p.id AND ws.warehouse_id = 'ireland'
+       ORDER BY p.updated_at DESC
+       LIMIT ? OFFSET ?`
+    ).bind(perPage, offset).all()
 
-    const [priceRows, mappingRows, stockRows] = skus.length > 0
-      ? await Promise.all([
-        db.select().from(productPrices).where(inArray(productPrices.productId, skus)),
-        db.select().from(platformMappings).where(inArray(platformMappings.productId, skus)),
-        db.select().from(warehouseStock).where(inArray(warehouseStock.productId, skus)),
-      ])
-      : [[], [], []]
-
-    rows = baseProducts.map((p) => ({
-      ...p,
-      prices:           priceRows.filter((pr) => pr.productId === p.id),
-      platformMappings: mappingRows.filter((m) => m.productId === p.id),
-      warehouseStock:   stockRows.filter((s) => s.productId === p.id),
+    const baseProducts = (baseRes.results ?? []).map((row) => ({
+      id:                      String((row as any).id),
+      title:                   String((row as any).title),
+      pushedWoocommerce:       String((row as any).pushed_woocommerce ?? 'N'),
+      pushedShopifyKomputerzz: String((row as any).pushed_shopify_komputerzz ?? 'N'),
+      pushedShopifyTiktok:     String((row as any).pushed_shopify_tiktok ?? 'N'),
+      pushedXmrBazaar:         String((row as any).pushed_xmr_bazaar ?? 'N'),
+      pushedLibreMarket:       String((row as any).pushed_libre_market ?? 'N'),
     }))
+
+    const skus = baseProducts.map((p) => p.id)
+    if (skus.length === 0) {
+      rows = []
+    } else {
+      const placeholders = skus.map(() => '?').join(',')
+      const [pricesRes, mappingsRes, stockRes] = await Promise.all([
+        binding.prepare(`SELECT * FROM product_prices WHERE product_id IN (${placeholders})`).bind(...skus).all(),
+        binding.prepare(`SELECT * FROM platform_mappings WHERE product_id IN (${placeholders})`).bind(...skus).all(),
+        binding.prepare(`SELECT * FROM warehouse_stock WHERE product_id IN (${placeholders})`).bind(...skus).all(),
+      ])
+
+      const priceRows = (pricesRes.results ?? []).map((r) => ({
+        productId: String((r as any).product_id),
+        platform:  String((r as any).platform),
+        price:     (r as any).price ?? null,
+        compareAt: (r as any).compare_at ?? null,
+      }))
+
+      const mappingRows = (mappingsRes.results ?? []).map((r) => ({
+        productId:  String((r as any).product_id),
+        platform:   String((r as any).platform),
+        platformId: String((r as any).platform_id),
+        syncStatus: String((r as any).sync_status),
+      }))
+
+      const stockRows = (stockRes.results ?? []).map((r) => ({
+        productId:       String((r as any).product_id),
+        warehouseId:     String((r as any).warehouse_id),
+        quantity:        (r as any).quantity ?? null,
+        importPrice:     (r as any).import_price ?? null,
+        importPromoPrice:(r as any).import_promo_price ?? null,
+      }))
+
+      rows = baseProducts.map((p) => ({
+        ...p,
+        prices:           priceRows.filter((pr) => pr.productId === p.id),
+        platformMappings: mappingRows.filter((m) => m.productId === p.id),
+        warehouseStock:   stockRows.filter((s) => s.productId === p.id),
+      }))
+    }
   } else {
     rows = await db.query.products.findMany({
       where: pushStatusWhere,
