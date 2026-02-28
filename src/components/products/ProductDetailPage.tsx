@@ -72,9 +72,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     setSelectedCats(p.categories?.map((c: any) => c.id) ?? [])
   }, [p?.description, p?.categories, p])
 
-  if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
-  if (error || !p) return <p className="text-xs text-destructive">Product not found</p>
-
   const filteredCategories = useMemo(() => {
     const q = catFilter.trim().toLowerCase()
     if (!q) return categories
@@ -82,6 +79,9 @@ export function ProductDetailPage({ sku }: { sku: string }) {
       c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
     )
   }, [categories, catFilter])
+
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
+  if (error || !p) return <p className="text-xs text-destructive">Product not found</p>
 
   return (
     <div className="space-y-4 max-w-5xl">
