@@ -66,6 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const page    = parseInt(searchParams.get('page') ?? '1')
   const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
   const offset  = (page - 1) * perPage
+  const debug   = searchParams.get('debug') === '1'
 
   const pushCol = getPushCol(platform)
 
@@ -83,6 +84,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     warehouseStock: Array<{ productId: string; warehouseId: string; quantity: number | null; importPrice: number | null; importPromoPrice: number | null }>
   }>
 
+  let debugMeta: Record<string, unknown> | undefined
+
   if (platform === 'shopify_tiktok') {
     // Use direct D1 queries to avoid join/inArray quirks in this endpoint.
     const { env } = getCloudflareContext()
@@ -96,9 +99,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
        ORDER BY updated_at DESC`
     ).all()
 
-    const skus = Array.from(new Set((idsRes.results ?? []).map((r) => String((r as any).product_id))))
+    const allSkus = Array.from(new Set((idsRes.results ?? []).map((r) => String((r as any).product_id))))
+    const skus = allSkus
     if (skus.length === 0) {
       rows = []
+      if (debug) {
+        debugMeta = { irelandIdsCount: 0, irelandIdsSample: [] }
+      }
     } else {
       const pagedSkus = skus.slice(offset, offset + perPage)
       const placeholders = pagedSkus.map(() => '?').join(',')
@@ -151,6 +158,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         platformMappings: mappingRows.filter((m) => m.productId === p.id),
         warehouseStock:   stockRows.filter((s) => s.productId === p.id),
       }))
+
+      if (debug) {
+        debugMeta = {
+          irelandIdsCount: allSkus.length,
+          irelandIdsSample: allSkus.slice(0, 10),
+          pagedSkus,
+          baseCount: baseProducts.length,
+          pricesCount: priceRows.length,
+          mappingsCount: mappingRows.length,
+          stockCount: stockRows.length,
+        }
+      }
     }
   } else {
     rows = await db.query.products.findMany({
@@ -207,5 +226,5 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     ...channelMeta,
     counts:   { synced, pending, failed, total: rows.length },
     products: data,
-  })
+  }, 200, debugMeta)
 }
