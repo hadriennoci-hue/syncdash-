@@ -3,7 +3,7 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { products, salesChannels } from '@/lib/db/schema'
-import { eq, or, desc, sql } from 'drizzle-orm'
+import { eq, or, and, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
 const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
@@ -68,8 +68,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const pushCol = getPushCol(platform)
 
+  const baseWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
+  const where = platform === 'shopify_tiktok'
+    ? and(
+      baseWhere,
+      sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id = 'ireland')`
+    )
+    : baseWhere
+
   const rows = await db.query.products.findMany({
-    where:   or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`),
+    where,
     with:    { prices: true, warehouseStock: true, platformMappings: true },
     orderBy: [
       sql`CASE WHEN ${pushCol} = '2push' THEN 0 WHEN ${pushCol} LIKE 'FAIL:%' THEN 1 ELSE 2 END`,
