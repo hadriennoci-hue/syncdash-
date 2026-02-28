@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { products, salesChannels, warehouseStock } from '@/lib/db/schema'
-import { eq, or, inArray, desc, sql } from 'drizzle-orm'
+import { products, salesChannels, warehouseStock, productPrices, platformMappings } from '@/lib/db/schema'
+import { eq, or, inArray, and, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
 const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
@@ -69,27 +69,60 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const pushCol = getPushCol(platform)
 
   const pushStatusWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
-  let where = pushStatusWhere
+  let rows: Array<{
+    id: string
+    title: string
+    pushedShopifyKomputerzz: string | null
+    pushedShopifyTiktok: string | null
+    pushedWoocommerce: string | null
+    pushedXmrBazaar: string | null
+    pushedLibreMarket: string | null
+    prices: Array<{ productId: string; platform: string; price: number | null; compareAt: number | null }>
+    platformMappings: Array<{ productId: string; platform: string; platformId: string; syncStatus: string }>
+    warehouseStock: Array<{ productId: string; warehouseId: string; quantity: number | null; importPrice: number | null; importPromoPrice: number | null }>
+  }>
 
   if (platform === 'shopify_tiktok') {
-    const irelandRows = await db
-      .select({ productId: warehouseStock.productId })
-      .from(warehouseStock)
-      .where(eq(warehouseStock.warehouseId, 'ireland'))
-    const irelandIds = Array.from(new Set(irelandRows.map((r) => r.productId)))
-    where = irelandIds.length > 0 ? inArray(products.id, irelandIds) : sql`1=0`
-  }
+    const joined = await db
+      .select()
+      .from(products)
+      .innerJoin(
+        warehouseStock,
+        and(eq(warehouseStock.productId, products.id), eq(warehouseStock.warehouseId, 'ireland'))
+      )
+      .orderBy(desc(products.updatedAt))
+      .limit(perPage)
+      .offset(offset)
 
-  const rows = await db.query.products.findMany({
-    where,
-    with:    { prices: true, warehouseStock: true, platformMappings: true },
-    orderBy: [
-      sql`CASE WHEN ${pushCol} = '2push' THEN 0 WHEN ${pushCol} LIKE 'FAIL:%' THEN 1 ELSE 2 END`,
-      desc(products.updatedAt),
-    ],
-    limit:  perPage,
-    offset,
-  })
+    const baseProducts = joined.map((row) => row.products)
+    const skus = baseProducts.map((p) => p.id)
+
+    const [priceRows, mappingRows, stockRows] = skus.length > 0
+      ? await Promise.all([
+        db.select().from(productPrices).where(inArray(productPrices.productId, skus)),
+        db.select().from(platformMappings).where(inArray(platformMappings.productId, skus)),
+        db.select().from(warehouseStock).where(inArray(warehouseStock.productId, skus)),
+      ])
+      : [[], [], []]
+
+    rows = baseProducts.map((p) => ({
+      ...p,
+      prices:           priceRows.filter((pr) => pr.productId === p.id),
+      platformMappings: mappingRows.filter((m) => m.productId === p.id),
+      warehouseStock:   stockRows.filter((s) => s.productId === p.id),
+    }))
+  } else {
+    rows = await db.query.products.findMany({
+      where: pushStatusWhere,
+      with:    { prices: true, warehouseStock: true, platformMappings: true },
+      orderBy: [
+        sql`CASE WHEN ${pushCol} = '2push' THEN 0 WHEN ${pushCol} LIKE 'FAIL:%' THEN 1 ELSE 2 END`,
+        desc(products.updatedAt),
+      ],
+      limit:  perPage,
+      offset,
+    })
+  }
 
   let synced = 0, pending = 0, failed = 0
   for (const row of rows) {
