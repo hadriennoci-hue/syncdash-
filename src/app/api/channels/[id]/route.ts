@@ -226,9 +226,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
   })
 
-  return apiResponse({
+  const responseBody: Record<string, unknown> = {
     ...channelMeta,
     counts:   { synced, pending, failed, total: rows.length },
     products: data,
-  }, 200, debugMeta)
+  }
+
+  if (platform === 'shopify_tiktok') {
+    responseBody.debug = debugMeta ?? { debugParam, debugEnabled: debug }
+  }
+
+  return apiResponse(responseBody, 200, debugMeta)
 }
