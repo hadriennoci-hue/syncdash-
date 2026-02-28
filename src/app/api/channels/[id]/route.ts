@@ -63,10 +63,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const { searchParams } = new URL(req.url)
-  const page    = parseInt(searchParams.get('page') ?? '1')
-  const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
-  const offset  = (page - 1) * perPage
-  const debug   = searchParams.get('debug') === '1'
+  const page        = parseInt(searchParams.get('page') ?? '1')
+  const perPage     = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
+  const offset      = (page - 1) * perPage
+  const debugParam  = searchParams.get('debug')
+  const debug       = debugParam === '1'
 
   const pushCol = getPushCol(platform)
 
@@ -103,8 +104,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const skus = allSkus
     if (skus.length === 0) {
       rows = []
-      if (debug) {
-        debugMeta = { irelandIdsCount: 0, irelandIdsSample: [] }
+      debugMeta = {
+        debugParam,
+        debugEnabled: debug,
+        irelandIdsCount: 0,
+        irelandIdsSample: [],
       }
     } else {
       const pagedSkus = skus.slice(offset, offset + perPage)
@@ -159,16 +163,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         warehouseStock:   stockRows.filter((s) => s.productId === p.id),
       }))
 
-      if (debug) {
-        debugMeta = {
-          irelandIdsCount: allSkus.length,
-          irelandIdsSample: allSkus.slice(0, 10),
-          pagedSkus,
-          baseCount: baseProducts.length,
-          pricesCount: priceRows.length,
-          mappingsCount: mappingRows.length,
-          stockCount: stockRows.length,
-        }
+      debugMeta = {
+        debugParam,
+        debugEnabled: debug,
+        irelandIdsCount: allSkus.length,
+        irelandIdsSample: allSkus.slice(0, 10),
+        pagedSkus,
+        baseCount: baseProducts.length,
+        pricesCount: priceRows.length,
+        mappingsCount: mappingRows.length,
+        stockCount: stockRows.length,
       }
     }
   } else {
