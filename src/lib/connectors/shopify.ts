@@ -670,9 +670,69 @@ export class ShopifyConnector implements PlatformConnector {
   // -------------------------------------------------------------------------
 
   async assignCategories(_platformId: string, _categoryIds: string[]): Promise<void> {
-    // Shopify: collections are managed separately (collects)
-    // Implementation depends on collection type (smart vs manual)
-    // TODO: implement via collectionAddProducts mutation
+    // Shopify: collections are managed separately (collects). Use syncCollectionsToProduct().
+    return
+  }
+
+  // -------------------------------------------------------------------------
+  // Collections (manual collections for Komputerzz sync)
+  // -------------------------------------------------------------------------
+
+  private async findCollectionByHandle(handle: string): Promise<{ id: string; title: string; handle: string } | null> {
+    const query = `
+      query CollectionByHandle($handle: String!) {
+        collectionByHandle(handle: $handle) { id title handle }
+      }
+    `
+    const data = await this.graphql<{ collectionByHandle: { id: string; title: string; handle: string } | null }>(
+      query,
+      { handle }
+    )
+    return data.collectionByHandle ?? null
+  }
+
+  private async createCustomCollection(title: string, handle: string): Promise<{ id: string; title: string; handle: string }> {
+    // REST is simplest for manual collections.
+    const res = await this.rest<{ custom_collection: { id: number; title: string; handle: string } }>('POST', `/custom_collections.json`, {
+      custom_collection: { title, handle },
+    })
+    return {
+      id: `gid://shopify/Collection/${res.custom_collection.id}`,
+      title: res.custom_collection.title,
+      handle: res.custom_collection.handle,
+    }
+  }
+
+  private async addProductToCollection(productGid: string, collectionGid: string): Promise<void> {
+    const productId = this.gidToNumericId(productGid)
+    const collectionId = this.gidToNumericId(collectionGid)
+    await this.rest('POST', `/collects.json`, {
+      collect: { product_id: productId, collection_id: collectionId },
+    })
+  }
+
+  async syncCollectionsToProduct(
+    productGid: string,
+    collections: Array<{ title: string; handle: string }>
+  ): Promise<void> {
+    for (const col of collections) {
+      if (!col.handle) continue
+      let existing = await this.findCollectionByHandle(col.handle)
+      if (!existing) {
+        try {
+          existing = await this.createCustomCollection(col.title, col.handle)
+        } catch {
+          // If handle already exists (race or handle normalization), try lookup again.
+          existing = await this.findCollectionByHandle(col.handle)
+        }
+      }
+      if (!existing) continue
+      try {
+        await this.addProductToCollection(productGid, existing.id)
+      } catch {
+        // Ignore duplicate collect or smart collection constraints.
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

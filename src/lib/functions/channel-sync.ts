@@ -23,7 +23,7 @@ interface ChannelSyncOptions {
 }
 
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
-interface CatRow     { category: { id: string; platform: string } }
+interface CatRow     { category: { id: string; platform: string; name: string; slug: string | null } }
 interface StockRow   { quantity: number }
 interface MappingRow { platform: string; platformId: string }
 interface ImageRow   { url: string; position: number; alt: string | null }
@@ -65,6 +65,14 @@ interface EligibleProduct {
 }
 
 const BROWSER_PLATFORMS: Platform[] = ['xmr_bazaar', 'libre_market']
+
+function slugifyHandle(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
 
 function isPushable(p: EligibleProduct, platform: Platform): boolean {
   if (platform === 'woocommerce')        return p.pushedWoocommerce === '2push'
@@ -298,6 +306,20 @@ async function pushPlatform(
       if (finalPlatformId) {
         touchedPlatformIds.add(finalPlatformId)
         if (!newSkus.includes(product.id)) statusUpdated++
+      }
+
+      // Shopify: when pushing to a non-TikTok Shopify channel, sync TikTok collections by title/handle.
+      if (platform.startsWith('shopify') && platform !== 'shopify_tiktok') {
+        const tikCats = product.categories
+          .filter((pc) => pc.category.platform === 'shopify_tiktok')
+          .map((pc) => ({
+            title: pc.category.name,
+            handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
+          }))
+          .filter((c) => c.handle.length > 0)
+        if (tikCats.length > 0 && typeof (connector as any).syncCollectionsToProduct === 'function') {
+          await (connector as any).syncCollectionsToProduct(finalPlatformId!, tikCats)
+        }
       }
 
       await db.update(products)
