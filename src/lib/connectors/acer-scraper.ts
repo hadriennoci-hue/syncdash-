@@ -79,7 +79,13 @@ export async function scrapeProductDetail(
   if (!parsed.success) {
     throw new Error(`Unexpected scrape response for ${url}: ${parsed.error.message}`)
   }
-  return parsed.data
+  const cleaned = { ...parsed.data }
+  if (cleaned.description) {
+    const promoPattern =
+      /^L'offre se termine dans:\s*\d+\s*Jours\s*\d+\s*Heures\s*\d+\s*Minutes\s*\d+\s*Secondes\s*/i
+    cleaned.description = cleaned.description.replace(promoPattern, '').trim()
+  }
+  return cleaned
 }
 
 export class AcerScraperConnector implements WarehouseConnector {
