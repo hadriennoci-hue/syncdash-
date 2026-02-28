@@ -89,34 +89,38 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const binding = (env as Record<string, unknown>).DB as D1Database | undefined
     if (!binding) throw new Error('D1 binding "DB" not found.')
 
-    const baseRes = await binding.prepare(
-      `SELECT p.*
-       FROM products p
-       INNER JOIN warehouse_stock ws
-         ON ws.product_id = p.id AND ws.warehouse_id = 'ireland'
-       ORDER BY p.updated_at DESC
-       LIMIT ? OFFSET ?`
-    ).bind(perPage, offset).all()
+    const idsRes = await binding.prepare(
+      `SELECT product_id
+       FROM warehouse_stock
+       WHERE warehouse_id = 'ireland'
+       ORDER BY updated_at DESC`
+    ).all()
 
-    const baseProducts = (baseRes.results ?? []).map((row) => ({
-      id:                      String((row as any).id),
-      title:                   String((row as any).title),
-      pushedWoocommerce:       String((row as any).pushed_woocommerce ?? 'N'),
-      pushedShopifyKomputerzz: String((row as any).pushed_shopify_komputerzz ?? 'N'),
-      pushedShopifyTiktok:     String((row as any).pushed_shopify_tiktok ?? 'N'),
-      pushedXmrBazaar:         String((row as any).pushed_xmr_bazaar ?? 'N'),
-      pushedLibreMarket:       String((row as any).pushed_libre_market ?? 'N'),
-    }))
-
-    const skus = baseProducts.map((p) => p.id)
+    const skus = Array.from(new Set((idsRes.results ?? []).map((r) => String((r as any).product_id))))
     if (skus.length === 0) {
       rows = []
     } else {
-      const placeholders = skus.map(() => '?').join(',')
+      const pagedSkus = skus.slice(offset, offset + perPage)
+      const placeholders = pagedSkus.map(() => '?').join(',')
+
+      const baseRes = await binding.prepare(
+        `SELECT * FROM products WHERE id IN (${placeholders}) ORDER BY updated_at DESC`
+      ).bind(...pagedSkus).all()
+
+      const baseProducts = (baseRes.results ?? []).map((row) => ({
+        id:                      String((row as any).id),
+        title:                   String((row as any).title),
+        pushedWoocommerce:       String((row as any).pushed_woocommerce ?? 'N'),
+        pushedShopifyKomputerzz: String((row as any).pushed_shopify_komputerzz ?? 'N'),
+        pushedShopifyTiktok:     String((row as any).pushed_shopify_tiktok ?? 'N'),
+        pushedXmrBazaar:         String((row as any).pushed_xmr_bazaar ?? 'N'),
+        pushedLibreMarket:       String((row as any).pushed_libre_market ?? 'N'),
+      }))
+
       const [pricesRes, mappingsRes, stockRes] = await Promise.all([
-        binding.prepare(`SELECT * FROM product_prices WHERE product_id IN (${placeholders})`).bind(...skus).all(),
-        binding.prepare(`SELECT * FROM platform_mappings WHERE product_id IN (${placeholders})`).bind(...skus).all(),
-        binding.prepare(`SELECT * FROM warehouse_stock WHERE product_id IN (${placeholders})`).bind(...skus).all(),
+        binding.prepare(`SELECT * FROM product_prices WHERE product_id IN (${placeholders})`).bind(...pagedSkus).all(),
+        binding.prepare(`SELECT * FROM platform_mappings WHERE product_id IN (${placeholders})`).bind(...pagedSkus).all(),
+        binding.prepare(`SELECT * FROM warehouse_stock WHERE product_id IN (${placeholders})`).bind(...pagedSkus).all(),
       ])
 
       const priceRows = (pricesRes.results ?? []).map((r) => ({
