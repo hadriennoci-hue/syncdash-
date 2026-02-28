@@ -68,13 +68,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const pushCol = getPushCol(platform)
 
-  const baseWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
+  const pushStatusWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
   const where = platform === 'shopify_tiktok'
-    ? and(
-      baseWhere,
-      sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id = 'ireland')`
-    )
-    : baseWhere
+    ? sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id = 'ireland')`
+    : pushStatusWhere
 
   const rows = await db.query.products.findMany({
     where,
