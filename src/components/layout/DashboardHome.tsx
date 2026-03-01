@@ -12,6 +12,18 @@ interface WarehouseSyncResult {
   syncedAt:        string
 }
 
+interface WarehouseScanProgress {
+  stage: 'start' | 'url_started' | 'page_done' | 'url_done' | 'fetch_done'
+  warehouseId: string
+  warehouseIndex: number
+  warehouseTotal: number
+  message: string
+  current: number
+  total: number
+  url?: string
+  pageUrl?: string
+}
+
 interface ChannelSyncResult {
   platform:           string
   statusUpdated:      number
@@ -30,6 +42,12 @@ export function DashboardHome() {
   const [scanning, setScanning]       = useState(false)
   const [scanResult, setScanResult]   = useState<WarehouseSyncResult[] | null>(null)
   const [scanError, setScanError]     = useState<string | null>(null)
+  const [scanProgress, setScanProgress] = useState<{
+    percent: number
+    label: string
+    detail: string
+    steps: string[]
+  } | null>(null)
 
   const [pushing, setPushing]               = useState(false)
   const [pushResult, setPushResult]         = useState<ChannelSyncResult[] | null>(null)
@@ -51,9 +69,105 @@ export function DashboardHome() {
     setScanning(true)
     setScanResult(null)
     setScanError(null)
+    setScanProgress({
+      percent: 0,
+      label: 'Starting warehouse scan...',
+      detail: '',
+      steps: [],
+    })
     try {
-      const res = await apiPost('/api/warehouses/sync-all', {})
-      setScanResult(res.data)
+      const res = await fetch('/api/warehouses/sync-all/stream', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN ?? ''}`,
+        },
+      })
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+
+      const decoder = new TextDecoder()
+      const reader = res.body.getReader()
+      let buffer = ''
+      let finalResults: WarehouseSyncResult[] | null = null
+
+      const pushStep = (step: string) => {
+        setScanProgress((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            steps: [step, ...prev.steps].slice(0, 8),
+          }
+        })
+      }
+
+      const onProgress = (event: WarehouseScanProgress) => {
+        const fraction = event.total > 0 ? Math.min(1, event.current / event.total) : 0
+        const percent = Math.max(
+          0,
+          Math.min(100, ((event.warehouseIndex - 1 + fraction) / Math.max(event.warehouseTotal, 1)) * 100)
+        )
+
+        setScanProgress((prev) => ({
+          percent,
+          label: event.message,
+          detail: `${event.warehouseId}: step ${event.current}/${event.total}`,
+          steps: prev?.steps ?? [],
+        }))
+
+        if (event.stage === 'page_done' || event.stage === 'url_done' || event.stage === 'fetch_done') {
+          pushStep(event.message)
+        }
+      }
+
+      const parseEvent = (chunk: string) => {
+        const lines = chunk.split('\n')
+        let eventName = 'message'
+        let dataText = ''
+        for (const line of lines) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim()
+          if (line.startsWith('data:')) dataText += line.slice(5).trim()
+        }
+        if (!dataText) return
+
+        const data = JSON.parse(dataText)
+
+        if (eventName === 'warehouse_start') {
+          setScanProgress((prev) => ({
+            percent: prev?.percent ?? 0,
+            label: `Scanning ${data.warehouseId} (${data.warehouseIndex}/${data.warehouseTotal})`,
+            detail: prev?.detail ?? '',
+            steps: prev?.steps ?? [],
+          }))
+          return
+        }
+        if (eventName === 'progress') {
+          onProgress(data as WarehouseScanProgress)
+          return
+        }
+        if (eventName === 'scan_done') {
+          finalResults = (data.results ?? []) as WarehouseSyncResult[]
+          return
+        }
+        if (eventName === 'stream_error') {
+          throw new Error(data.message ?? 'Stream error')
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        let boundary = buffer.indexOf('\n\n')
+        while (boundary >= 0) {
+          const chunk = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          parseEvent(chunk)
+          boundary = buffer.indexOf('\n\n')
+        }
+      }
+
+      setScanResult(finalResults ?? [])
+      setScanProgress((prev) => prev ? { ...prev, percent: 100, label: 'Scan completed' } : prev)
       const now = new Date().toISOString()
       localStorage.setItem('lastStockScan', now)
       setLastStockScan(now)
@@ -200,6 +314,29 @@ export function DashboardHome() {
               {scanning ? 'Scanning...' : 'Scan stocks'}
             </button>
           </div>
+          {scanProgress && (
+            <div className="space-y-1">
+              <div className="h-1.5 w-full rounded bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${scanProgress.percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{scanProgress.label}</p>
+              {scanProgress.detail && (
+                <p className="text-[11px] text-muted-foreground/80 font-mono">{scanProgress.detail}</p>
+              )}
+              {scanProgress.steps.length > 0 && (
+                <div className="space-y-0.5">
+                  {scanProgress.steps.map((step, idx) => (
+                    <p key={`${step}-${idx}`} className="text-[11px] text-muted-foreground/80 truncate" title={step}>
+                      {step}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {scanError && (
             <p className="text-xs text-destructive">{scanError}</p>
           )}

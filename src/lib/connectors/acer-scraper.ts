@@ -1,6 +1,11 @@
 import FirecrawlApp from '@mendable/firecrawl-js'
 import { z } from 'zod'
-import type { WarehouseConnector, WarehouseStockSnapshot, HealthCheckResult } from './types'
+import type {
+  WarehouseConnector,
+  WarehouseStockSnapshot,
+  HealthCheckResult,
+  WarehouseStockOptions,
+} from './types'
 
 const EXTRACT_PROMPT =
   'Extract product information from this page only. ' +
@@ -97,12 +102,32 @@ export class AcerScraperConnector implements WarehouseConnector {
     this.urls = urls
   }
 
-  async getStock(): Promise<WarehouseStockSnapshot[]> {
+  async getStock(options: WarehouseStockOptions = {}): Promise<WarehouseStockSnapshot[]> {
+    const onProgress = options.onProgress
     const seen = new Set<string>()
     const snapshots: WarehouseStockSnapshot[] = []
+    let completedSteps = 0
+    let totalSteps = this.urls.length
+
+    onProgress?.({
+      stage: 'start',
+      warehouseId: 'acer_store',
+      message: `Starting ACER scan (${this.urls.length} URL${this.urls.length > 1 ? 's' : ''})`,
+      current: completedSteps,
+      total: totalSteps,
+    })
     const blockedNameTokens = ['trouver', 'réparation', 'mcafee']
 
     for (const baseUrl of this.urls) {
+      onProgress?.({
+        stage: 'url_started',
+        warehouseId: 'acer_store',
+        message: `Scanning URL: ${baseUrl}`,
+        current: completedSteps,
+        total: totalSteps,
+        url: baseUrl,
+      })
+
       // Pagination discovery is per-category and sequential to avoid Firecrawl concurrency limits.
       let pageUrls: string[] = []
       try {
@@ -156,6 +181,7 @@ export class AcerScraperConnector implements WarehouseConnector {
       }
 
       const urlsToFetch = pageUrls.length > 0 ? pageUrls : [baseUrl]
+      totalSteps += urlsToFetch.length
 
       for (const pageUrl of urlsToFetch) {
         let result: Awaited<ReturnType<typeof this.firecrawl.extract>>
@@ -200,8 +226,37 @@ export class AcerScraperConnector implements WarehouseConnector {
             importPromoPrice: promoPrice,
           })
         }
+
+        completedSteps++
+        onProgress?.({
+          stage: 'page_done',
+          warehouseId: 'acer_store',
+          message: `Page done: ${pageUrl}`,
+          current: completedSteps,
+          total: totalSteps,
+          url: baseUrl,
+          pageUrl,
+        })
       }
+
+      completedSteps++
+      onProgress?.({
+        stage: 'url_done',
+        warehouseId: 'acer_store',
+        message: `URL done: ${baseUrl}`,
+        current: completedSteps,
+        total: totalSteps,
+        url: baseUrl,
+      })
     }
+
+    onProgress?.({
+      stage: 'fetch_done',
+      warehouseId: 'acer_store',
+      message: 'ACER scan done',
+      current: totalSteps,
+      total: totalSteps,
+    })
 
     return snapshots
   }

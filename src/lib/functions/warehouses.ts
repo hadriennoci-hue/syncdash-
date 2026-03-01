@@ -9,6 +9,7 @@ import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers } from '@/lib/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
+import type { WarehouseStockProgress } from '@/lib/connectors/types'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy } from '@/types/platform'
 import { PLATFORMS } from '@/types/platform'
@@ -20,13 +21,18 @@ interface SyncResult {
   syncedAt: string
 }
 
+interface SyncWarehouseOptions {
+  onProgress?: (event: WarehouseStockProgress) => void
+}
+
 // ---------------------------------------------------------------------------
 // syncWarehouse — reads stock from source and updates D1
 // ---------------------------------------------------------------------------
 
 export async function syncWarehouse(
   warehouseId: string,
-  triggeredBy: TriggeredBy = 'system'
+  triggeredBy: TriggeredBy = 'system',
+  options: SyncWarehouseOptions = {}
 ): Promise<SyncResult> {
   const warehouse = await db.query.warehouses.findFirst({
     where: eq(warehouses.id, warehouseId),
@@ -34,7 +40,12 @@ export async function syncWarehouse(
   if (!warehouse) throw new Error(`Warehouse not found: ${warehouseId}`)
 
   const connector = await createWarehouseConnector(warehouseId)
-  const snapshots = await connector.getStock()
+  const snapshots = await connector.getStock({
+    onProgress: (event) => options.onProgress?.({
+      ...event,
+      warehouseId: event.warehouseId ?? warehouseId,
+    }),
+  })
 
   // For warehouses that return only in-stock items, zero existing stock first,
   // then upsert the returned SKUs. This avoids NOT IN with too many variables.

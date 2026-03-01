@@ -175,7 +175,21 @@ export interface WarehouseStockSnapshot {
   importPromoPrice?: number | null  // promo/discounted price scraped from source
 }
 
+export interface WarehouseStockProgress {
+  stage: 'start' | 'url_started' | 'page_done' | 'url_done' | 'fetch_done'
+  warehouseId?: string
+  message: string
+  current: number
+  total: number
+  url?: string
+  pageUrl?: string
+}
+
+export interface WarehouseStockOptions {
+  onProgress?: (event: WarehouseStockProgress) => void
+}
+
 export interface WarehouseConnector {
-  getStock(): Promise<WarehouseStockSnapshot[]>
+  getStock(options?: WarehouseStockOptions): Promise<WarehouseStockSnapshot[]>
   healthCheck(): Promise<HealthCheckResult>
 }

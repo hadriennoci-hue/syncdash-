@@ -1,7 +1,7 @@
 import { shopifyLimiter } from '@/lib/utils/rate-limiter'
 import type {
   PlatformConnector, RawProduct, RawVariant, RawImage, RawCollection,
-  RawMetafield, ProductPayload, HealthCheckResult,
+  RawMetafield, ProductPayload, HealthCheckResult, WarehouseStockOptions,
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
@@ -790,10 +790,19 @@ export class ShopifyWarehouseConnector {
     return json.data
   }
 
-  async getStock() {
+  async getStock(options: WarehouseStockOptions = {}) {
+    const onProgress = options.onProgress
     const snapshots: Array<{ sku: string; quantity: number; sourceName?: string; importPrice?: number | null; importPromoPrice?: number | null }> = []
     let cursor: string | null = null
     let hasNext = true
+
+    onProgress?.({
+      stage: 'start',
+      warehouseId: 'ireland',
+      message: 'Scanning Ireland warehouse',
+      current: 0,
+      total: 1,
+    })
 
     while (hasNext) {
       const query = `
@@ -838,6 +847,14 @@ export class ShopifyWarehouseConnector {
       hasNext = gqlResponse.inventoryItems.pageInfo.hasNextPage
       cursor = gqlResponse.inventoryItems.pageInfo.endCursor
     }
+
+    onProgress?.({
+      stage: 'fetch_done',
+      warehouseId: 'ireland',
+      message: 'Ireland scan done',
+      current: 1,
+      total: 1,
+    })
 
     return snapshots
   }
