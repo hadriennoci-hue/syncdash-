@@ -18,7 +18,7 @@
 
 | Environment | URL | Branch | Purpose |
 |-------------|-----|--------|---------|
-| Production | syncdash.pages.dev | `main` | Live tool |
+| Production | syncdash.pages.dev | `master` | Live tool |
 | Preview | pr-[n].syncdash.pages.dev | PRs | Code review |
 | Development | localhost:3000 | local | Local dev with Wrangler |
 
@@ -101,9 +101,9 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   lint-and-type-check:
@@ -126,7 +126,7 @@ jobs:
       - run: npm run test
 
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     needs: [lint-and-type-check, test]
     runs-on: ubuntu-latest
     steps:
