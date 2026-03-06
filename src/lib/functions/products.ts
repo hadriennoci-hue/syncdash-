@@ -9,6 +9,25 @@ import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
 import type { Platform, SyncResult, TriggeredBy, ImageInput } from '@/types/platform'
 
+function normalizeTags(tags?: string[]): string[] | undefined {
+  if (!tags) return undefined
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const rawTag of tags) {
+    const tag = rawTag.trim()
+    if (!tag) continue
+    if (/\s/.test(tag)) continue
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push(tag)
+    if (normalized.length >= 10) break
+  }
+
+  return normalized
+}
+
 // ---------------------------------------------------------------------------
 // createProduct
 // ---------------------------------------------------------------------------
@@ -18,6 +37,7 @@ interface CreateProductInput {
   title: string
   ean?: string
   description?: string
+  tags?: string[]
   vendor?: string
   productType?: string
   taxCode?: string
@@ -53,6 +73,7 @@ export async function createProduct(
     title:       input.title,
     ean:         input.ean ?? null,
     description: input.description ?? null,
+    tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
     status:      'active',
     taxCode:     input.taxCode ?? null,
     vendor:      input.vendor ?? null,
@@ -66,6 +87,7 @@ export async function createProduct(
       title:       input.title,
       ean:         input.ean ?? null,
       description: input.description ?? null,
+      tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
       updatedAt:   new Date().toISOString(),
     },
   })
@@ -178,6 +200,7 @@ interface UpdateProductInput {
   fields: {
     title?: string
     description?: string
+    tags?: string[]
     status?: 'active' | 'archived'
     isFeatured?: boolean
     categoryIds?: string[]
@@ -196,6 +219,7 @@ export async function updateProduct(
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
   if (input.fields.description !== undefined) d1Update.description = input.fields.description
+  if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
 
@@ -255,6 +279,7 @@ interface UpdateProductLocalInput {
   fields: {
     title?: string
     description?: string
+    tags?: string[]
     status?: 'active' | 'archived'
     isFeatured?: boolean
     categoryIds?: string[]
@@ -271,6 +296,7 @@ export async function updateProductLocal(
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
   if (input.fields.description !== undefined) d1Update.description = input.fields.description
+  if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
 

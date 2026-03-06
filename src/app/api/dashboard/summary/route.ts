@@ -23,11 +23,13 @@ export async function GET(req: NextRequest) {
       eq(products.pushedWoocommerce, '2push'),
       eq(products.pushedShopifyKomputerzz, '2push'),
       eq(products.pushedShopifyTiktok, '2push'),
+      eq(products.pushedEbayIe, '2push'),
       eq(products.pushedLibreMarket, '2push'),
       eq(products.pushedXmrBazaar, '2push'),
       like(products.pushedWoocommerce, 'FAIL:%'),
       like(products.pushedShopifyKomputerzz, 'FAIL:%'),
       like(products.pushedShopifyTiktok, 'FAIL:%'),
+      like(products.pushedEbayIe, 'FAIL:%'),
       like(products.pushedLibreMarket, 'FAIL:%'),
       like(products.pushedXmrBazaar, 'FAIL:%')
     ),

@@ -55,6 +55,7 @@ interface EligibleProduct {
   pushedWoocommerce:       string
   pushedShopifyKomputerzz: string
   pushedShopifyTiktok:     string
+  pushedEbayIe:            string
   pushedXmrBazaar:         string
   pushedLibreMarket:       string
   images:                  ImageRow[]
@@ -78,6 +79,7 @@ function isPushable(p: EligibleProduct, platform: Platform): boolean {
   if (platform === 'woocommerce')        return p.pushedWoocommerce === '2push'
   if (platform === 'shopify_komputerzz') return p.pushedShopifyKomputerzz === '2push'
   if (platform === 'shopify_tiktok')     return p.pushedShopifyTiktok === '2push'
+  if (platform === 'ebay_ie')            return p.pushedEbayIe === '2push'
   if (platform === 'xmr_bazaar')         return p.pushedXmrBazaar === '2push'
   if (platform === 'libre_market')       return p.pushedLibreMarket === '2push'
   return false
@@ -87,6 +89,7 @@ function getPushUpdate(platform: Platform, value: string): Record<string, string
   if (platform === 'woocommerce')        return { pushedWoocommerce: value }
   if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: value }
   if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: value }
+  if (platform === 'ebay_ie')            return { pushedEbayIe: value }
   if (platform === 'xmr_bazaar')         return { pushedXmrBazaar: value }
   if (platform === 'libre_market')       return { pushedLibreMarket: value }
   return {}
@@ -116,6 +119,7 @@ export async function syncChannelAvailability(
       eq(products.pushedWoocommerce, '2push'),
       eq(products.pushedShopifyKomputerzz, '2push'),
       eq(products.pushedShopifyTiktok, '2push'),
+      eq(products.pushedEbayIe, '2push'),
       eq(products.pushedXmrBazaar, '2push'),
       eq(products.pushedLibreMarket, '2push'),
     ),

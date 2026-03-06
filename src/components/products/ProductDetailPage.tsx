@@ -22,6 +22,9 @@ export function ProductDetailPage({ sku }: { sku: string }) {
 
   const [description, setDescription] = useState('')
   const [savingDesc, setSavingDesc] = useState(false)
+  const [tagsInput, setTagsInput] = useState('')
+  const [savingTags, setSavingTags] = useState(false)
+  const [tagsError, setTagsError] = useState('')
   const [savingCats, setSavingCats] = useState(false)
   const [selectedCats, setSelectedCats] = useState<string[]>([])
   const [catFilter, setCatFilter] = useState('')
@@ -50,6 +53,26 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     }
   }
 
+  async function saveTags() {
+    const tags = parseTagsInput(tagsInput)
+    if (tags.length > 10) {
+      setTagsError('You can save up to 10 tags.')
+      return
+    }
+
+    setSavingTags(true)
+    setTagsError('')
+    try {
+      await apiPatch(`/api/products/${sku}/local`, {
+        fields: { tags },
+        triggeredBy: 'human',
+      })
+      qc.invalidateQueries({ queryKey: ['product', sku] })
+    } finally {
+      setSavingTags(false)
+    }
+  }
+
   async function saveCategories() {
     setSavingCats(true)
     try {
@@ -69,6 +92,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
   useEffect(() => {
     if (!p) return
     setDescription(p.description ?? '')
+    setTagsInput((p.tags ?? []).join(', '))
     setSelectedCats(p.categories?.map((c: any) => c.id) ?? [])
   }, [p?.description, p?.categories, p])
 
@@ -182,6 +206,26 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         />
       </section>
 
+      <section className="border border-border rounded p-3 space-y-1 text-xs">
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Tags</h2>
+          <button
+            onClick={saveTags}
+            disabled={savingTags}
+            className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
+          >
+            {savingTags ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <input
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+          className="w-full text-xs border border-border rounded p-2 bg-background"
+          placeholder="Enter tags separated by commas (max 10)"
+        />
+        <p className="text-[10px] text-muted-foreground">One word per tag, separated by commas.</p>
+        {tagsError && <p className="text-[10px] text-destructive">{tagsError}</p>}
+      </section>
       {/* Row 3 — Categories & Collections */}
       <section className="border border-border rounded p-3 text-xs space-y-2">
         <div className="flex items-center justify-between">
@@ -420,3 +464,21 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   )
 }
+
+function parseTagsInput(value: string): string[] {
+  const seen = new Set<string>()
+  const tags: string[] = []
+
+  for (const raw of value.split(',')) {
+    const tag = raw.trim()
+    if (!tag || /\s/.test(tag)) continue
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    tags.push(tag)
+  }
+
+  return tags
+}
+
+

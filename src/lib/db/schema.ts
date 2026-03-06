@@ -22,6 +22,7 @@ export const products = sqliteTable('products', {
   id:               text('id').primaryKey(), // SKU
   title:            text('title').notNull(),
   description:      text('description'),
+  tags:             text('tags'), // JSON array string (up to 10 one-word tags)
   status:           text('status').notNull().default('active'), // 'active' | 'archived'
   taxCode:              text('tax_code'),
   ean:                  text('ean'),                   // 13-digit EAN barcode
@@ -39,6 +40,7 @@ export const products = sqliteTable('products', {
   pushedWoocommerce:        text('pushed_woocommerce').notNull().default('N'),
   pushedShopifyKomputerzz:  text('pushed_shopify_komputerzz').notNull().default('N'),
   pushedShopifyTiktok:      text('pushed_shopify_tiktok').notNull().default('N'),
+  pushedEbayIe:             text('pushed_ebay_ie').notNull().default('N'),
   pushedXmrBazaar:          text('pushed_xmr_bazaar').notNull().default('N'),
   pushedLibreMarket:        text('pushed_libre_market').notNull().default('N'),
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
@@ -210,7 +212,7 @@ export const salesChannels = sqliteTable('sales_channels', {
   id:            text('id').primaryKey(),            // matches Platform type: 'woocommerce', 'libre_market', etc.
   name:          text('name').notNull(),             // display name
   url:           text('url').notNull(),              // storefront URL
-  connectorType: text('connector_type').notNull(),  // 'woocommerce_api' | 'shopify_api' | 'browser'
+  connectorType: text('connector_type').notNull(),  // 'woocommerce_api' | 'shopify_api' | 'ebay_api' | 'browser'
   enabled:       integer('enabled').notNull().default(1),
   config:        text('config'),                    // JSON: non-sensitive platform-specific config
   lastPush:      text('last_push'),                 // ISO timestamp of last successful push

@@ -7,7 +7,7 @@ import { products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 const schema = z.object({
-  platform: z.enum(['woocommerce', 'shopify_komputerzz', 'shopify_tiktok', 'xmr_bazaar', 'libre_market']),
+  platform: z.enum(['woocommerce', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie', 'xmr_bazaar', 'libre_market']),
   status:   z.enum(['N', '2push', 'done']),
 })
 
@@ -15,6 +15,7 @@ const COLUMN_MAP = {
   woocommerce:        'pushedWoocommerce',
   shopify_komputerzz: 'pushedShopifyKomputerzz',
   shopify_tiktok:     'pushedShopifyTiktok',
+  ebay_ie:            'pushedEbayIe',
   xmr_bazaar:         'pushedXmrBazaar',
   libre_market:       'pushedLibreMarket',
 } as const

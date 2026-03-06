@@ -32,6 +32,7 @@ export default function SettingsPage() {
           <div>WooCommerce: {process.env.NEXT_PUBLIC_WOO_BASE_URL ?? 'configured'}</div>
           <div>Shopify Komputerzz: configured</div>
           <div>Shopify TikTok: configured</div>
+          <div>eBay Ireland: configured</div>
         </div>
       </div>
     </div>

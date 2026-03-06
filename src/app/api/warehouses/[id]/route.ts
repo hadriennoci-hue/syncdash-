@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: eq(warehouseStock.warehouseId, params.id),
     with: {
       product: {
-        columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true, pushedLibreMarket: true, pushedXmrBazaar: true },
+        columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true, pushedEbayIe: true, pushedLibreMarket: true, pushedXmrBazaar: true },
         with: { categories: { with: { category: true } } },
       },
     },
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       pushedWoocommerce:        s.product?.pushedWoocommerce ?? 'N',
       pushedShopifyKomputerzz:  s.product?.pushedShopifyKomputerzz ?? 'N',
       pushedShopifyTiktok:      s.product?.pushedShopifyTiktok ?? 'N',
+      pushedEbayIe:             s.product?.pushedEbayIe ?? 'N',
       pushedLibreMarket:        s.product?.pushedLibreMarket ?? 'N',
       pushedXmrBazaar:          s.product?.pushedXmrBazaar ?? 'N',
       quantity:                 s.quantity,

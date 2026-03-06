@@ -108,6 +108,7 @@ export default function RoutingPage() {
         <p className="font-medium">Current rules (from seed):</p>
         <p>• Coincart: Ireland (1) → Acer Store (2) → Poland (NO)</p>
         <p>• Komputerzz: Ireland (1) → Acer Store (2) → Poland (NO)</p>
+        <p>• eBay IE: Ireland (1) → Acer Store (2) → Poland (NO)</p>
         <p>• TikTok: Ireland (1) — Acer Store FORBIDDEN — Poland (NO)</p>
         <p className="text-muted-foreground/60 mt-1">Stock pushed daily = SUM of quantities from all allowed warehouses.</p>
       </div>

@@ -8,6 +8,23 @@ import { eq } from 'drizzle-orm'
 import { updateProduct, deleteProduct } from '@/lib/functions/products'
 import type { Platform } from '@/types/platform'
 
+const tagSchema = z.string().trim().min(1).max(40).regex(/^\S+$/, 'Tags must be single words')
+
+function parseTags(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0 && !/\s/.test(value))
+      .slice(0, 10)
+  } catch {
+    return []
+  }
+}
+
 function shopifyAdminUrl(shopEnvVar: string | undefined, platformId: string): string | null {
   if (!shopEnvVar) return null
   const numId = platformId.replace(/^.*\/(\d+)$/, '$1')
@@ -25,6 +42,8 @@ function buildListingUrl(platform: string, platformId: string | null): string | 
       return shopifyAdminUrl(process.env.SHOPIFY_KOMPUTERZZ_SHOP, platformId)
     case 'shopify_tiktok':
       return shopifyAdminUrl(process.env.SHOPIFY_TIKTOK_SHOP, platformId)
+    case 'ebay_ie':
+      return 'https://www.ebay.ie/sh/lst/active'
     case 'libre_market':
       return `https://libre-market.com/m/coincart/admin/products/${platformId}`
     case 'xmr_bazaar':
@@ -38,6 +57,7 @@ const patchSchema = z.object({
   fields: z.object({
     title:                z.string().optional(),
     description:          z.string().optional(),
+    tags:                 z.array(tagSchema).max(10).optional(),
     status:               z.enum(['active', 'archived']).optional(),
     isFeatured:           z.boolean().optional(),
     categoryIds:          z.array(z.string()).optional(),
@@ -105,6 +125,7 @@ export async function GET(
     id:                   product.id,
     title:                product.title,
     description:          product.description,
+    tags:                 parseTags(product.tags),
     status:               product.status,
     taxCode:              product.taxCode,
     ean:                  product.ean,
@@ -131,6 +152,7 @@ export async function GET(
       woocommerce:        product.pushedWoocommerce,
       shopify_komputerzz: product.pushedShopifyKomputerzz,
       shopify_tiktok:     product.pushedShopifyTiktok,
+      ebay_ie:            product.pushedEbayIe,
       xmr_bazaar:         product.pushedXmrBazaar,
       libre_market:       product.pushedLibreMarket,
     },

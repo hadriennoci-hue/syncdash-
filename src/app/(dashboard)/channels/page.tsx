@@ -186,6 +186,7 @@ export default function ChannelsPage() {
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">Coincart</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">Komputerzz</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">TikTok</th>
+                <th className="text-center px-3 py-2 font-medium text-muted-foreground">eBay IE</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">LibreMarket</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">XMRBazar</th>
                 <th className="text-right px-3 py-2 font-medium text-muted-foreground">Updated</th>
@@ -194,7 +195,7 @@ export default function ChannelsPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={9} className="text-center py-8 text-muted-foreground">
                     No products match the current filters
                   </td>
                 </tr>
@@ -217,6 +218,9 @@ export default function ChannelsPage() {
                     </td>
                     <td className="px-3 py-2 text-center">
                       <ChannelPriceCell platform={p.platforms.shopify_tiktok} product={p} />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <ChannelPriceCell platform={p.platforms.ebay_ie} product={p} />
                     </td>
                     <td className="px-3 py-2 text-center">
                       <ChannelPriceCell platform={p.platforms.libre_market} product={p} />

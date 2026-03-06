@@ -16,6 +16,7 @@ INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, co
   ('woocommerce',        'CoInCart',            'https://coincart.store',   'woocommerce_api', 1, NULL,                                                                                                                    datetime('now')),
   ('shopify_komputerzz', 'Komputerzz',          'https://komputerzz.com',   'shopify_api',     1, '{"shopDomain":"ikw70s-fr.myshopify.com"}',                                                                              datetime('now')),
   ('shopify_tiktok',     'Tech Store (TikTok)', 'https://shop.tiktok.com',  'shopify_api',     1, '{"shopDomain":"qanjg5-0h.myshopify.com"}',                                                                              datetime('now')),
+  ('ebay_ie',            'eBay Ireland',        'https://www.ebay.ie',      'ebay_api',        1, '{"marketplaceId":"EBAY_IE","format":"FIXED_PRICE"}',                                                                    datetime('now')),
   ('libre_market',       'Libre Market',        'https://libre-market.com', 'browser',         1, '{"loginUrl":"https://libre-market.com/merchant/signin","newListingUrl":null}',                                          datetime('now')),
   ('xmr_bazaar',         'XMR Bazaar',          'https://xmrbazaar.com',    'browser',         1, '{"loginUrl":"https://xmrbazaar.com/login/","newListingUrl":"https://xmrbazaar.com/new-listing/"}',                      datetime('now'));
 
@@ -32,5 +33,7 @@ INSERT OR IGNORE INTO warehouse_channel_rules (warehouse_id, platform, priority)
   ('acer_store', 'woocommerce',        2),
   ('ireland',    'shopify_komputerzz', 1),
   ('acer_store', 'shopify_komputerzz', 2),
+  ('ireland',    'ebay_ie',            1),
+  ('acer_store', 'ebay_ie',            2),
   ('ireland',    'shopify_tiktok',     1);
   -- acer_store + shopify_tiktok: intentionally omitted = FORBIDDEN

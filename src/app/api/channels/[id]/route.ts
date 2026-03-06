@@ -12,6 +12,7 @@ const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
 function getPushCol(platform: Platform) {
   if (platform === 'shopify_komputerzz') return products.pushedShopifyKomputerzz
   if (platform === 'shopify_tiktok')     return products.pushedShopifyTiktok
+  if (platform === 'ebay_ie')            return products.pushedEbayIe
   if (platform === 'xmr_bazaar')         return products.pushedXmrBazaar
   if (platform === 'libre_market')       return products.pushedLibreMarket
   return products.pushedWoocommerce
@@ -20,6 +21,7 @@ function getPushCol(platform: Platform) {
 function getPushValue(p: Record<string, unknown>, platform: Platform): string {
   if (platform === 'shopify_komputerzz') return String(p.pushedShopifyKomputerzz ?? 'N')
   if (platform === 'shopify_tiktok')     return String(p.pushedShopifyTiktok ?? 'N')
+  if (platform === 'ebay_ie')            return String(p.pushedEbayIe ?? 'N')
   if (platform === 'xmr_bazaar')         return String(p.pushedXmrBazaar ?? 'N')
   if (platform === 'libre_market')       return String(p.pushedLibreMarket ?? 'N')
   return String(p.pushedWoocommerce ?? 'N')
@@ -27,7 +29,7 @@ function getPushValue(p: Record<string, unknown>, platform: Platform): string {
 
 // Platforms that have push columns in the products table (includes browser channels)
 const PUSH_PLATFORMS: Platform[] = [
-  'woocommerce', 'shopify_komputerzz', 'shopify_tiktok',
+  'woocommerce', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie',
   'xmr_bazaar', 'libre_market',
 ]
 
@@ -75,6 +77,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     title: string
     pushedShopifyKomputerzz: string | null
     pushedShopifyTiktok: string | null
+    pushedEbayIe: string | null
     pushedWoocommerce: string | null
     pushedXmrBazaar: string | null
     pushedLibreMarket: string | null
@@ -114,6 +117,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         pushedWoocommerce:       String((row as any).pushed_woocommerce ?? 'N'),
         pushedShopifyKomputerzz: String((row as any).pushed_shopify_komputerzz ?? 'N'),
         pushedShopifyTiktok:     String((row as any).pushed_shopify_tiktok ?? 'N'),
+        pushedEbayIe:            String((row as any).pushed_ebay_ie ?? 'N'),
         pushedXmrBazaar:         String((row as any).pushed_xmr_bazaar ?? 'N'),
         pushedLibreMarket:       String((row as any).pushed_libre_market ?? 'N'),
       }))

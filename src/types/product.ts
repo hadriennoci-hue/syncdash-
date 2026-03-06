@@ -71,6 +71,7 @@ export interface Product {
   id: string  // SKU
   title: string
   description: string | null
+  tags: string[]
   status: ProductStatus
   taxCode: string | null
   ean: string | null
