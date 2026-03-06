@@ -11,6 +11,7 @@ const PUSH_PLATFORMS = [
   { key: 'woocommerce',        field: 'pushedWoocommerce',       label: 'Woo' },
   { key: 'shopify_komputerzz', field: 'pushedShopifyKomputerzz', label: 'Komp.' },
   { key: 'shopify_tiktok',     field: 'pushedShopifyTiktok',     label: 'TikTok' },
+  { key: 'ebay_ie',            field: 'pushedEbayIe',            label: 'eBay' },
   { key: 'libre_market',       field: 'pushedLibreMarket',       label: 'Libre' },
   { key: 'xmr_bazaar',         field: 'pushedXmrBazaar',         label: 'XMR' },
 ] as const
@@ -184,6 +185,7 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
               pushedWoocommerce: PushStatus
               pushedShopifyKomputerzz: PushStatus
               pushedShopifyTiktok: PushStatus
+              pushedEbayIe: PushStatus
               pushedLibreMarket: PushStatus
               pushedXmrBazaar: PushStatus
               quantity: number | null

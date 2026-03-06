@@ -2,6 +2,7 @@ export type Platform =
   | 'woocommerce'
   | 'shopify_komputerzz'
   | 'shopify_tiktok'
+  | 'ebay_ie'
   | 'libre_market'
   | 'xmr_bazaar'
   | 'platform_4'
@@ -34,6 +35,7 @@ export const PLATFORMS: Platform[] = [
   'woocommerce',
   'shopify_komputerzz',
   'shopify_tiktok',
+  'ebay_ie',
   'xmr_bazaar',
   'libre_market',
 ]
@@ -42,6 +44,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   woocommerce:        'COINCART.STORE',
   shopify_komputerzz: 'KOMPUTERZZ.COM',
   shopify_tiktok:     'Tech Store (TikTok)',
+  ebay_ie:            'eBay.ie',
   libre_market:       'Libre Market',
   xmr_bazaar:         'XMR Bazaar',
   platform_4:         'Platform 4',

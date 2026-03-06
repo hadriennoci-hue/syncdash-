@@ -23,6 +23,21 @@ interface FetchedData {
   categories?: { platformId: string; name: string; slug: string | null; platform: string }[]
 }
 
+function countStoredTags(raw: string | null): number {
+  if (!raw) return 0
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return 0
+    return parsed
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0 && !/\s/.test(v))
+      .length
+  } catch {
+    return 0
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
@@ -42,6 +57,7 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
     hasImages: product.images.length >= 2,
     hasDescription: !!product.description?.trim(),
     hasCategories: product.categories.length > 0,
+    hasTags: countStoredTags(product.tags) >= 3,
   }
 
   if (isComplete(state)) {
@@ -119,7 +135,7 @@ export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'age
 async function applyData(
   sku: string,
   data: FetchedData,
-  state: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean },
+  state: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean },
   filled: string[]
 ) {
   const update: Record<string, unknown> = {}
@@ -369,15 +385,16 @@ async function fetchFromFirecrawl(sku: string): Promise<FetchedData | null> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function isComplete(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean }) {
-  return s.hasTitle && s.hasImages && s.hasDescription && s.hasCategories
+function isComplete(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean }) {
+  return s.hasTitle && s.hasImages && s.hasDescription && s.hasCategories && s.hasTags
 }
 
-function getMissing(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean }) {
+function getMissing(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean }) {
   const m: string[] = []
   if (!s.hasTitle) m.push('title')
   if (!s.hasImages) m.push('images')
   if (!s.hasDescription) m.push('description')
   if (!s.hasCategories) m.push('categories')
+  if (!s.hasTags) m.push('tags (min 3)')
   return m
 }

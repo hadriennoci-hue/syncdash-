@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS } from '@/types/platform'
 
-const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'libre_market', 'xmr_bazaar'] as const
+const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'ebay_ie', 'libre_market', 'xmr_bazaar'] as const
 
 interface FillResult {
   sku:     string

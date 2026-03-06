@@ -77,7 +77,8 @@ export async function GET(req: NextRequest) {
       eq(products.title, products.id),
       sql`${products.description} IS NULL OR ${products.description} = ''`,
       sql`NOT EXISTS (SELECT 1 FROM product_categories pc WHERE pc.product_id = ${products.id})`,
-      sql`(SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = ${products.id}) < 2`
+      sql`(SELECT COUNT(*) FROM product_images pi WHERE pi.product_id = ${products.id}) < 2`,
+      sql`${products.tags} IS NULL OR ${products.tags} = '' OR NOT json_valid(${products.tags}) OR json_array_length(${products.tags}) < 3`
     )
   )
   // hasStock: at least one warehouse (ireland or acer_store) has quantity > 0

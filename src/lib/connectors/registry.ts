@@ -2,6 +2,7 @@ import type { Platform } from '@/types/platform'
 import type { PlatformConnector, WarehouseConnector } from './types'
 import { ShopifyConnector, ShopifyWarehouseConnector } from './shopify'
 import { WooCommerceConnector } from './woocommerce'
+import { EbayConnector } from './ebay'
 import { AcerScraperConnector } from './acer-scraper'
 import { getStoredToken } from '@/lib/functions/tokens'
 
@@ -31,6 +32,15 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
         process.env.SHOPIFY_TIKTOK_SHOP!,
         tokenOverride ?? process.env.SHOPIFY_TIKTOK_TOKEN!,
         process.env.SHOPIFY_TIKTOK_LOCATION_ID
+      )
+
+    case 'ebay_ie':
+      return new EbayConnector(
+        process.env.EBAY_CLIENT_ID!,
+        process.env.EBAY_CLIENT_SECRET!,
+        process.env.EBAY_REFRESH_TOKEN!,
+        process.env.EBAY_MARKETPLACE_ID ?? 'EBAY_IE',
+        process.env.EBAY_API_BASE_URL ?? 'https://api.ebay.com'
       )
 
     case 'xmr_bazaar':
@@ -125,6 +135,7 @@ export const ALL_PLATFORMS: Platform[] = [
   'woocommerce',
   'shopify_komputerzz',
   'shopify_tiktok',
+  'ebay_ie',
 ]
 
 export const ALL_WAREHOUSE_IDS = ['ireland', 'acer_store'] as const

@@ -95,6 +95,7 @@ export async function syncWarehouse(
           ...(isAcerSource ? {
             pushedShopifyKomputerzz: '2push',
             pushedWoocommerce:       '2push',
+            pushedEbayIe:            '2push',
             pushedShopifyTiktok:     'N',
           } : {}),
         })

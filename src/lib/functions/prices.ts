@@ -9,6 +9,7 @@ function getPushStatusUpdate(platform: Platform): Record<string, string> {
   if (platform === 'woocommerce')        return { pushedWoocommerce: '2push' }
   if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: '2push' }
   if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: '2push' }
+  if (platform === 'ebay_ie')            return { pushedEbayIe: '2push' }
   if (platform === 'xmr_bazaar')         return { pushedXmrBazaar: '2push' }
   if (platform === 'libre_market')       return { pushedLibreMarket: '2push' }
   return {}

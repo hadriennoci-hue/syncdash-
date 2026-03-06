@@ -210,7 +210,7 @@ export function DashboardHome() {
       await apiPost('/api/runner/wake', { runner: 'browser', reason: 'dashboard push button' }).catch(() => null)
 
       const res = await apiPost('/api/sync/channel-availability', {
-        platforms:   ['shopify_komputerzz', 'woocommerce'],
+        platforms:   ['shopify_komputerzz', 'woocommerce', 'ebay_ie'],
         triggeredBy: 'human',
       })
       setPushResult(res.data)
@@ -460,6 +460,7 @@ const CONN_LABELS: Record<string, string> = {
   woocommerce:        'Coincart',
   shopify_komputerzz: 'Komputerzz',
   shopify_tiktok:     'TikTok Shop',
+  ebay_ie:            'eBay Ireland',
   libre_market:       'Libre Market',
   xmr_bazaar:         'XMR Bazaar',
   ireland:            'Ireland',
