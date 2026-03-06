@@ -9,10 +9,13 @@ import { createProduct } from '@/lib/functions/products'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
+const tagSchema = z.string().trim().min(1).max(40).regex(/^\S+$/, 'Tags must be single words')
+
 const createSchema = z.object({
   sku:          z.string().min(1),
   title:        z.string().min(1),
   description:          z.string().optional(),
+  tags:                 z.array(tagSchema).max(10).optional(),
   vendor:               z.string().optional(),
   productType:          z.string().optional(),
   taxCode:              z.string().optional(),
@@ -67,6 +70,7 @@ export async function GET(req: NextRequest) {
   if (pendingReview) conditions.push(eq(products.pendingReview, 1))
   if (pushedPlatform === 'libre_market') conditions.push(eq(products.pushedLibreMarket, '2push'))
   if (pushedPlatform === 'xmr_bazaar')  conditions.push(eq(products.pushedXmrBazaar, '2push'))
+  if (pushedPlatform === 'ebay_ie')     conditions.push(eq(products.pushedEbayIe, '2push'))
   // missingFields: any field that fill-missing would want to fill
   if (missingFields) conditions.push(
     or(
@@ -166,6 +170,7 @@ export async function POST(req: NextRequest) {
     title:        data.title,
     ean:          data.ean,
     description:  data.description,
+    tags:         data.tags,
     vendor:       data.vendor,
     productType:  data.productType,
     taxCode:      data.taxCode,

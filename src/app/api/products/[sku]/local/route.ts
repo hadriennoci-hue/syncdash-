@@ -4,10 +4,13 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { updateProductLocal } from '@/lib/functions/products'
 
+const tagSchema = z.string().trim().min(1).max(40).regex(/^\S+$/, 'Tags must be single words')
+
 const patchSchema = z.object({
   fields: z.object({
     title:       z.string().optional(),
     description: z.string().optional(),
+    tags:        z.array(tagSchema).max(10).optional(),
     status:      z.enum(['active', 'archived']).optional(),
     isFeatured:  z.boolean().optional(),
     categoryIds: z.array(z.string()).optional(),
