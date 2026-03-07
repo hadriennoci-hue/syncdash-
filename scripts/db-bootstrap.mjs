@@ -19,6 +19,7 @@ const MIGRATION_SCRIPTS = [
   'db:migrate16',
   'db:migrate17',
   'db:migrate18',
+  'db:migrate19',
 ]
 
 const IGNORABLE_SQL_ERRORS = [

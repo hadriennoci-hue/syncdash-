@@ -220,6 +220,246 @@ export const salesChannels = sqliteTable('sales_channels', {
 })
 
 // ---------------------------------------------------------------------------
+// Sales Analytics
+// ---------------------------------------------------------------------------
+
+// Raw ingestion snapshots (platform-agnostic).
+// Store full payloads for replay/debug and keep normalized tables separate.
+export const rawChannelOrders = sqliteTable('raw_channel_orders', {
+  rawPk:              integer('raw_pk').primaryKey({ autoIncrement: true }),
+  channelId:          text('channel_id').notNull().references(() => salesChannels.id),
+  platform:           text('platform').notNull(),
+  externalOrderId:    text('external_order_id').notNull(),
+  externalOrderName:  text('external_order_name'),
+  sourceCreatedAt:    text('source_created_at'),
+  sourceUpdatedAt:    text('source_updated_at'),
+  payloadJson:        text('payload_json').notNull(),
+  payloadChecksum:    text('payload_checksum'),
+  syncedAt:           text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_channel_orders_snapshot').on(t.channelId, t.externalOrderId, t.sourceUpdatedAt),
+}))
+
+export const rawChannelRefunds = sqliteTable('raw_channel_refunds', {
+  rawPk:              integer('raw_pk').primaryKey({ autoIncrement: true }),
+  channelId:          text('channel_id').notNull().references(() => salesChannels.id),
+  platform:           text('platform').notNull(),
+  externalRefundId:   text('external_refund_id').notNull(),
+  externalOrderId:    text('external_order_id').notNull(),
+  sourceCreatedAt:    text('source_created_at'),
+  sourceUpdatedAt:    text('source_updated_at'),
+  payloadJson:        text('payload_json').notNull(),
+  payloadChecksum:    text('payload_checksum'),
+  syncedAt:           text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_channel_refunds_snapshot').on(t.channelId, t.externalRefundId, t.sourceUpdatedAt),
+}))
+
+export const rawChannelTransactions = sqliteTable('raw_channel_transactions', {
+  rawPk:                  integer('raw_pk').primaryKey({ autoIncrement: true }),
+  channelId:              text('channel_id').notNull().references(() => salesChannels.id),
+  platform:               text('platform').notNull(),
+  externalTransactionId:  text('external_transaction_id').notNull(),
+  externalOrderId:        text('external_order_id'),
+  externalRefundId:       text('external_refund_id'),
+  sourceCreatedAt:        text('source_created_at'),
+  sourceUpdatedAt:        text('source_updated_at'),
+  payloadJson:            text('payload_json').notNull(),
+  payloadChecksum:        text('payload_checksum'),
+  syncedAt:               text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_channel_transactions_snapshot').on(
+    t.channelId, t.externalTransactionId, t.sourceUpdatedAt
+  ),
+}))
+
+export const rawChannelFulfillments = sqliteTable('raw_channel_fulfillments', {
+  rawPk:                  integer('raw_pk').primaryKey({ autoIncrement: true }),
+  channelId:              text('channel_id').notNull().references(() => salesChannels.id),
+  platform:               text('platform').notNull(),
+  externalFulfillmentId:  text('external_fulfillment_id').notNull(),
+  externalOrderId:        text('external_order_id').notNull(),
+  sourceCreatedAt:        text('source_created_at'),
+  sourceUpdatedAt:        text('source_updated_at'),
+  payloadJson:            text('payload_json').notNull(),
+  payloadChecksum:        text('payload_checksum'),
+  syncedAt:               text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_channel_fulfillments_snapshot').on(
+    t.channelId, t.externalFulfillmentId, t.sourceUpdatedAt
+  ),
+}))
+
+// Normalized sales model.
+// Amounts are stored in minor units (cents) to avoid floating-point precision issues.
+export const salesOrders = sqliteTable('sales_orders', {
+  orderPk:                integer('order_pk').primaryKey({ autoIncrement: true }),
+  channelId:              text('channel_id').notNull().references(() => salesChannels.id),
+  externalOrderId:        text('external_order_id').notNull(),
+  externalOrderName:      text('external_order_name'),
+  platform:               text('platform').notNull(),
+  externalCheckoutId:     text('external_checkout_id'),
+  customerExternalId:     text('customer_external_id'),
+  customerEmail:          text('customer_email'),
+  customerName:           text('customer_name'),
+  customerPhone:          text('customer_phone'),
+  currencyCode:           text('currency_code'),
+  financialStatus:        text('financial_status'),
+  fulfillmentStatus:      text('fulfillment_status'),
+  orderStatus:            text('order_status'),
+  sourceName:             text('source_name'),
+  cancelReason:           text('cancel_reason'),
+  isTestOrder:            integer('is_test_order').notNull().default(0),
+  orderCreatedAt:         text('order_created_at').notNull(),
+  orderProcessedAt:       text('order_processed_at'),
+  orderUpdatedAt:         text('order_updated_at'),
+  orderCancelledAt:       text('order_cancelled_at'),
+  orderClosedAt:          text('order_closed_at'),
+  subtotalAmountCents:    integer('subtotal_amount_cents'),
+  discountAmountCents:    integer('discount_amount_cents'),
+  shippingAmountCents:    integer('shipping_amount_cents'),
+  taxAmountCents:         integer('tax_amount_cents'),
+  totalAmountCents:       integer('total_amount_cents'),
+  refundedAmountCents:    integer('refunded_amount_cents').notNull().default(0),
+  netAmountCents:         integer('net_amount_cents'),
+  shippingName:           text('shipping_name'),
+  shippingCity:           text('shipping_city'),
+  shippingRegion:         text('shipping_region'),
+  shippingCountry:        text('shipping_country'),
+  shippingPostalCode:     text('shipping_postal_code'),
+  billingName:            text('billing_name'),
+  billingCity:            text('billing_city'),
+  billingRegion:          text('billing_region'),
+  billingCountry:         text('billing_country'),
+  billingPostalCode:      text('billing_postal_code'),
+  tags:                   text('tags'),
+  note:                   text('note'),
+  rawSourceTable:         text('raw_source_table').notNull(),
+  rawSourceId:            text('raw_source_id').notNull(),
+  insertedAt:             text('inserted_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:              text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqExternalOrder: uniqueIndex('uq_sales_orders_external').on(t.channelId, t.externalOrderId),
+}))
+
+export const salesOrderItems = sqliteTable('sales_order_items', {
+  orderItemPk:               integer('order_item_pk').primaryKey({ autoIncrement: true }),
+  orderPk:                   integer('order_pk').notNull().references(() => salesOrders.orderPk),
+  externalLineItemId:        text('external_line_item_id'),
+  externalProductId:         text('external_product_id'),
+  externalVariantId:         text('external_variant_id'),
+  sku:                       text('sku'),
+  productKey:                text('product_key'),
+  productTitle:              text('product_title'),
+  variantTitle:              text('variant_title'),
+  vendor:                    text('vendor'),
+  quantity:                  integer('quantity').notNull(),
+  currentQuantity:           integer('current_quantity'),
+  refundableQuantity:        integer('refundable_quantity'),
+  unitPriceAmountCents:      integer('unit_price_amount_cents'),
+  lineSubtotalAmountCents:   integer('line_subtotal_amount_cents'),
+  lineDiscountAmountCents:   integer('line_discount_amount_cents'),
+  lineTotalAmountCents:      integer('line_total_amount_cents'),
+  requiresShipping:          integer('requires_shipping'),
+  taxable:                   integer('taxable'),
+  fulfillmentStatus:         text('fulfillment_status'),
+  insertedAt:                text('inserted_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const salesRefunds = sqliteTable('sales_refunds', {
+  refundPk:                 integer('refund_pk').primaryKey({ autoIncrement: true }),
+  orderPk:                  integer('order_pk').notNull().references(() => salesOrders.orderPk),
+  channelId:                text('channel_id').notNull().references(() => salesChannels.id),
+  externalRefundId:         text('external_refund_id').notNull(),
+  externalOrderId:          text('external_order_id').notNull(),
+  currencyCode:             text('currency_code'),
+  refundCreatedAt:          text('refund_created_at'),
+  refundProcessedAt:        text('refund_processed_at'),
+  refundTotalAmountCents:   integer('refund_total_amount_cents'),
+  refundNotes:              text('refund_notes'),
+  rawSourceTable:           text('raw_source_table').notNull(),
+  rawSourceId:              text('raw_source_id').notNull(),
+  insertedAt:               text('inserted_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqExternalRefund: uniqueIndex('uq_sales_refunds_external').on(t.channelId, t.externalRefundId),
+}))
+
+export const salesRefundItems = sqliteTable('sales_refund_items', {
+  refundItemPk:                 integer('refund_item_pk').primaryKey({ autoIncrement: true }),
+  refundPk:                     integer('refund_pk').notNull().references(() => salesRefunds.refundPk),
+  orderItemPk:                  integer('order_item_pk').references(() => salesOrderItems.orderItemPk),
+  externalRefundLineItemId:     text('external_refund_line_item_id'),
+  externalLineItemId:           text('external_line_item_id'),
+  sku:                          text('sku'),
+  quantity:                     integer('quantity'),
+  subtotalAmountCents:          integer('subtotal_amount_cents'),
+  taxAmountCents:               integer('tax_amount_cents'),
+})
+
+export const salesTransactions = sqliteTable('sales_transactions', {
+  transactionPk:                integer('transaction_pk').primaryKey({ autoIncrement: true }),
+  orderPk:                      integer('order_pk').references(() => salesOrders.orderPk),
+  refundPk:                     integer('refund_pk').references(() => salesRefunds.refundPk),
+  channelId:                    text('channel_id').notNull().references(() => salesChannels.id),
+  externalTransactionId:        text('external_transaction_id').notNull(),
+  externalOrderId:              text('external_order_id'),
+  kind:                         text('kind'),
+  status:                       text('status'),
+  gateway:                      text('gateway'),
+  amountCents:                  integer('amount_cents'),
+  currencyCode:                 text('currency_code'),
+  transactionCreatedAt:         text('transaction_created_at'),
+  rawSourceTable:               text('raw_source_table').notNull(),
+  rawSourceId:                  text('raw_source_id').notNull(),
+  insertedAt:                   text('inserted_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqExternalTransaction: uniqueIndex('uq_sales_transactions_external').on(
+    t.channelId, t.externalTransactionId
+  ),
+}))
+
+export const salesFulfillments = sqliteTable('sales_fulfillments', {
+  fulfillmentPk:                integer('fulfillment_pk').primaryKey({ autoIncrement: true }),
+  orderPk:                      integer('order_pk').notNull().references(() => salesOrders.orderPk),
+  channelId:                    text('channel_id').notNull().references(() => salesChannels.id),
+  externalFulfillmentId:        text('external_fulfillment_id').notNull(),
+  externalOrderId:              text('external_order_id'),
+  status:                       text('status'),
+  trackingCompany:              text('tracking_company'),
+  trackingNumber:               text('tracking_number'),
+  trackingUrl:                  text('tracking_url'),
+  fulfillmentCreatedAt:         text('fulfillment_created_at'),
+  fulfillmentUpdatedAt:         text('fulfillment_updated_at'),
+  rawSourceTable:               text('raw_source_table').notNull(),
+  rawSourceId:                  text('raw_source_id').notNull(),
+  insertedAt:                   text('inserted_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqExternalFulfillment: uniqueIndex('uq_sales_fulfillments_external').on(
+    t.channelId, t.externalFulfillmentId
+  ),
+}))
+
+export const salesFulfillmentItems = sqliteTable('sales_fulfillment_items', {
+  fulfillmentItemPk:            integer('fulfillment_item_pk').primaryKey({ autoIncrement: true }),
+  fulfillmentPk:                integer('fulfillment_pk').notNull().references(() => salesFulfillments.fulfillmentPk),
+  orderItemPk:                  integer('order_item_pk').references(() => salesOrderItems.orderItemPk),
+  externalLineItemId:           text('external_line_item_id'),
+  sku:                          text('sku'),
+  quantity:                     integer('quantity'),
+})
+
+export const salesSyncCursors = sqliteTable('sales_sync_cursors', {
+  channelId:                text('channel_id').notNull().references(() => salesChannels.id),
+  resourceType:             text('resource_type').notNull(), // orders|refunds|transactions|fulfillments
+  lastSourceUpdatedAt:      text('last_source_updated_at'),
+  lastExternalId:           text('last_external_id'),
+  lastSyncAt:               text('last_sync_at'),
+  lastStatus:               text('last_status'),
+  lastError:                text('last_error'),
+  updatedAt:                text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.channelId, t.resourceType] }) }))
+
+// ---------------------------------------------------------------------------
 // Automation & Health
 // ---------------------------------------------------------------------------
 
