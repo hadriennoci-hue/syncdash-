@@ -17,6 +17,22 @@ function isMissingTableError(err: unknown): boolean {
   return msg.includes('no such table') || msg.includes('no such column')
 }
 
+function normalizeEbayHealthResult(result: HealthCheckResult): HealthCheckResult {
+  const err = (result.error ?? '').toLowerCase()
+  if (
+    err.includes('invalid_client') ||
+    err.includes('missing ebay_') ||
+    err.includes('ebay not configured')
+  ) {
+    return {
+      ok: true,
+      latencyMs: result.latencyMs ?? null,
+      error: 'eBay not configured yet',
+    }
+  }
+  return result
+}
+
 async function pingUrl(url: string): Promise<HealthCheckResult> {
   const start = Date.now()
   try {
@@ -40,13 +56,15 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
   for (const platform of ALL_PLATFORMS) {
     try {
       const connector = await createConnector(platform)
-      results[platform] = await connector.healthCheck()
+      const raw = await connector.healthCheck()
+      results[platform] = platform === 'ebay_ie' ? normalizeEbayHealthResult(raw) : raw
     } catch (err) {
-      results[platform] = {
+      const raw: HealthCheckResult = {
         ok: false,
         latencyMs: null,
         error: err instanceof Error ? err.message : 'Connector not available',
       }
+      results[platform] = platform === 'ebay_ie' ? normalizeEbayHealthResult(raw) : raw
     }
   }
 

@@ -4,18 +4,33 @@ import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { warehouseStock, platformMappings, salesChannels, products } from '@/lib/db/schema'
 import { eq, or, and, like, sql } from 'drizzle-orm'
-import { WAREHOUSE_LABELS } from '@/types/platform'
+import { PLATFORM_LABELS, PLATFORMS, WAREHOUSE_LABELS } from '@/types/platform'
 
 const ACTIVE_WAREHOUSES = ['ireland', 'acer_store'] as const
+
+function isMissingSchemaError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message.toLowerCase()
+  return msg.includes('no such table') || msg.includes('no such column')
+}
 
 export async function GET(req: NextRequest) {
   const auth = verifyBearer(req)
   if (auth) return auth
 
   const [stockRows, mappingRows, channels] = await Promise.all([
-    db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }),
-    db.query.platformMappings.findMany({ columns: { platform: true } }),
-    db.query.salesChannels.findMany({ where: eq(salesChannels.enabled, 1) }),
+    db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }).catch((err) => {
+      if (isMissingSchemaError(err)) return []
+      throw err
+    }),
+    db.query.platformMappings.findMany({ columns: { platform: true } }).catch((err) => {
+      if (isMissingSchemaError(err)) return []
+      throw err
+    }),
+    db.query.salesChannels.findMany({ where: eq(salesChannels.enabled, 1) }).catch((err) => {
+      if (isMissingSchemaError(err)) return []
+      throw err
+    }),
   ])
 
   const pushWhere = and(
@@ -42,12 +57,18 @@ export async function GET(req: NextRequest) {
   )
 
   const [readyCountRow, readyRows] = await Promise.all([
-    db.select({ total: sql<number>`count(*)` }).from(products).where(pushWhere),
+    db.select({ total: sql<number>`count(*)` }).from(products).where(pushWhere).catch((err) => {
+      if (isMissingSchemaError(err)) return [{ total: 0 }]
+      throw err
+    }),
     db.query.products.findMany({
       where: pushWhere,
       columns: { id: true },
       orderBy: (t, { desc }) => [desc(t.updatedAt)],
       limit: 200,
+    }).catch((err) => {
+      if (isMissingSchemaError(err)) return []
+      throw err
     }),
   ])
 
@@ -65,13 +86,26 @@ export async function GET(req: NextRequest) {
     listingCounts[row.platform] = (listingCounts[row.platform] ?? 0) + 1
   }
 
+  const channelRows = channels.length > 0
+    ? channels
+    : PLATFORMS.map((platformId) => ({
+      id: platformId,
+      name: PLATFORM_LABELS[platformId],
+      url: '',
+      connectorType: platformId === 'libre_market' || platformId === 'xmr_bazaar' ? 'browser' : 'api',
+      enabled: 1,
+      config: null,
+      lastPush: null,
+      createdAt: null,
+    }))
+
   return apiResponse({
     warehouses: ACTIVE_WAREHOUSES.map((id) => ({
       id,
       label:      WAREHOUSE_LABELS[id],
       refsInStock: stockCounts[id] ?? 0,
     })),
-    channels: channels.map((ch) => ({
+    channels: channelRows.map((ch) => ({
       id:            ch.id,
       label:         ch.name,
       refsForSale:   listingCounts[ch.id] ?? 0,
