@@ -1,8 +1,10 @@
 // SKU prefixes that indicate non-hardware items (software keys, recovery tools, services).
 // These appear on the ACER Store website but are not physical products — skip them on import.
 const ACER_SKU_BLOCKLIST_PREFIXES = ['RECOVERY_', 'SERVICE_', 'SOFTWARE_', 'MEDIAKEY_']
+const ACER_SKU_BLOCKLIST_SUFFIXES = ['_RFB']
 const isBlockedAcerSku = (sku: string) =>
   ACER_SKU_BLOCKLIST_PREFIXES.some((prefix) => sku.toUpperCase().startsWith(prefix)) ||
+  ACER_SKU_BLOCKLIST_SUFFIXES.some((suffix) => sku.toUpperCase().endsWith(suffix)) ||
   sku.toUpperCase().includes('_MEDIAKEY')
 
 import { db } from '@/lib/db/client'

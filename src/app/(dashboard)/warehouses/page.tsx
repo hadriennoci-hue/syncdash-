@@ -6,7 +6,7 @@ import { apiFetch } from '@/lib/utils/api-fetch'
 import { ProductsTable } from '@/components/products/ProductsTable'
 
 export default function WarehousesPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['warehouses'],
     queryFn:  () => apiFetch('/api/warehouses'),
   })
@@ -19,6 +19,10 @@ export default function WarehousesPage() {
         <h1 className="text-sm font-semibold">Warehouses</h1>
         {isLoading ? (
           <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : isError ? (
+          <p className="text-xs text-destructive">
+            Failed to load warehouses: {error instanceof Error ? error.message : 'Unknown error'}
+          </p>
         ) : (
           <div className="grid grid-cols-3 gap-3">
             {warehouses.map((w: any) => (

@@ -11,6 +11,12 @@ interface HealthResults {
   results: Record<string, HealthCheckResult>
 }
 
+function isMissingTableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message.toLowerCase()
+  return msg.includes('no such table') || msg.includes('no such column')
+}
+
 async function pingUrl(url: string): Promise<HealthCheckResult> {
   const start = Date.now()
   try {
@@ -44,13 +50,20 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
     }
   }
 
-  // Check browser channels — URL ping instead of API connector
-  const browserChannels = await db.query.salesChannels.findMany({
-    where: eq(salesChannels.connectorType, 'browser'),
-  })
-  for (const ch of browserChannels) {
-    if (ch.enabled) {
-      results[ch.id] = await pingUrl(ch.url)
+  // Check browser channels — URL ping instead of API connector.
+  // If local DB is partially migrated and sales_channels is missing, skip gracefully.
+  try {
+    const browserChannels = await db.query.salesChannels.findMany({
+      where: eq(salesChannels.connectorType, 'browser'),
+    })
+    for (const ch of browserChannels) {
+      if (ch.enabled) {
+        results[ch.id] = await pingUrl(ch.url)
+      }
+    }
+  } catch (err) {
+    if (!isMissingTableError(err)) {
+      throw err
     }
   }
 
@@ -70,21 +83,34 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
 
   const durationSeconds = (Date.now() - start) / 1000
 
-  await db.insert(apiHealthLog).values({
-    id:              generateId(),
-    checkedAt,
-    durationSeconds,
-    results:         JSON.stringify(results),
-    createdAt:       checkedAt,
-  })
+  // Persist latest health snapshot when table exists; don't block health check otherwise.
+  try {
+    await db.insert(apiHealthLog).values({
+      id:              generateId(),
+      checkedAt,
+      durationSeconds,
+      results:         JSON.stringify(results),
+      createdAt:       checkedAt,
+    })
+  } catch (err) {
+    if (!isMissingTableError(err)) {
+      throw err
+    }
+  }
 
   return { checkedAt, durationSeconds, results }
 }
 
 export async function getLatestHealthCheck(): Promise<HealthResults | null> {
-  const row = await db.query.apiHealthLog.findFirst({
-    orderBy: (t, { desc }) => [desc(t.checkedAt)],
-  })
+  let row: typeof apiHealthLog.$inferSelect | undefined
+  try {
+    row = await db.query.apiHealthLog.findFirst({
+      orderBy: (t, { desc }) => [desc(t.checkedAt)],
+    })
+  } catch (err) {
+    if (isMissingTableError(err)) return null
+    throw err
+  }
   if (!row) return null
   return {
     checkedAt:       row.checkedAt,
