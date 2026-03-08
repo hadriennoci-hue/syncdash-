@@ -35,6 +35,35 @@ function leftCardClass(status: PostStatus): string {
   return 'bg-gray-100 border-gray-300'
 }
 
+function accountLineLabel(account: SocialAccount): string {
+  if (account.platform === 'x') return `${account.label} X account`
+  return `${account.label} ${account.platform} account`
+}
+
+function PlatformLogo({ platform }: { platform: string }) {
+  if (platform === 'x') {
+    return (
+      <span
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-black text-white text-[10px] font-bold"
+        title="X"
+        aria-label="X"
+      >
+        X
+      </span>
+    )
+  }
+
+  return (
+    <span
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-300 text-[10px] font-bold"
+      title={platform}
+      aria-label={platform}
+    >
+      {platform.slice(0, 1).toUpperCase()}
+    </span>
+  )
+}
+
 export default function SocialMediaPage() {
   const qc = useQueryClient()
   const [expandedImages, setExpandedImages] = useState<Record<number, boolean>>({})
@@ -81,7 +110,7 @@ export default function SocialMediaPage() {
         Left: unpublished ({' '}
         <span className="px-1 rounded bg-gray-200">suggested</span> /{' '}
         <span className="px-1 rounded bg-green-200">validated</span> /{' '}
-        <span className="px-1 rounded bg-red-200">canceled</span> ) • Right: <span className="px-1 rounded bg-blue-200">published</span>
+        <span className="px-1 rounded bg-red-200">canceled</span> ) � Right: <span className="px-1 rounded bg-blue-200">published</span>
       </div>
 
       {isLoading ? (
@@ -96,8 +125,11 @@ export default function SocialMediaPage() {
             return (
               <div key={account.id} className="border border-border rounded p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-medium">{account.label}</div>
-                  <div className="text-xs text-muted-foreground">{account.platform.toUpperCase()} • {account.handle}</div>
+                  <div className="text-xs font-medium flex items-center gap-1.5">
+                    <PlatformLogo platform={account.platform} />
+                    {accountLineLabel(account)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{account.handle}</div>
                 </div>
 
                 <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-start">

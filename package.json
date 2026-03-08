@@ -35,6 +35,7 @@
     "db:migrate22": "wrangler d1 execute syncdash-db --local --file=./drizzle/0022_social_media_images.sql",
     "db:migrate23": "wrangler d1 execute syncdash-db --local --file=./drizzle/0023_ads_campaign_pipeline.sql",
     "db:migrate24": "wrangler d1 execute syncdash-db --local --file=./drizzle/0024_ads_campaign_destination.sql",
+    "db:migrate25": "wrangler d1 execute syncdash-db --local --file=./drizzle/0025_ads_analytics_curated.sql",
     "db:bootstrap": "node ./scripts/db-bootstrap.mjs",
     "db:query:inventory": "node ./query-inventory.mjs --local",
     "db:studio": "drizzle-kit studio",

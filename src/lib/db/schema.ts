@@ -688,6 +688,56 @@ export const adsPublishJobs = sqliteTable('ads_publish_jobs', {
   uqIdempotency: uniqueIndex('uq_ads_publish_jobs_idempotency').on(t.idempotencyKey),
 }))
 
+export const adsCampaignDailyMetrics = sqliteTable('ads_campaign_daily_metrics', {
+  campaignPk:              integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  metricDate:              text('metric_date').notNull(),
+  providerId:              text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountPk:               integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  impressions:             integer('impressions').notNull().default(0),
+  clicks:                  integer('clicks').notNull().default(0),
+  spendCents:              integer('spend_cents').notNull().default(0),
+  conversions:             integer('conversions').notNull().default(0),
+  conversionValueCents:    integer('conversion_value_cents').notNull().default(0),
+  sourceJson:              text('source_json'),
+  updatedAt:               text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.campaignPk, t.metricDate] }) }))
+
+export const shopifySkuDailyMetrics = sqliteTable('shopify_sku_daily_metrics', {
+  metricDate:              text('metric_date').notNull(),
+  channelId:               text('channel_id').notNull().references(() => salesChannels.id),
+  productSku:              text('product_sku').notNull(),
+  ordersCount:             integer('orders_count').notNull().default(0),
+  unitsSold:               integer('units_sold').notNull().default(0),
+  grossRevenueCents:       integer('gross_revenue_cents').notNull().default(0),
+  refundedCents:           integer('refunded_cents').notNull().default(0),
+  netRevenueCents:         integer('net_revenue_cents').notNull().default(0),
+  sourceJson:              text('source_json'),
+  updatedAt:               text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.metricDate, t.channelId, t.productSku] }) }))
+
+export const adsCampaignKpiDaily = sqliteTable('ads_campaign_kpi_daily', {
+  campaignPk:                integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  metricDate:                text('metric_date').notNull(),
+  providerId:                text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountPk:                 integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  productSku:                text('product_sku').notNull(),
+  spendCents:                integer('spend_cents').notNull().default(0),
+  clicks:                    integer('clicks').notNull().default(0),
+  impressions:               integer('impressions').notNull().default(0),
+  providerConversions:       integer('provider_conversions').notNull().default(0),
+  providerConversionValueCents: integer('provider_conversion_value_cents').notNull().default(0),
+  shopifyOrders:             integer('shopify_orders').notNull().default(0),
+  shopifyUnits:              integer('shopify_units').notNull().default(0),
+  shopifyNetRevenueCents:    integer('shopify_net_revenue_cents').notNull().default(0),
+  roas:                      real('roas'),
+  cpaCents:                  integer('cpa_cents'),
+  ctr:                       real('ctr'),
+  cpcCents:                  integer('cpc_cents'),
+  attributionModel:          text('attribution_model').notNull().default('sku_time_window_proxy'),
+  attributionConfidence:     real('attribution_confidence').notNull().default(0.35),
+  updatedAt:                 text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.campaignPk, t.metricDate] }) }))
+
 // ---------------------------------------------------------------------------
 // Automation & Health
 // ---------------------------------------------------------------------------
