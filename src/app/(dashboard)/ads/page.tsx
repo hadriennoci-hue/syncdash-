@@ -24,6 +24,8 @@ interface CampaignRow {
   destinationType?: 'shopify_komputerzz_product' | 'tiktok_shop_product' | null
   productSku?: string | null
   productImageUrl?: string | null
+  creativePrimaryText?: string | null
+  creativeHeadline?: string | null
   destinationUrl?: string | null
   destinationPending: number
   targetingJson?: string | null
@@ -152,6 +154,8 @@ export default function AdsPage() {
                                 <div className="text-[10px] break-all">Targeting: {c.targetingJson ?? '-'}</div>
                                 <div className="text-[10px] break-all">Tracking: {c.trackingJson ?? '-'}</div>
                                 <div className="text-[10px] break-all">Notes: {c.notes ?? '-'}</div>
+                                <div className="text-[10px] break-all">Ad headline: {c.creativeHeadline ?? '-'}</div>
+                                <div className="text-[10px] break-all">Ad text: {c.creativePrimaryText ?? '-'}</div>
 
                                 <div className="pt-1 flex flex-wrap gap-1">
                                   <button

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { adsAccounts, adsCampaigns, productImages, products } from '@/lib/db/schema'
+import { adsAccounts, adsCampaigns, adsCreatives, productImages, products } from '@/lib/db/schema'
 
 const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product'])
 
@@ -71,7 +71,9 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(adsCampaigns.createdAt), asc(adsCampaigns.campaignPk))
 
   const skus = Array.from(new Set(rows.map((r) => r.productSku).filter((s): s is string => Boolean(s))))
+  const campaignIds = rows.map((r) => r.campaignPk)
   const imageMap = new Map<string, string>()
+  const creativeMap = new Map<number, { primaryText: string | null; headline: string | null }>()
   if (skus.length > 0) {
     const images = await db.query.productImages.findMany({
       where: inArray(productImages.productId, skus),
@@ -89,9 +91,32 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  if (campaignIds.length > 0) {
+    const creatives = await db.query.adsCreatives.findMany({
+      where: inArray(adsCreatives.campaignPk, campaignIds),
+      columns: {
+        campaignPk: true,
+        primaryText: true,
+        headline: true,
+        createdAt: true,
+      },
+      orderBy: [asc(adsCreatives.campaignPk), asc(adsCreatives.createdAt), asc(adsCreatives.creativePk)],
+    })
+    for (const c of creatives) {
+      if (!creativeMap.has(c.campaignPk)) {
+        creativeMap.set(c.campaignPk, {
+          primaryText: c.primaryText ?? null,
+          headline: c.headline ?? null,
+        })
+      }
+    }
+  }
+
   const withImages = rows.map((r) => ({
     ...r,
     productImageUrl: r.productSku ? (imageMap.get(r.productSku) ?? null) : null,
+    creativePrimaryText: creativeMap.get(r.campaignPk)?.primaryText ?? null,
+    creativeHeadline: creativeMap.get(r.campaignPk)?.headline ?? null,
   }))
 
   return apiResponse(withImages)
