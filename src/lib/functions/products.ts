@@ -327,7 +327,7 @@ export async function updateProductLocal(
 export async function toggleProductStatus(
   sku: string,
   status: 'active' | 'archived',
-  platforms: Platform[],
+  platforms: Platform[] = [],
   triggeredBy: TriggeredBy = 'human'
 ): Promise<SyncResult[]> {
   await db.update(products)

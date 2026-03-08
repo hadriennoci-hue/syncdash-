@@ -8,7 +8,7 @@ import type { Platform } from '@/types/platform'
 
 const patchSchema = z.object({
   status:      z.enum(['active', 'archived']),
-  platforms:   z.array(z.string()).min(1),
+  platforms:   z.array(z.string()).min(1).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
 
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { sku: strin
   const results = await toggleProductStatus(
     params.sku,
     parsed.data.status,
-    parsed.data.platforms as Platform[],
+    (parsed.data.platforms ?? []) as Platform[],
     parsed.data.triggeredBy
   )
   return apiResponse(results)
