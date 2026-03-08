@@ -550,6 +550,30 @@ export const salesOrderAttribution = sqliteTable('sales_order_attribution', {
   attributedAt:      text('attributed_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 
+// Social media publishing pipeline
+export const socialMediaAccounts = sqliteTable('social_media_accounts', {
+  id:        text('id').primaryKey(),
+  label:     text('label').notNull(),
+  platform:  text('platform').notNull(),
+  handle:    text('handle').notNull(),
+  isActive:  integer('is_active').notNull().default(1),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const socialMediaPosts = sqliteTable('social_media_posts', {
+  postPk:         integer('post_pk').primaryKey({ autoIncrement: true }),
+  accountId:      text('account_id').notNull().references(() => socialMediaAccounts.id),
+  content:        text('content').notNull(),
+  imageUrl:       text('image_url'),
+  scheduledFor:   text('scheduled_for').notNull(),
+  status:         text('status').notNull().default('suggested'),
+  externalPostId: text('external_post_id'),
+  publishedAt:    text('published_at'),
+  createdBy:      text('created_by').notNull().default('agent'),
+  createdAt:      text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:      text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
 // ---------------------------------------------------------------------------
 // Automation & Health
 // ---------------------------------------------------------------------------
