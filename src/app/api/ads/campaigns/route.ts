@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { adsAccounts, adsCampaigns, adsProviders, products } from '@/lib/db/schema'
+import { adsAccounts, adsCampaigns, productImages, products } from '@/lib/db/schema'
 
 const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product'])
 
@@ -70,7 +70,31 @@ export async function GET(req: NextRequest) {
     .where(where)
     .orderBy(desc(adsCampaigns.createdAt), asc(adsCampaigns.campaignPk))
 
-  return apiResponse(rows)
+  const skus = Array.from(new Set(rows.map((r) => r.productSku).filter((s): s is string => Boolean(s))))
+  const imageMap = new Map<string, string>()
+  if (skus.length > 0) {
+    const images = await db.query.productImages.findMany({
+      where: inArray(productImages.productId, skus),
+      columns: {
+        productId: true,
+        url: true,
+        position: true,
+      },
+      orderBy: [asc(productImages.productId), asc(productImages.position)],
+    })
+    for (const img of images) {
+      if (!imageMap.has(img.productId)) {
+        imageMap.set(img.productId, img.url)
+      }
+    }
+  }
+
+  const withImages = rows.map((r) => ({
+    ...r,
+    productImageUrl: r.productSku ? (imageMap.get(r.productSku) ?? null) : null,
+  }))
+
+  return apiResponse(withImages)
 }
 
 // POST /api/ads/campaigns

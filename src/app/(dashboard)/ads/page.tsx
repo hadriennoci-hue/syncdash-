@@ -23,6 +23,7 @@ interface CampaignRow {
   currencyCode?: string | null
   destinationType?: 'shopify_komputerzz_product' | 'tiktok_shop_product' | null
   productSku?: string | null
+  productImageUrl?: string | null
   destinationUrl?: string | null
   destinationPending: number
   targetingJson?: string | null
@@ -129,6 +130,11 @@ export default function AdsPage() {
                             className="min-w-[220px] max-w-[220px] border rounded p-2 bg-slate-50 border-slate-200 cursor-pointer"
                             onClick={() => toggle(c.campaignPk)}
                           >
+                            {c.productImageUrl && (
+                              <div className="w-full h-24 mb-2 rounded overflow-hidden bg-white/70">
+                                <img src={c.productImageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                              </div>
+                            )}
                             <div className="text-[11px] font-medium truncate" title={c.name}>{c.name}</div>
                             <div className="text-[10px] text-muted-foreground">{c.accountName}</div>
                             <div className="text-[10px] mt-1">Status: {c.status}</div>
@@ -208,6 +214,11 @@ export default function AdsPage() {
                       ) : (
                         history.map((c) => (
                           <article key={c.campaignPk} className="min-w-[220px] max-w-[220px] border border-blue-300 bg-blue-100 rounded p-2">
+                            {c.productImageUrl && (
+                              <div className="w-full h-24 mb-2 rounded overflow-hidden bg-white/70">
+                                <img src={c.productImageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                              </div>
+                            )}
                             <div className="text-[11px] font-medium truncate" title={c.name}>{c.name}</div>
                             <div className="text-[10px] text-muted-foreground">{c.accountName}</div>
                             <div className="text-[10px] mt-1">Status: {c.status}</div>
