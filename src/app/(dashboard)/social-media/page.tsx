@@ -110,7 +110,7 @@ export default function SocialMediaPage() {
         Left: unpublished ({' '}
         <span className="px-1 rounded bg-gray-200">suggested</span> /{' '}
         <span className="px-1 rounded bg-green-200">validated</span> /{' '}
-        <span className="px-1 rounded bg-red-200">canceled</span> ) • Right: <span className="px-1 rounded bg-blue-200">published</span>
+        <span className="px-1 rounded bg-red-200">canceled</span> ) â€¢ Right: <span className="px-1 rounded bg-blue-200">published</span>
       </div>
 
       {isLoading ? (
