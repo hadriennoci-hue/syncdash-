@@ -565,6 +565,7 @@ export const socialMediaPosts = sqliteTable('social_media_posts', {
   accountId:      text('account_id').notNull().references(() => socialMediaAccounts.id),
   content:        text('content').notNull(),
   imageUrl:       text('image_url'),
+  imageUrls:      text('image_urls'),
   scheduledFor:   text('scheduled_for').notNull(),
   status:         text('status').notNull().default('suggested'),
   externalPostId: text('external_post_id'),

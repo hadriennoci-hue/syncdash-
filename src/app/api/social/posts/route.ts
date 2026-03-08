@@ -7,15 +7,33 @@ import { db } from '@/lib/db/client'
 import { socialMediaAccounts, socialMediaPosts } from '@/lib/db/schema'
 
 const statusSchema = z.enum(['suggested', 'validated', 'canceled', 'published'])
+const platformSchema = z.enum(['x', 'instagram'])
 
 const createSchema = z.object({
   accountId: z.string().min(1),
+  platform: platformSchema.optional(),
   content: z.string().min(1).max(500),
   imageUrl: z.string().url().optional(),
+  images: z.array(z.string().url()).max(4).optional(),
   scheduledFor: z.string().datetime(),
   status: statusSchema.optional(),
   createdBy: z.enum(['agent', 'human', 'system']).default('agent'),
 })
+
+function parseImageUrls(raw: string | null, single: string | null): string[] {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        const urls = parsed.filter((v): v is string => typeof v === 'string').slice(0, 4)
+        if (urls.length > 0) return urls
+      }
+    } catch {
+      // ignore malformed historical rows
+    }
+  }
+  return single ? [single] : []
+}
 
 export async function GET(req: NextRequest) {
   const auth = verifyBearer(req)
@@ -39,7 +57,16 @@ export async function GET(req: NextRequest) {
     orderBy: [asc(socialMediaPosts.scheduledFor), asc(socialMediaPosts.postPk)],
   })
 
-  return apiResponse({ accounts, posts })
+  const normalizedPosts = posts.map((p) => {
+    const images = parseImageUrls(p.imageUrls ?? null, p.imageUrl ?? null)
+    return {
+      ...p,
+      imageUrl: images[0] ?? null,
+      images,
+    }
+  })
+
+  return apiResponse({ accounts, posts: normalizedPosts })
 }
 
 export async function POST(req: NextRequest) {
@@ -58,16 +85,24 @@ export async function POST(req: NextRequest) {
 
   const account = await db.query.socialMediaAccounts.findFirst({
     where: eq(socialMediaAccounts.id, parsed.data.accountId),
-    columns: { id: true },
+    columns: { id: true, platform: true },
   })
   if (!account) {
     return apiError('NOT_FOUND', `Social account ${parsed.data.accountId} not found`, 404)
   }
+  if (parsed.data.platform && parsed.data.platform !== account.platform) {
+    return apiError('VALIDATION_ERROR', `Account ${parsed.data.accountId} is on ${account.platform}, not ${parsed.data.platform}`, 400)
+  }
+
+  const images = (parsed.data.images && parsed.data.images.length > 0)
+    ? parsed.data.images.slice(0, 4)
+    : (parsed.data.imageUrl ? [parsed.data.imageUrl] : [])
 
   const inserted = await db.insert(socialMediaPosts).values({
     accountId: parsed.data.accountId,
     content: parsed.data.content,
-    imageUrl: parsed.data.imageUrl ?? null,
+    imageUrl: images[0] ?? null,
+    imageUrls: JSON.stringify(images),
     scheduledFor: parsed.data.scheduledFor,
     status,
     externalPostId: null,

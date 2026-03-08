@@ -10,6 +10,8 @@ const patchSchema = z.object({
   status: z.enum(['suggested', 'validated', 'canceled', 'published']),
   scheduledFor: z.string().datetime().optional(),
   externalPostId: z.string().optional(),
+  imageUrl: z.string().url().optional(),
+  images: z.array(z.string().url()).max(4).optional(),
 })
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -28,10 +30,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const now = new Date().toISOString()
+  const images = parsed.data.images
+    ? parsed.data.images.slice(0, 4)
+    : (parsed.data.imageUrl ? [parsed.data.imageUrl] : undefined)
   await db.update(socialMediaPosts).set({
     status: parsed.data.status,
     scheduledFor: parsed.data.scheduledFor ?? undefined,
     externalPostId: parsed.data.externalPostId ?? undefined,
+    imageUrl: images ? (images[0] ?? null) : undefined,
+    imageUrls: images ? JSON.stringify(images) : undefined,
     publishedAt: parsed.data.status === 'published' ? now : null,
     updatedAt: now,
   }).where(eq(socialMediaPosts.postPk, postPk))

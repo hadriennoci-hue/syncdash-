@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
 
@@ -19,6 +19,7 @@ interface SocialPost {
   accountId: string
   content: string
   imageUrl?: string | null
+  images?: string[]
   scheduledFor: string
   status: PostStatus
   publishedAt?: string | null
@@ -37,6 +38,7 @@ function leftCardClass(status: PostStatus): string {
 
 export default function SocialMediaPage() {
   const qc = useQueryClient()
+  const [expandedImages, setExpandedImages] = useState<Record<number, boolean>>({})
 
   const { data, isLoading } = useQuery({
     queryKey: ['social-media-posts'],
@@ -64,6 +66,10 @@ export default function SocialMediaPage() {
       apiPatch(`/api/social/posts/${postPk}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['social-media-posts'] }),
   })
+
+  function toggleImages(postPk: number) {
+    setExpandedImages((prev) => ({ ...prev, [postPk]: !prev[postPk] }))
+  }
 
   return (
     <div className="space-y-4">
@@ -112,13 +118,32 @@ export default function SocialMediaPage() {
                             key={p.postPk}
                             className={`min-w-[170px] max-w-[170px] border rounded p-2 ${leftCardClass(p.status)}`}
                           >
-                            {p.imageUrl && (
+                            {(p.images?.[0] ?? p.imageUrl) && (
                               <div className="relative w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                                <Image src={p.imageUrl} alt="" fill className="object-cover" />
+                                <Image src={(p.images?.[0] ?? p.imageUrl)!} alt="" fill className="object-cover" />
                               </div>
                             )}
                             <p className="text-[11px] line-clamp-4">{p.content}</p>
                             <p className="text-[10px] text-muted-foreground mt-1">{formatDate(p.scheduledFor)}</p>
+                            {!!p.images && p.images.length > 1 && (
+                              <div className="mt-1">
+                                <button
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-white/70"
+                                  onClick={() => toggleImages(p.postPk)}
+                                >
+                                  {expandedImages[p.postPk] ? 'Hide images' : `See ${p.images.length - 1} more image(s)`}
+                                </button>
+                                {expandedImages[p.postPk] && (
+                                  <div className="mt-1 grid grid-cols-3 gap-1">
+                                    {p.images.slice(1, 4).map((img, idx) => (
+                                      <div key={`${p.postPk}-${idx}`} className="relative h-10 rounded overflow-hidden bg-white/80">
+                                        <Image src={img} alt="" fill className="object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <div className="mt-2 flex flex-wrap gap-1">
                               <button
                                 className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 bg-green-200"
@@ -164,13 +189,32 @@ export default function SocialMediaPage() {
                           .slice(0, 2)
                           .map((p) => (
                           <article key={p.postPk} className="min-w-[170px] max-w-[170px] border border-blue-300 bg-blue-100 rounded p-2">
-                            {p.imageUrl && (
+                            {(p.images?.[0] ?? p.imageUrl) && (
                               <div className="relative w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                                <Image src={p.imageUrl} alt="" fill className="object-cover" />
+                                <Image src={(p.images?.[0] ?? p.imageUrl)!} alt="" fill className="object-cover" />
                               </div>
                             )}
                             <p className="text-[11px] line-clamp-4">{p.content}</p>
                             <p className="text-[10px] text-muted-foreground mt-1">Published {formatDate(p.publishedAt ?? p.scheduledFor)}</p>
+                            {!!p.images && p.images.length > 1 && (
+                              <div className="mt-1">
+                                <button
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 bg-white/70"
+                                  onClick={() => toggleImages(p.postPk)}
+                                >
+                                  {expandedImages[p.postPk] ? 'Hide images' : `See ${p.images.length - 1} more image(s)`}
+                                </button>
+                                {expandedImages[p.postPk] && (
+                                  <div className="mt-1 grid grid-cols-3 gap-1">
+                                    {p.images.slice(1, 4).map((img, idx) => (
+                                      <div key={`${p.postPk}-pub-${idx}`} className="relative h-10 rounded overflow-hidden bg-white/80">
+                                        <Image src={img} alt="" fill className="object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </article>
                         ))
                       )}
