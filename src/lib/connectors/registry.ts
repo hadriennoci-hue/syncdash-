@@ -7,8 +7,8 @@ import { AcerScraperConnector } from './acer-scraper'
 import { getStoredToken } from '@/lib/functions/tokens'
 
 // ---------------------------------------------------------------------------
-// Platform connector factory (synchronous — uses env var tokens)
-// Pass tokenOverride to use a dynamically-obtained OAuth token instead.
+// Platform connector factory (sync)
+// Pass tokenOverride to use a dynamically-obtained OAuth token.
 // ---------------------------------------------------------------------------
 
 export function getConnector(platform: Platform, tokenOverride?: string): PlatformConnector {
@@ -21,16 +21,22 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
       )
 
     case 'shopify_komputerzz':
+      if (!tokenOverride) {
+        throw new Error('Missing stored OAuth token for shopify_komputerzz. Refresh tokens first.')
+      }
       return new ShopifyConnector(
         process.env.SHOPIFY_KOMPUTERZZ_SHOP!,
-        tokenOverride ?? process.env.SHOPIFY_KOMPUTERZZ_TOKEN!,
+        tokenOverride,
         process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID
       )
 
     case 'shopify_tiktok':
+      if (!tokenOverride) {
+        throw new Error('Missing stored OAuth token for shopify_tiktok. Refresh tokens first.')
+      }
       return new ShopifyConnector(
         process.env.SHOPIFY_TIKTOK_SHOP!,
-        tokenOverride ?? process.env.SHOPIFY_TIKTOK_TOKEN!,
+        tokenOverride,
         process.env.SHOPIFY_TIKTOK_LOCATION_ID
       )
 
@@ -44,10 +50,10 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
       )
 
     case 'xmr_bazaar':
-      throw new Error('xmr_bazaar is a browser-automated channel — use the local push script, not getConnector()')
+      throw new Error('xmr_bazaar is a browser-automated channel - use the local push script, not getConnector()')
 
     case 'libre_market':
-      throw new Error('libre_market is a browser-automated channel — use the local push script, not getConnector()')
+      throw new Error('libre_market is a browser-automated channel - use the local push script, not getConnector()')
 
     case 'platform_4':
       throw new Error('platform_4 connector not yet implemented')
@@ -63,25 +69,30 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
 }
 
 /**
- * Async connector factory — resolves the stored OAuth token from D1 first,
- * falling back to the static env var token. Use this everywhere instead of
- * getConnector() so that daily-refreshed Shopify tokens are always used.
+ * Async connector factory - resolves stored OAuth token from D1.
+ * Use this everywhere instead of getConnector() for Shopify channels.
  */
 export async function createConnector(platform: Platform): Promise<PlatformConnector> {
   if (platform === 'shopify_komputerzz' || platform === 'shopify_tiktok') {
     const token = await getStoredToken(platform)
+    if (!token) {
+      throw new Error(`No valid stored OAuth token for ${platform}. Run /api/tokens/refresh first.`)
+    }
     return getConnector(platform, token)
   }
   return getConnector(platform)
 }
 
 // ---------------------------------------------------------------------------
-// Warehouse connector factory (synchronous — uses env var tokens)
+// Warehouse connector factory (sync)
 // ---------------------------------------------------------------------------
 
 export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
   switch (warehouseId) {
     case 'ireland':
+      if (!process.env.SHOPIFY_TIKTOK_TOKEN) {
+        throw new Error('Legacy SHOPIFY_TIKTOK_TOKEN is not configured for synchronous warehouse connector.')
+      }
       return new ShopifyWarehouseConnector(
         process.env.SHOPIFY_TIKTOK_SHOP!,
         process.env.SHOPIFY_TIKTOK_TOKEN!,
@@ -90,7 +101,7 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
 
     case 'acer_store': {
       const urls = process.env.ACER_STORE_SCRAPE_URLS
-        ? process.env.ACER_STORE_SCRAPE_URLS.split(',').map(u => u.trim()).filter(Boolean)
+        ? process.env.ACER_STORE_SCRAPE_URLS.split(',').map((u) => u.trim()).filter(Boolean)
         : [
             'https://store.acer.com/fr-fr/ecrans',
             'https://store.acer.com/fr-fr/peripheriques',
@@ -101,7 +112,7 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
     }
 
     case 'poland':
-      throw new Error('Poland warehouse connector not yet implemented — API TBD')
+      throw new Error('Poland warehouse connector not yet implemented - API TBD')
 
     case 'spain':
       throw new Error('Spain warehouse connector not yet implemented')
@@ -112,15 +123,18 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
 }
 
 /**
- * Async warehouse connector factory — resolves stored OAuth token for Shopify-based
- * warehouses (Ireland). Falls back to env var token if none stored.
+ * Async warehouse connector factory - resolves stored OAuth token for
+ * Shopify-based warehouses (Ireland).
  */
 export async function createWarehouseConnector(warehouseId: string): Promise<WarehouseConnector> {
   if (warehouseId === 'ireland') {
     const token = await getStoredToken('shopify_tiktok')
+    if (!token) {
+      throw new Error('No valid stored OAuth token for shopify_tiktok. Run /api/tokens/refresh first.')
+    }
     return new ShopifyWarehouseConnector(
       process.env.SHOPIFY_TIKTOK_SHOP!,
-      token ?? process.env.SHOPIFY_TIKTOK_TOKEN!,
+      token,
       process.env.SHOPIFY_TIKTOK_IRELAND_LOCATION_ID!
     )
   }
@@ -128,7 +142,7 @@ export async function createWarehouseConnector(warehouseId: string): Promise<War
 }
 
 // ---------------------------------------------------------------------------
-// All platform connectors — used for health checks
+// All platform connectors - used for health checks
 // ---------------------------------------------------------------------------
 
 export const ALL_PLATFORMS: Platform[] = [

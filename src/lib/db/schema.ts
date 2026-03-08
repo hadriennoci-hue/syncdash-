@@ -459,6 +459,97 @@ export const salesSyncCursors = sqliteTable('sales_sync_cursors', {
   updatedAt:                text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.channelId, t.resourceType] }) }))
 
+// Google Ads raw snapshots
+export const rawGoogleAdsCampaigns = sqliteTable('raw_google_ads_campaigns', {
+  rawPk:         integer('raw_pk').primaryKey({ autoIncrement: true }),
+  customerId:    text('customer_id').notNull(),
+  campaignId:    text('campaign_id').notNull(),
+  segmentsDate:  text('segments_date'),
+  payloadJson:   text('payload_json').notNull(),
+  syncedAt:      text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_google_ads_campaigns_snapshot').on(t.customerId, t.campaignId, t.segmentsDate),
+}))
+
+export const rawGoogleAdsAdGroups = sqliteTable('raw_google_ads_ad_groups', {
+  rawPk:         integer('raw_pk').primaryKey({ autoIncrement: true }),
+  customerId:    text('customer_id').notNull(),
+  campaignId:    text('campaign_id'),
+  adGroupId:     text('ad_group_id').notNull(),
+  segmentsDate:  text('segments_date'),
+  payloadJson:   text('payload_json').notNull(),
+  syncedAt:      text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_google_ads_ad_groups_snapshot').on(t.customerId, t.adGroupId, t.segmentsDate),
+}))
+
+export const rawGoogleAdsClickViews = sqliteTable('raw_google_ads_click_views', {
+  rawPk:         integer('raw_pk').primaryKey({ autoIncrement: true }),
+  customerId:    text('customer_id').notNull(),
+  gclid:         text('gclid').notNull(),
+  campaignId:    text('campaign_id'),
+  adGroupId:     text('ad_group_id'),
+  clickDateTime: text('click_date_time'),
+  segmentsDate:  text('segments_date'),
+  payloadJson:   text('payload_json').notNull(),
+  syncedAt:      text('synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqSnapshot: uniqueIndex('uq_raw_google_ads_click_views_snapshot').on(t.customerId, t.gclid, t.clickDateTime),
+}))
+
+export const googleAdsCampaigns = sqliteTable('google_ads_campaigns', {
+  customerId:              text('customer_id').notNull(),
+  campaignId:              text('campaign_id').notNull(),
+  name:                    text('name'),
+  status:                  text('status'),
+  advertisingChannelType:  text('advertising_channel_type'),
+  startDate:               text('start_date'),
+  endDate:                 text('end_date'),
+  currencyCode:            text('currency_code'),
+  budgetMicros:            integer('budget_micros'),
+  lastSyncedAt:            text('last_synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.customerId, t.campaignId] }) }))
+
+export const googleAdsAdGroups = sqliteTable('google_ads_ad_groups', {
+  customerId:              text('customer_id').notNull(),
+  adGroupId:               text('ad_group_id').notNull(),
+  campaignId:              text('campaign_id'),
+  name:                    text('name'),
+  status:                  text('status'),
+  type:                    text('type'),
+  cpcBidMicros:            integer('cpc_bid_micros'),
+  lastSyncedAt:            text('last_synced_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.customerId, t.adGroupId] }) }))
+
+export const salesOrderMarketing = sqliteTable('sales_order_marketing', {
+  orderPk:       integer('order_pk').primaryKey().references(() => salesOrders.orderPk),
+  landingSite:   text('landing_site'),
+  referringSite: text('referring_site'),
+  utmSource:     text('utm_source'),
+  utmMedium:     text('utm_medium'),
+  utmCampaign:   text('utm_campaign'),
+  utmTerm:       text('utm_term'),
+  utmContent:    text('utm_content'),
+  gclid:         text('gclid'),
+  fbclid:        text('fbclid'),
+  ttclid:        text('ttclid'),
+  sourceJson:    text('source_json'),
+  updatedAt:     text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const salesOrderAttribution = sqliteTable('sales_order_attribution', {
+  orderPk:           integer('order_pk').primaryKey().references(() => salesOrders.orderPk),
+  model:             text('model').notNull(),
+  confidence:        real('confidence'),
+  googleCustomerId:  text('google_customer_id'),
+  campaignId:        text('campaign_id'),
+  adGroupId:         text('ad_group_id'),
+  gclid:             text('gclid'),
+  clickTime:         text('click_time'),
+  notes:             text('notes'),
+  attributedAt:      text('attributed_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
 // ---------------------------------------------------------------------------
 // Automation & Health
 // ---------------------------------------------------------------------------
