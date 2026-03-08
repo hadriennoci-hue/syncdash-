@@ -5,19 +5,26 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import {
   LayoutDashboard, Store, Warehouse, ShoppingCart,
-  Users, BarChart2, CheckSquare, RefreshCw, Video, Settings,
+  Users, BarChart2, CheckSquare, RefreshCw, Video, Settings, Megaphone, Share2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const nav = [
+type NavLinkItem = { href: string; label: string; icon: LucideIcon }
+type NavSectionItem = { type: 'section'; label: string; icon: LucideIcon }
+type NavItem = NavLinkItem | NavSectionItem
+
+const nav: NavItem[] = [
   { href: '/',            label: 'Dashboard',    icon: LayoutDashboard },
   { href: '/warehouses',  label: 'Warehouses',   icon: Warehouse },
   { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
+  { type: 'section',      label: 'Social Media', icon: Share2 },
+  { type: 'section',      label: 'Ads',          icon: Megaphone },
+  { href: '/tiktok',      label: 'TikTok',       icon: Video },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },
   { href: '/validate',    label: 'Validate',     icon: CheckSquare },
   { href: '/sync',        label: 'Sync Logs',    icon: RefreshCw },
-  { href: '/tiktok',      label: 'TikTok',       icon: Video },
   { href: '/settings',    label: 'Settings',     icon: Settings },
 ]
 
@@ -30,7 +37,21 @@ export function Sidebar() {
         <span className="text-sm font-semibold tracking-tight">Wizhard</span>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {nav.map((item) => {
+          if ('type' in item) {
+            const Icon = item.icon
+            return (
+              <div
+                key={`section-${item.label}`}
+                className="flex items-center gap-2 px-4 pt-3 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/80"
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                {item.label}
+              </div>
+            )
+          }
+
+          const { href, label, icon: Icon } = item as NavLinkItem
           const active = href === '/' ? pathname === href : pathname.startsWith(href)
           return (
             <Link
