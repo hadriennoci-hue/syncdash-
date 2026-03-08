@@ -99,10 +99,15 @@ export default function SocialMediaPage() {
                   <div className="space-y-2">
                     <div className="text-[11px] text-muted-foreground">Unpublished plan</div>
                     <div className="flex gap-2 overflow-x-auto pb-1">
-                      {left.length === 0 ? (
+                      {left
+                        .filter((p) => p.status === 'suggested' || p.status === 'validated')
+                        .slice(0, 6).length === 0 ? (
                         <span className="text-xs text-muted-foreground">No planned posts</span>
                       ) : (
-                        left.map((p) => (
+                        left
+                          .filter((p) => p.status === 'suggested' || p.status === 'validated')
+                          .slice(0, 6)
+                          .map((p) => (
                           <article
                             key={p.postPk}
                             className={`min-w-[170px] max-w-[170px] border rounded p-2 ${leftCardClass(p.status)}`}
@@ -147,10 +152,17 @@ export default function SocialMediaPage() {
                   <div className="space-y-2">
                     <div className="text-[11px] text-muted-foreground">Published</div>
                     <div className="flex gap-2 overflow-x-auto pb-1">
-                      {right.length === 0 ? (
+                      {right
+                        .slice()
+                        .sort((a, b) => new Date(b.publishedAt ?? b.scheduledFor).getTime() - new Date(a.publishedAt ?? a.scheduledFor).getTime())
+                        .slice(0, 2).length === 0 ? (
                         <span className="text-xs text-muted-foreground">No published posts</span>
                       ) : (
-                        right.map((p) => (
+                        right
+                          .slice()
+                          .sort((a, b) => new Date(b.publishedAt ?? b.scheduledFor).getTime() - new Date(a.publishedAt ?? a.scheduledFor).getTime())
+                          .slice(0, 2)
+                          .map((p) => (
                           <article key={p.postPk} className="min-w-[170px] max-w-[170px] border border-blue-300 bg-blue-100 rounded p-2">
                             {p.imageUrl && (
                               <div className="relative w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
