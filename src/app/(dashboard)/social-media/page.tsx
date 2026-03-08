@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
@@ -119,8 +118,13 @@ export default function SocialMediaPage() {
                             className={`min-w-[170px] max-w-[170px] border rounded p-2 ${leftCardClass(p.status)}`}
                           >
                             {(p.images?.[0] ?? p.imageUrl) && (
-                              <div className="relative w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                                <Image src={(p.images?.[0] ?? p.imageUrl)!} alt="" fill className="object-cover" />
+                              <div className="w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
+                                <img
+                                  src={(p.images?.[0] ?? p.imageUrl)!}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
                               </div>
                             )}
                             <p className="text-[11px] line-clamp-4">{p.content}</p>
@@ -136,8 +140,8 @@ export default function SocialMediaPage() {
                                 {expandedImages[p.postPk] && (
                                   <div className="mt-1 grid grid-cols-3 gap-1">
                                     {p.images.slice(1, 4).map((img, idx) => (
-                                      <div key={`${p.postPk}-${idx}`} className="relative h-10 rounded overflow-hidden bg-white/80">
-                                        <Image src={img} alt="" fill className="object-cover" />
+                                      <div key={`${p.postPk}-${idx}`} className="h-10 rounded overflow-hidden bg-white/80">
+                                        <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
                                       </div>
                                     ))}
                                   </div>
@@ -190,8 +194,13 @@ export default function SocialMediaPage() {
                           .map((p) => (
                           <article key={p.postPk} className="min-w-[170px] max-w-[170px] border border-blue-300 bg-blue-100 rounded p-2">
                             {(p.images?.[0] ?? p.imageUrl) && (
-                              <div className="relative w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                                <Image src={(p.images?.[0] ?? p.imageUrl)!} alt="" fill className="object-cover" />
+                              <div className="w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
+                                <img
+                                  src={(p.images?.[0] ?? p.imageUrl)!}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
                               </div>
                             )}
                             <p className="text-[11px] line-clamp-4">{p.content}</p>
@@ -207,8 +216,8 @@ export default function SocialMediaPage() {
                                 {expandedImages[p.postPk] && (
                                   <div className="mt-1 grid grid-cols-3 gap-1">
                                     {p.images.slice(1, 4).map((img, idx) => (
-                                      <div key={`${p.postPk}-pub-${idx}`} className="relative h-10 rounded overflow-hidden bg-white/80">
-                                        <Image src={img} alt="" fill className="object-cover" />
+                                      <div key={`${p.postPk}-pub-${idx}`} className="h-10 rounded overflow-hidden bg-white/80">
+                                        <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
                                       </div>
                                     ))}
                                   </div>

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import {
   LayoutDashboard, Store, Warehouse, ShoppingCart,
-  Users, BarChart2, CheckSquare, RefreshCw, Video, Settings, Megaphone, Share2, CalendarClock,
+  Users, BarChart2, CheckSquare, RefreshCw, Video, Settings, Megaphone, Share2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -19,8 +19,7 @@ const nav: NavItem[] = [
   { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
-  { type: 'section',      label: 'Social Media', icon: Share2 },
-  { href: '/social-media', label: 'Pipelines',   icon: CalendarClock },
+  { href: '/social-media', label: 'Social Media', icon: Share2 },
   { type: 'section',      label: 'Ads',          icon: Megaphone },
   { href: '/tiktok',      label: 'TikTok',       icon: Video },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },
