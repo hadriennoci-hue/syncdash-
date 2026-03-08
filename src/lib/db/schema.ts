@@ -575,6 +575,115 @@ export const socialMediaPosts = sqliteTable('social_media_posts', {
   updatedAt:      text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 
+// Ads campaign planning pipeline
+export const adsProviders = sqliteTable('ads_providers', {
+  providerId: text('provider_id').primaryKey(),
+  label:      text('label').notNull(),
+  isActive:   integer('is_active').notNull().default(1),
+  createdAt:  text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const adsAccounts = sqliteTable('ads_accounts', {
+  accountPk:          integer('account_pk').primaryKey({ autoIncrement: true }),
+  providerId:         text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountExternalId:  text('account_external_id').notNull(),
+  accountName:        text('account_name').notNull(),
+  currencyCode:       text('currency_code'),
+  timezone:           text('timezone'),
+  status:             text('status').notNull().default('active'),
+  configJson:         text('config_json'),
+  createdAt:          text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:          text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqExternal: uniqueIndex('uq_ads_accounts_external').on(t.providerId, t.accountExternalId),
+}))
+
+export const adsCampaigns = sqliteTable('ads_campaigns', {
+  campaignPk:          integer('campaign_pk').primaryKey({ autoIncrement: true }),
+  accountPk:           integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  providerCampaignId:  text('provider_campaign_id'),
+  name:                text('name').notNull(),
+  objective:           text('objective').notNull(),
+  status:              text('status').notNull().default('draft'),
+  startAt:             text('start_at'),
+  endAt:               text('end_at'),
+  budgetMode:          text('budget_mode').notNull().default('daily'),
+  budgetAmountCents:   integer('budget_amount_cents'),
+  currencyCode:        text('currency_code'),
+  targetingJson:       text('targeting_json'),
+  trackingJson:        text('tracking_json'),
+  notes:               text('notes'),
+  createdBy:           text('created_by').notNull().default('human'),
+  approvedBy:          text('approved_by'),
+  createdAt:           text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:           text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqProviderCampaign: uniqueIndex('uq_ads_campaigns_provider_campaign').on(t.accountPk, t.providerCampaignId),
+}))
+
+export const adsAdSets = sqliteTable('ads_ad_sets', {
+  adSetPk:            integer('ad_set_pk').primaryKey({ autoIncrement: true }),
+  campaignPk:         integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  providerAdSetId:    text('provider_ad_set_id'),
+  name:               text('name').notNull(),
+  status:             text('status').notNull().default('draft'),
+  optimizationGoal:   text('optimization_goal'),
+  billingEvent:       text('billing_event'),
+  bidAmountCents:     integer('bid_amount_cents'),
+  scheduleStartAt:    text('schedule_start_at'),
+  scheduleEndAt:      text('schedule_end_at'),
+  budgetMode:         text('budget_mode'),
+  budgetAmountCents:  integer('budget_amount_cents'),
+  targetingJson:      text('targeting_json'),
+  placementsJson:     text('placements_json'),
+  createdAt:          text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:          text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqProviderAdSet: uniqueIndex('uq_ads_ad_sets_provider').on(t.campaignPk, t.providerAdSetId),
+}))
+
+export const adsCreatives = sqliteTable('ads_creatives', {
+  creativePk:          integer('creative_pk').primaryKey({ autoIncrement: true }),
+  campaignPk:          integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  adSetPk:             integer('ad_set_pk').references(() => adsAdSets.adSetPk),
+  providerCreativeId:  text('provider_creative_id'),
+  name:                text('name'),
+  primaryText:         text('primary_text'),
+  headline:            text('headline'),
+  description:         text('description'),
+  destinationUrl:      text('destination_url'),
+  cta:                 text('cta'),
+  mediaType:           text('media_type').notNull().default('image'),
+  mediaUrlsJson:       text('media_urls_json'),
+  thumbnailUrl:        text('thumbnail_url'),
+  createdAt:           text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:           text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const adsPublishJobs = sqliteTable('ads_publish_jobs', {
+  jobPk:             integer('job_pk').primaryKey({ autoIncrement: true }),
+  providerId:        text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountPk:         integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  targetType:        text('target_type').notNull(),
+  targetPk:          integer('target_pk').notNull(),
+  action:            text('action').notNull(),
+  scheduledFor:      text('scheduled_for').notNull(),
+  status:            text('status').notNull().default('queued'),
+  attempts:          integer('attempts').notNull().default(0),
+  maxAttempts:       integer('max_attempts').notNull().default(3),
+  idempotencyKey:    text('idempotency_key'),
+  lastError:         text('last_error'),
+  requestJson:       text('request_json'),
+  responseJson:      text('response_json'),
+  startedAt:         text('started_at'),
+  finishedAt:        text('finished_at'),
+  createdBy:         text('created_by').notNull().default('system'),
+  createdAt:         text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:         text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqIdempotency: uniqueIndex('uq_ads_publish_jobs_idempotency').on(t.idempotencyKey),
+}))
+
 // ---------------------------------------------------------------------------
 // Automation & Health
 // ---------------------------------------------------------------------------
