@@ -65,7 +65,10 @@ export default function ChannelsPage() {
     setScanning(false)
   }
 
-  const products: any[] = productsData?.data ?? []
+  const products = useMemo<any[]>(
+    () => productsData?.data ?? [],
+    [productsData]
+  )
 
   const filtered = useMemo(
     () =>
