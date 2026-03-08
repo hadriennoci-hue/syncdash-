@@ -487,3 +487,22 @@ npx wrangler r2 bucket dev-url get syncdash-images
   - Always launch runner in a **visible terminal window**.
   - Always run browser automation in **headed mode** (browser windows visible), not headless.
 I can access Production using the same service token Cloudflare ID & Secret as runner, its written in .dev.vars
+
+## TODO - Google Ads Attribution Rollout
+
+1. Set Cloudflare production env vars:
+   - `GOOGLE_ADS_DEVELOPER_TOKEN`
+   - `GOOGLE_ADS_CUSTOMER_ID`
+   - `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (only if using manager account)
+   - `ADS_AGENT_BEARER_TOKEN` (read-only token for ads agent API)
+2. Deploy latest `master` so new endpoints are live:
+   - `POST /api/google-ads/import`
+   - `GET /api/marketing/consolidated`
+3. Run data import sequence after deploy:
+   - `POST /api/google-ads/import` (campaign/ad group/click feeds)
+   - `POST /api/sales/import` (orders + attribution enrichment)
+4. Validate output:
+   - Query `sales_marketing_consolidated` view
+   - Check attributed vs unattributed counts by date/channel
+5. Optional hardening:
+   - Restrict `/api/marketing/consolidated` to `ADS_AGENT_BEARER_TOKEN` only (remove admin fallback).

@@ -16,7 +16,8 @@ import {
   salesTransactions,
 } from '@/lib/db/schema'
 import { logOperation } from './log'
-import { getStoredToken } from './tokens'
+import { getStoredToken, refreshShopifyToken } from './tokens'
+import { extractOrderMarketingSignals, upsertOrderAttribution } from './google-ads'
 import type { TriggeredBy } from '@/types/platform'
 
 type SalesImportChannel = 'woocommerce' | 'shopify_komputerzz' | 'shopify_tiktok'
@@ -117,13 +118,17 @@ async function getShopifyToken(channelId: SalesImportChannel): Promise<string> {
   const platform = channelId === 'shopify_komputerzz' ? 'shopify_komputerzz' : 'shopify_tiktok'
   const stored = await getStoredToken(platform)
   if (stored) return stored
-  const fallback = channelId === 'shopify_komputerzz'
-    ? process.env.SHOPIFY_KOMPUTERZZ_TOKEN
-    : process.env.SHOPIFY_TIKTOK_TOKEN
-  if (!fallback) {
-    throw new Error(`Missing Shopify token for ${channelId}`)
+
+  const refreshed = await refreshShopifyToken(platform)
+  if (!refreshed.ok) {
+    throw new Error(`Unable to refresh Shopify token for ${channelId}: ${refreshed.error ?? 'unknown error'}`)
   }
-  return fallback
+
+  const storedAfterRefresh = await getStoredToken(platform)
+  if (!storedAfterRefresh) {
+    throw new Error(`Refreshed Shopify token for ${channelId} but no stored token was found`)
+  }
+  return storedAfterRefresh
 }
 
 async function fetchShopifyOrders(channelId: SalesImportChannel, since: string | null, limitPerChannel: number): Promise<any[]> {
@@ -220,7 +225,7 @@ async function fetchWooOrders(since: string | null, limitPerChannel: number): Pr
   return collected.slice(0, limitPerChannel)
 }
 
-async function upsertOrderAndItems(channelId: SalesImportChannel, platform: string, order: any): Promise<{ orderPk: number; itemsCount: number }> {
+async function upsertOrderAndItems(channelId: SalesImportChannel, platform: string, order: any): Promise<{ orderPk: number; itemsCount: number; orderCreatedAt: string }> {
   const externalOrderId = asString(order.admin_graphql_api_id ?? order.id)
   if (!externalOrderId) throw new Error(`Order without external ID on ${channelId}`)
   const sourceUpdatedAt = asString(order.updated_at ?? order.date_modified_gmt ?? order.date_modified)
@@ -255,6 +260,7 @@ async function upsertOrderAndItems(channelId: SalesImportChannel, platform: stri
   const discountCents = toCents(order.current_total_discounts ?? order.discount_total)
   const taxCents = toCents(order.current_total_tax ?? order.total_tax)
 
+  const orderCreatedAt = sourceCreatedAt ?? sourceUpdatedAt
   await db.insert(salesOrders).values({
     channelId,
     externalOrderId,
@@ -276,7 +282,7 @@ async function upsertOrderAndItems(channelId: SalesImportChannel, platform: stri
     sourceName: asString(order.source_name ?? order.created_via),
     cancelReason: asString(order.cancel_reason),
     isTestOrder: boolToInt(order.test) ?? 0,
-    orderCreatedAt: sourceCreatedAt ?? sourceUpdatedAt,
+    orderCreatedAt,
     orderProcessedAt: asString(order.processed_at ?? order.date_paid_gmt),
     orderUpdatedAt: sourceUpdatedAt,
     orderCancelledAt: asString(order.cancelled_at),
@@ -365,7 +371,7 @@ async function upsertOrderAndItems(channelId: SalesImportChannel, platform: stri
     })
   }
 
-  return { orderPk: savedOrder.orderPk, itemsCount: lines.length }
+  return { orderPk: savedOrder.orderPk, itemsCount: lines.length, orderCreatedAt }
 }
 
 async function replaceRefundsForOrder(channelId: SalesImportChannel, platform: string, order: any, orderPk: number): Promise<number> {
@@ -580,9 +586,11 @@ async function importOneChannel(channelId: SalesImportChannel, options: Required
       const updatedAt = asString(order.updated_at ?? order.date_modified_gmt ?? order.date_modified) ?? since
       if (updatedAt > maxUpdated) maxUpdated = updatedAt
 
-      const { orderPk, itemsCount } = await upsertOrderAndItems(channelId, platform, order)
+      const { orderPk, itemsCount, orderCreatedAt } = await upsertOrderAndItems(channelId, platform, order)
       result.ordersUpserted++
       result.orderItemsUpserted += itemsCount
+      const marketing = extractOrderMarketingSignals(order)
+      await upsertOrderAttribution(orderPk, orderCreatedAt, marketing)
       const refunds = await replaceRefundsForOrder(channelId, platform, order, orderPk)
       result.refundsUpserted += refunds
       const fulfillments = await replaceFulfillmentsForOrder(channelId, platform, order, orderPk)

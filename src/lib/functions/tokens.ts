@@ -80,6 +80,10 @@ async function refreshOne(platform: ShopifyPlatform): Promise<TokenRefreshResult
   }
 }
 
+export async function refreshShopifyToken(platform: ShopifyPlatform): Promise<TokenRefreshResult> {
+  return refreshOne(platform)
+}
+
 /** Refreshes Shopify OAuth tokens for both shops and stores them in D1. */
 export async function refreshShopifyTokens(): Promise<TokenRefreshResult[]> {
   return Promise.all([
