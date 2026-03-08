@@ -205,7 +205,7 @@ interface UpdateProductInput {
     isFeatured?: boolean
     categoryIds?: string[]
   }
-  platforms: Platform[]
+  platforms?: Platform[]
   triggeredBy?: TriggeredBy
 }
 
@@ -236,8 +236,9 @@ export async function updateProduct(
 
   // Push to platforms
   const results: SyncResult[] = []
+  const platforms = input.platforms ?? []
 
-  for (const platform of input.platforms) {
+  for (const platform of platforms) {
     try {
       const mapping = await db.query.platformMappings.findFirst({
         where: and(eq(platformMappings.productId, sku), eq(platformMappings.platform, platform)),

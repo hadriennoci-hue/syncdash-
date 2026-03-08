@@ -68,7 +68,7 @@ const patchSchema = z.object({
     weight:               z.number().positive().optional(),
     weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
   }),
-  platforms:   z.array(z.string()).min(1),
+  platforms:   z.array(z.string()).min(1).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
 
@@ -174,7 +174,7 @@ export async function PATCH(
 
   const results = await updateProduct(params.sku, {
     fields:      parsed.data.fields,
-    platforms:   parsed.data.platforms as Platform[],
+    platforms:   (parsed.data.platforms ?? []) as Platform[],
     triggeredBy: parsed.data.triggeredBy,
   })
 
