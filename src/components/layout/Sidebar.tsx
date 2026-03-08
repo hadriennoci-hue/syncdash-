@@ -21,6 +21,7 @@ const nav: NavItem[] = [
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
   { href: '/social-media', label: 'Social Media', icon: Share2 },
   { type: 'section',      label: 'Ads',          icon: Megaphone },
+  { href: '/ads',         label: 'Campaigns',    icon: Megaphone },
   { href: '/tiktok',      label: 'TikTok',       icon: Video },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },
   { href: '/validate',    label: 'Validate',     icon: CheckSquare },

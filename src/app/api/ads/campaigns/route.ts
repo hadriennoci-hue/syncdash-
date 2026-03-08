@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
     name: adsCampaigns.name,
     objective: adsCampaigns.objective,
     status: adsCampaigns.status,
+    providerCampaignId: adsCampaigns.providerCampaignId,
     startAt: adsCampaigns.startAt,
     endAt: adsCampaigns.endAt,
     budgetMode: adsCampaigns.budgetMode,
@@ -58,6 +59,9 @@ export async function GET(req: NextRequest) {
     productSku: adsCampaigns.productSku,
     destinationUrl: adsCampaigns.destinationUrl,
     destinationPending: adsCampaigns.destinationPending,
+    targetingJson: adsCampaigns.targetingJson,
+    trackingJson: adsCampaigns.trackingJson,
+    notes: adsCampaigns.notes,
     createdAt: adsCampaigns.createdAt,
     updatedAt: adsCampaigns.updatedAt,
   })
