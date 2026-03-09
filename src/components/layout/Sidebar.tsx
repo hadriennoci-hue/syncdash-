@@ -19,7 +19,9 @@ const nav: NavItem[] = [
   { href: '/channels',    label: 'Sale Channels', icon: Store },
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
-  { href: '/social-media', label: 'Social Media', icon: Share2 },
+  { type: 'section',      label: 'Social Media', icon: Share2 },
+  { href: '/social-media/pipeline', label: 'Pipeline', icon: Share2 },
+  { href: '/social-media/performance', label: 'Performance', icon: BarChart2 },
   { type: 'section',      label: 'Ads',          icon: Megaphone },
   { href: '/ads/pipeline', label: 'Pipeline',    icon: Megaphone },
   { href: '/ads/performance', label: 'Performance', icon: BarChart2 },
@@ -55,14 +57,14 @@ export function Sidebar() {
 
           const { href, label, icon: Icon } = item as NavLinkItem
           const active = href === '/' ? pathname === href : pathname.startsWith(href)
-          const isAdsSubItem = href.startsWith('/ads/')
+          const isSubItem = href.startsWith('/ads/') || href.startsWith('/social-media/')
           return (
             <Link
               key={href}
               href={href}
               className={cn(
                 'flex items-center gap-2 py-1.5 text-xs transition-colors',
-                isAdsSubItem ? 'pl-8 pr-4' : 'px-4',
+                isSubItem ? 'pl-8 pr-4' : 'px-4',
                 active
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'

@@ -5,6 +5,8 @@ import { syncWarehouse, pushStockToChannels } from '@/lib/functions/warehouses'
 import { reconcileOrders } from '@/lib/functions/orders'
 import { runApiHealthCheck } from '@/lib/functions/health'
 import { generateId } from '@/lib/utils/id'
+import { refreshShopifyTokens } from '@/lib/functions/tokens'
+import { logOperation } from '@/lib/functions/log'
 
 /**
  * Daily automation — triggered by Cloudflare Cron at 05:00 UTC
@@ -75,4 +77,23 @@ export async function runDailySync(): Promise<void> {
  */
 export async function runDailyHealthCheck(): Promise<void> {
   await runApiHealthCheck()
+}
+
+/**
+ * Daily Shopify token refresh.
+ * Stores fresh OAuth tokens in platform_tokens for shopify_komputerzz and shopify_tiktok.
+ */
+export async function runDailyTokenRefresh(): Promise<void> {
+  const results = await refreshShopifyTokens()
+  for (const result of results) {
+    await logOperation({
+      platform: result.platform,
+      action: 'refresh_shopify_token',
+      status: result.ok ? 'success' : 'error',
+      message: result.ok
+        ? `expiresAt=${result.expiresAt ?? 'unknown'}`
+        : (result.error ?? 'unknown error'),
+      triggeredBy: 'system',
+    })
+  }
 }
