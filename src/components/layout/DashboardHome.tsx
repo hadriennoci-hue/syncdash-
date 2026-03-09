@@ -379,8 +379,23 @@ export function DashboardHome() {
           } as React.CSSProperties
         }
       >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Wizhard Network</p>
+            <p className="font-heading text-2xl font-semibold text-[var(--text-primary)]">WIZHARD</p>
+          </div>
+          <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Sales 24H</p>
+            <p className="font-mono text-sm font-bold text-[var(--text-primary)]">{fmtMoney(sales24h)}</p>
+          </div>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr_1fr]">
           <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Warehouses</p>
+              <DataStamp label="Last scan" iso={lastStockScan} />
+            </div>
             {orderedWarehouses.map((warehouse) => (
               <WarehouseCard
                 key={warehouse.id}
@@ -424,6 +439,10 @@ export function DashboardHome() {
           </div>
 
           <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Sale Channels</p>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">7 channels active</p>
+            </div>
             {orderedChannels.map((channel) => (
               <ChannelCard
                 key={channel.id}
@@ -439,6 +458,31 @@ export function DashboardHome() {
                 }
               />
             ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <Link
+            href="/suppliers"
+            className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3 transition duration-200 hover:shadow-[0_0_20px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Suppliers</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">ACER</p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Last invoice:{' '}
+              {summary?.suppliers.lastInvoiceDate ? (
+                <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
+              ) : (
+                '-'
+              )}
+            </p>
+          </Link>
+          <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">System Status</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">
+              {isLoading ? 'Loading summary...' : isError ? 'Summary unavailable' : 'Operational'}
+            </p>
+            {scanProgressText ? <p className="text-[11px] text-[var(--text-muted)]">{scanProgressText}</p> : null}
           </div>
         </div>
       </section>
