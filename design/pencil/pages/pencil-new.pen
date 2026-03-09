@@ -627,8 +627,8 @@
               "type": "icon_font",
               "id": "7YBM8",
               "name": "whIco",
-              "width": 0,
-              "height": 0,
+              "width": 36,
+              "height": 36,
               "iconFontFamily": "Material Symbols Rounded",
               "fill": "#0EA5E9"
             },
@@ -678,8 +678,8 @@
               "type": "icon_font",
               "id": "yLnRI",
               "name": "supIco",
-              "width": 0,
-              "height": 0,
+              "width": 36,
+              "height": 36,
               "iconFontFamily": "Material Symbols Rounded",
               "fill": "#16A34A"
             },
@@ -729,8 +729,8 @@
               "type": "icon_font",
               "id": "CRoIQ",
               "name": "brainIco",
-              "width": 0,
-              "height": 0,
+              "width": 36,
+              "height": 36,
               "iconFontFamily": "Material Symbols Rounded",
               "fill": "#2563EB"
             },
@@ -830,8 +830,8 @@
               "type": "icon_font",
               "id": "PyP7a",
               "name": "scIco",
-              "width": 0,
-              "height": 0,
+              "width": 36,
+              "height": 36,
               "iconFontFamily": "Material Symbols Rounded",
               "fill": "#EA580C"
             },
