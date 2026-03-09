@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { warehouseStock, platformMappings, salesChannels, products } from '@/lib/db/schema'
-import { eq, or, and, like, sql } from 'drizzle-orm'
+import { salesChannels, products, adsCampaigns, orders, salesOrders } from '@/lib/db/schema'
+import { eq, or, and, like, sql, gte, inArray } from 'drizzle-orm'
 import { PLATFORM_LABELS, PLATFORMS, WAREHOUSE_LABELS } from '@/types/platform'
 
 const ACTIVE_WAREHOUSES = ['ireland', 'acer_store'] as const
@@ -18,7 +18,10 @@ export async function GET(req: NextRequest) {
   const auth = verifyBearer(req)
   if (auth) return auth
 
-  const [stockRows, mappingRows, channels] = await Promise.all([
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const programmedStatuses = ['draft', 'approved', 'scheduled', 'live', 'paused'] as const
+
+  const [stockRows, mappingRows, channels, productsToFillRows, campaignRows, sales24Rows, lastInvoiceRows] = await Promise.all([
     db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }).catch((err) => {
       if (isMissingSchemaError(err)) return []
       throw err
@@ -31,6 +34,43 @@ export async function GET(req: NextRequest) {
       if (isMissingSchemaError(err)) return []
       throw err
     }),
+    db.select({ total: sql<number>`count(*)` })
+      .from(products)
+      .where(sql`${products.status} <> 'active'`)
+      .catch((err) => {
+        if (isMissingSchemaError(err)) return [{ total: 0 }]
+        throw err
+      }),
+    db.select({
+      destinationType: adsCampaigns.destinationType,
+      count: sql<number>`count(*)`,
+    })
+      .from(adsCampaigns)
+      .where(inArray(adsCampaigns.status, programmedStatuses as unknown as string[]))
+      .groupBy(adsCampaigns.destinationType)
+      .catch((err) => {
+        if (isMissingSchemaError(err)) return []
+        throw err
+      }),
+    db.select({
+      channelId: salesOrders.channelId,
+      revenueCents: sql<number>`coalesce(sum(${salesOrders.netAmountCents}), 0)`,
+    })
+      .from(salesOrders)
+      .where(gte(salesOrders.orderCreatedAt, twentyFourHoursAgo))
+      .groupBy(salesOrders.channelId)
+      .catch((err) => {
+        if (isMissingSchemaError(err)) return []
+        throw err
+      }),
+    db.select({
+      lastInvoiceDate: sql<string>`max(${orders.orderDate})`,
+    })
+      .from(orders)
+      .catch((err) => {
+        if (isMissingSchemaError(err)) return [{ lastInvoiceDate: null as unknown as string }]
+        throw err
+      }),
   ])
 
   const pushWhere = and(
@@ -86,6 +126,23 @@ export async function GET(req: NextRequest) {
     listingCounts[row.platform] = (listingCounts[row.platform] ?? 0) + 1
   }
 
+  const sales24hByChannel: Record<string, number> = {}
+  for (const row of sales24Rows) {
+    sales24hByChannel[row.channelId] = row.revenueCents ?? 0
+  }
+
+  const googleAdsCampaignsProgrammedByChannel: Record<string, number> = {}
+  for (const platformId of PLATFORMS) {
+    googleAdsCampaignsProgrammedByChannel[platformId] = 0
+  }
+  for (const row of campaignRows) {
+    if (row.destinationType === 'shopify_komputerzz_product') {
+      googleAdsCampaignsProgrammedByChannel.shopify_komputerzz += row.count
+    } else if (row.destinationType === 'tiktok_shop_product') {
+      googleAdsCampaignsProgrammedByChannel.shopify_tiktok += row.count
+    }
+  }
+
   const channelRows = channels.length > 0
     ? channels
     : PLATFORMS.map((platformId) => ({
@@ -109,11 +166,19 @@ export async function GET(req: NextRequest) {
       id:            ch.id,
       label:         ch.name,
       refsForSale:   listingCounts[ch.id] ?? 0,
+      googleAdsCampaignsProgrammed: googleAdsCampaignsProgrammedByChannel[ch.id] ?? 0,
+      sales24hCents: sales24hByChannel[ch.id] ?? 0,
       connectorType: ch.connectorType,
     })),
     readyToPush: {
       count: readyCountRow[0]?.total ?? 0,
       skus: readyRows.map((r) => r.id),
+    },
+    wizhard: {
+      productsToFill: productsToFillRows[0]?.total ?? 0,
+    },
+    suppliers: {
+      lastInvoiceDate: lastInvoiceRows[0]?.lastInvoiceDate ?? null,
     },
   })
 }
