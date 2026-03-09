@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
@@ -9,17 +9,10 @@ interface WarehouseSyncResult {
   warehouseId: string
   productsUpdated: number
   errors: string[]
-  syncedAt: string
 }
 
 interface WarehouseScanProgress {
-  stage: 'start' | 'url_started' | 'page_done' | 'url_done' | 'fetch_done'
-  warehouseId: string
-  warehouseIndex: number
-  warehouseTotal: number
   message: string
-  current: number
-  total: number
 }
 
 interface ChannelSyncResult {
@@ -48,64 +41,55 @@ function fmtDate(iso?: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString([], { year: 'numeric', month: 'long', day: '2-digit' })
 }
 
-function fmtMoney(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`
+function fmtMoney(cents: number | null | undefined): string {
+  if (cents == null) return '—'
+  return `${Math.round(cents / 100)} €`
 }
 
-function NodeCard({
+function StockNode({
   title,
-  children,
-  tone = 'default',
+  sub,
+  href,
+  className,
 }: {
   title: string
-  children: React.ReactNode
-  tone?: 'default' | 'warehouse' | 'channel'
+  sub: string
+  href?: string
+  className?: string
 }) {
-  const toneClass =
-    tone === 'warehouse'
-      ? 'border-blue-200 bg-blue-50/55'
-      : tone === 'channel'
-        ? 'border-emerald-200 bg-emerald-50/55'
-        : 'border-border bg-card'
-
-  return (
-    <div className={`min-h-[88px] rounded-lg border p-3 transition-shadow hover:shadow-sm ${toneClass}`}>
-      <div className="text-xs font-semibold">{title}</div>
-      <div className="mt-2 text-xs text-muted-foreground space-y-1">{children}</div>
+  const body = (
+    <div className={`rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2 shadow-sm ${className ?? ''}`}>
+      <p className="text-[11px] font-semibold tracking-wide text-slate-100">{title}</p>
+      <p className="text-[10px] text-slate-400">{sub}</p>
     </div>
   )
+  if (!href) return body
+  return <Link href={href}>{body}</Link>
 }
 
-function Block({
-  title,
-  action,
-  children,
+function ActionButton({
+  label,
+  icon,
+  onClick,
+  disabled,
 }: {
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
+  label: string
+  icon: string
+  onClick: () => void
+  disabled?: boolean
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="text-base font-bold">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function SkeletonCards({ count = 3 }: { count?: number }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="h-[88px] rounded-lg border border-border bg-slate-100 animate-pulse" />
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+    >
+      <span aria-hidden>{icon}</span>
+      <span>{label}</span>
+    </button>
   )
 }
 
@@ -117,16 +101,16 @@ export function DashboardHome() {
   })
 
   const summary = summaryRes?.data
+  const warehouses = useMemo(() => summary?.warehouses ?? [], [summary])
+  const channels = useMemo(() => summary?.channels ?? [], [summary])
 
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<WarehouseSyncResult[] | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanProgressText, setScanProgressText] = useState<string>('')
-
   const [pushing, setPushing] = useState(false)
   const [pushResult, setPushResult] = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
-
   const [lastStockScan, setLastStockScan] = useState<string | null>(null)
 
   useEffect(() => {
@@ -160,22 +144,18 @@ export function DashboardHome() {
         }
         if (!dataText) return
         const data = JSON.parse(dataText)
-
         if (eventName === 'progress') {
           const progress = data as WarehouseScanProgress
           setScanProgressText(progress.message)
           return
         }
-        if (eventName === 'scan_done') {
-          finalResults = (data.results ?? []) as WarehouseSyncResult[]
-        }
+        if (eventName === 'scan_done') finalResults = (data.results ?? []) as WarehouseSyncResult[]
       }
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-
         let boundary = buffer.indexOf('\n\n')
         while (boundary >= 0) {
           parseEvent(buffer.slice(0, boundary))
@@ -214,155 +194,174 @@ export function DashboardHome() {
     }
   }
 
+  const whIreland = warehouses.find((w) => w.id === 'ireland')
+  const whAcer = warehouses.find((w) => w.id === 'acer_store')
+  const whPoland = warehouses.find((w) => w.id === 'poland')
+
+  const chKomp = channels.find((c) => c.id === 'shopify_komputerzz')
+  const chTikTok = channels.find((c) => c.id === 'shopify_tiktok')
+  const chEbay = channels.find((c) => c.id === 'ebay_ie')
+  const chXmr = channels.find((c) => c.id === 'xmr_bazaar')
+  const chAmazon = channels.find((c) => c.id === 'amazon')
+
+  const sales24h = useMemo(
+    () => channels.reduce((sum, c) => sum + (c.sales24hCents ?? 0), 0),
+    [channels]
+  )
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Operational overview of warehouses, channel sync, and suppliers.</p>
-        </div>
-      </div>
+    <div className="space-y-3">
+      <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-800 bg-[#060D1F]">
+        <div className="relative h-[840px] w-[1360px]">
+          <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1360 840" fill="none" aria-hidden>
+            <path d="M290 190C390 190 390 360 500 360" stroke="#1E3A5F" strokeWidth="2" />
+            <path d="M290 430C390 430 390 410 500 410" stroke="#163020" strokeWidth="2" />
+            <path d="M800 390C860 390 860 340 920 340" stroke="#1E3A5F" strokeWidth="2" />
+            <path d="M970 140L970 245" stroke="#374151" strokeWidth="1.5" />
+            <path d="M1090 132L1170 56" stroke="#374151" strokeWidth="1.5" />
+            <path d="M1130 310L1188 310" stroke="#FF2D55" strokeWidth="1.5" />
+            <path d="M1130 205L1188 205" stroke="#374151" strokeWidth="1.5" />
+            <path d="M970 430L970 520" stroke="#374151" strokeWidth="1.5" />
+            <path d="M1065 430L1065 580" stroke="#374151" strokeWidth="1.5" />
+            <path d="M1130 430L1210 560" stroke="#374151" strokeWidth="1.5" />
+          </svg>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <Block
-            title="Warehouses"
-            action={
-              <button
-                onClick={handleScanStocks}
-                disabled={scanning}
-                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {scanning ? 'Scanning...' : 'Scan Warehouses'}
-              </button>
-            }
-          >
-            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-              <span>
-                Last scan:{' '}
-                {lastStockScan ? <time dateTime={lastStockScan}>{fmtDate(lastStockScan)}</time> : 'never'}
-              </span>
-              {scanProgressText ? <span>{scanProgressText}</span> : null}
+          <p className="absolute left-8 top-6 text-sm font-bold tracking-[0.15em] text-slate-300">WIZHARD NETWORK</p>
+
+          <div className="absolute right-28 top-5 rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
+            <p className="text-[10px] tracking-wide text-slate-400">SALES 24H</p>
+            <p className="text-sm font-semibold text-slate-100">{fmtMoney(sales24h)}</p>
+          </div>
+          <div className="absolute right-8 top-5 rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
+            <p className="text-[10px] tracking-wide text-slate-400">TIKTOK STORE 24H</p>
+            <p className="text-sm font-semibold text-slate-100">{fmtMoney(chTikTok?.sales24hCents)}</p>
+          </div>
+
+          <StockNode
+            className="absolute left-8 top-[76px] w-[140px]"
+            title="ACER STORE"
+            sub={`${whAcer?.refsInStock ?? '—'} SKUs`}
+            href="/warehouses/acer_store"
+          />
+          <StockNode
+            className="absolute left-[172px] top-[64px] w-[130px]"
+            title="IRELAND"
+            sub={`${whIreland?.refsInStock ?? '—'} SKUs`}
+            href="/warehouses/ireland"
+          />
+          <StockNode
+            className="absolute left-8 top-[272px] w-[130px]"
+            title="POLAND"
+            sub={`${whPoland?.refsInStock ?? '—'} SKUs`}
+            href="/warehouses/poland"
+          />
+
+          <div className="absolute left-6 top-[136px] w-[300px] rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-slate-300">WAREHOUSES</p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Last scan: {lastStockScan ? <time dateTime={lastStockScan}>{fmtDate(lastStockScan)}</time> : '—'}
+            </p>
+          </div>
+
+          <StockNode className="absolute left-8 top-[530px] w-[140px]" title="ACER" sub="EU Supplier" href="/suppliers" />
+          <div className="absolute left-6 top-[430px] w-[300px] rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-slate-300">SUPPLIERS</p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Last invoice: {summary?.suppliers.lastInvoiceDate ? (
+                <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
+              ) : '—'}
+            </p>
+          </div>
+
+          <div className="absolute left-[528px] top-[330px] w-[310px] rounded-xl border border-blue-500/40 bg-slate-900/90 px-5 py-4 shadow-[0_0_40px_rgba(37,99,235,0.22)]">
+            <p className="text-sm font-semibold tracking-wide text-blue-300">WIZHARD</p>
+            <p className="mt-3 text-[13px] text-slate-100">{summary?.wizhard.productsToFill ?? '—'} products to fill</p>
+            <p className="text-[12px] text-slate-300">{summary?.readyToPush.count ?? '—'} products to push</p>
+          </div>
+
+          <div className="absolute left-[350px] top-[270px]">
+            <ActionButton label={scanning ? 'SCANNING' : 'SCAN'} icon="↻" onClick={handleScanStocks} disabled={scanning} />
+          </div>
+          <div className="absolute left-[846px] top-[368px]">
+            <ActionButton label={pushing ? 'PUSHING' : 'PUSH PRODUCTS'} icon="→" onClick={handleUpdateChannels} disabled={pushing} />
+          </div>
+
+          <div className="absolute left-[906px] top-[255px] w-[246px] rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-slate-300">SALE CHANNELS</p>
+            <p className="mt-2 text-[11px] text-slate-200">{chKomp?.googleAdsCampaignsProgrammed ?? 0} Google Ads programmed</p>
+            <p className="text-[11px] text-slate-200">{chTikTok?.googleAdsCampaignsProgrammed ?? 0} TikTok Ads programmed</p>
+          </div>
+
+          <StockNode className="absolute left-[900px] top-[92px] w-[148px]" title="COINCART" sub="WooCommerce" href="/channels/woocommerce" />
+          <StockNode
+            className="absolute left-[1068px] top-[78px] w-[160px]"
+            title="KOMPUTERZZ"
+            sub={`Shopify · ${chKomp?.googleAdsCampaignsProgrammed ?? 0} Google Ads`}
+            href="/channels/shopify_komputerzz"
+          />
+          <StockNode
+            className="absolute left-[1204px] top-[285px] w-[164px]"
+            title="TIKTOK TECH STORE"
+            sub={`by ACER · ${chTikTok?.googleAdsCampaignsProgrammed ?? 0} TT Ads`}
+            href="/channels/shopify_tiktok"
+          />
+          <StockNode className="absolute left-[1232px] top-[174px] w-[96px]" title="EBAY" sub={chEbay ? 'API' : '—'} href="/channels/ebay_ie" />
+          <StockNode className="absolute left-[898px] top-[570px] w-[130px]" title="AMAZON" sub={chAmazon ? 'API' : '—'} />
+          <StockNode className="absolute left-[1056px] top-[624px] w-[148px]" title="LIBRE MARKET" sub="Browser" href="/channels/libre_market" />
+          <StockNode className="absolute left-[1228px] top-[584px] w-[130px]" title="XMR BAZAAR" sub={chXmr ? 'Browser' : '—'} href="/channels/xmr_bazaar" />
+
+          {(isLoading || scanProgressText || scanError || pushError || isError) && (
+            <div className="absolute bottom-4 left-8 right-8 rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-xs text-slate-300">
+              {isLoading ? <p>Loading dashboard data...</p> : null}
+              {scanProgressText ? <p>{scanProgressText}</p> : null}
+              {scanError ? <p className="text-rose-400">Scan error: {scanError}</p> : null}
+              {pushError ? <p className="text-rose-400">Push error: {pushError}</p> : null}
+              {isError ? <p className="text-rose-400">Summary unavailable. Check API/database.</p> : null}
             </div>
-
-            {isLoading ? <SkeletonCards count={3} /> : null}
-            {isError ? <p className="text-xs text-destructive">Failed to load warehouse summary.</p> : null}
-            {!isLoading && !isError && summary?.warehouses.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No warehouses found.</p>
-            ) : null}
-            {!isLoading && !isError && (summary?.warehouses.length ?? 0) > 0 ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {summary?.warehouses.map((w) => (
-                  <Link key={w.id} href={`/warehouses/${w.id}`} className="no-underline">
-                    <NodeCard title={w.label} tone="warehouse">
-                      <div className="text-foreground font-semibold">{w.refsInStock}</div>
-                      <div>refs in stock</div>
-                    </NodeCard>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-
-            {scanError ? <p className="text-xs text-destructive">{scanError}</p> : null}
-            {scanResult?.length ? (
-              <div className="text-xs text-muted-foreground space-y-1">
-                {scanResult.map((r) => (
-                  <p key={r.warehouseId} className={r.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
-                    {r.warehouseId}: {r.errors[0] ?? `${r.productsUpdated} refs updated`}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-          </Block>
-        </div>
-
-        <div className="lg:col-span-4">
-          <Block title="Wizhard">
-            {isLoading ? (
-              <div className="h-24 rounded-lg border border-border bg-slate-100 animate-pulse" />
-            ) : isError ? (
-              <p className="text-xs text-destructive">Failed to load queue metrics.</p>
-            ) : !summary ? (
-              <p className="text-xs text-muted-foreground">No data.</p>
-            ) : (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/45 p-4 space-y-3">
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{summary.wizhard.productsToFill}</p>
-                  <p className="text-xs text-muted-foreground">products to fill</p>
-                </div>
-                <button
-                  onClick={handleUpdateChannels}
-                  disabled={pushing}
-                  className="w-full text-xs px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {pushing
-                    ? 'Pushing...'
-                    : `Push products to warehouses (${summary.readyToPush.count} to push)`}
-                </button>
-                {pushError ? <p className="text-xs text-destructive">{pushError}</p> : null}
-                {pushResult?.length ? (
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    {pushResult.map((r) => (
-                      <p key={r.platform}>
-                        {r.platform}: {r.errors[0] ?? `${r.statusUpdated} updated | ${r.newProductsCreated} new | ${r.zeroedOutOfStock} zeroed`}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </Block>
-        </div>
-
-        <div className="lg:col-span-8">
-          <Block title="Sale Channels">
-            {isLoading ? <SkeletonCards count={3} /> : null}
-            {isError ? <p className="text-xs text-destructive">Failed to load channel metrics.</p> : null}
-            {!isLoading && !isError && summary?.channels.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No sale channels configured.</p>
-            ) : null}
-            {!isLoading && !isError && (summary?.channels.length ?? 0) > 0 ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {summary?.channels.map((c) => (
-                  <Link key={c.id} href={`/channels/${c.id}`} className="no-underline">
-                    <NodeCard title={c.label} tone="channel">
-                      <div>{c.googleAdsCampaignsProgrammed} Google Ads campaigns programmed</div>
-                      <div>Sales 24h: <span className="font-semibold text-foreground">{fmtMoney(c.sales24hCents)}</span></div>
-                    </NodeCard>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </Block>
-        </div>
-
-        <div className="lg:col-span-4">
-          <Block title="Suppliers">
-            {isLoading ? (
-              <div className="h-24 rounded-lg border border-border bg-slate-100 animate-pulse" />
-            ) : isError ? (
-              <p className="text-xs text-destructive">Failed to load supplier metadata.</p>
-            ) : !summary ? (
-              <p className="text-xs text-muted-foreground">No data.</p>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Last invoice:{' '}
-                  {summary.suppliers.lastInvoiceDate
-                    ? <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
-                    : '—'}
-                </p>
-                <Link
-                  href="/suppliers"
-                  className="inline-flex text-xs px-3 py-1.5 rounded-md border border-border hover:bg-accent"
-                >
-                  Go to Suppliers
-                </Link>
-              </div>
-            )}
-          </Block>
+          )}
         </div>
       </div>
+
+      <div className="lg:hidden space-y-3">
+        <div className="rounded-xl border border-slate-700 bg-[#060D1F] p-4">
+          <p className="text-xs font-semibold tracking-[0.12em] text-slate-300">WIZHARD NETWORK</p>
+          <p className="mt-2 text-sm text-slate-100">
+            {summary?.wizhard.productsToFill ?? '—'} products to fill · {summary?.readyToPush.count ?? '—'} to push
+          </p>
+          <p className="mt-1 text-xs text-slate-400">Sales 24h: {fmtMoney(sales24h)}</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          <StockNode title="Warehouses" sub={`Last scan: ${lastStockScan ? fmtDate(lastStockScan) : '—'}`} />
+          <StockNode title="Suppliers" sub={`Last invoice: ${fmtDate(summary?.suppliers.lastInvoiceDate)}`} href="/suppliers" />
+          <StockNode title="Sale Channels" sub={`${channels.length} channels`} href="/channels" />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <ActionButton label={scanning ? 'SCANNING' : 'SCAN'} icon="↻" onClick={handleScanStocks} disabled={scanning} />
+          <ActionButton label={pushing ? 'PUSHING' : 'PUSH PRODUCTS'} icon="→" onClick={handleUpdateChannels} disabled={pushing} />
+        </div>
+      </div>
+
+      {scanResult?.length ? (
+        <div className="rounded-md border border-border bg-card p-3 text-xs space-y-1">
+          {scanResult.map((r) => (
+            <p key={r.warehouseId} className={r.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
+              {r.warehouseId}: {r.errors[0] ?? `${r.productsUpdated} refs updated`}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {pushResult?.length ? (
+        <div className="rounded-md border border-border bg-card p-3 text-xs space-y-1">
+          {pushResult.map((r) => (
+            <p key={r.platform}>
+              {r.platform}: {r.errors[0] ?? `${r.statusUpdated} updated | ${r.newProductsCreated} new | ${r.zeroedOutOfStock} zeroed`}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
