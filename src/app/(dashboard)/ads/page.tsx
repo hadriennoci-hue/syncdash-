@@ -6,6 +6,7 @@ import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
 
 type CampaignStatus = 'draft' | 'approved' | 'scheduled' | 'live' | 'paused' | 'completed' | 'canceled'
 type ProviderId = 'google_ads' | 'meta_ads' | 'tiktok_ads'
+type DestinationType = 'shopify_komputerzz_product' | 'tiktok_shop_product'
 
 interface CampaignRow {
   campaignPk: number
@@ -21,11 +22,13 @@ interface CampaignRow {
   budgetMode: 'daily' | 'lifetime'
   budgetAmountCents?: number | null
   currencyCode?: string | null
-  destinationType?: 'shopify_komputerzz_product' | 'tiktok_shop_product' | null
+  destinationType?: DestinationType | null
   productSku?: string | null
   productImageUrl?: string | null
   creativePrimaryText?: string | null
   creativeHeadline?: string | null
+  creativeDescription?: string | null
+  creativeCta?: string | null
   destinationUrl?: string | null
   destinationPending: number
   targetingJson?: string | null
@@ -33,6 +36,26 @@ interface CampaignRow {
   notes?: string | null
   createdAt: string
   updatedAt: string
+}
+
+interface EditFormState {
+  name: string
+  objective: string
+  startAt: string
+  endAt: string
+  budgetMode: 'daily' | 'lifetime'
+  budgetAmountCents: string
+  currencyCode: string
+  destinationType: DestinationType
+  productSku: string
+  destinationUrl: string
+  targetingJson: string
+  trackingJson: string
+  notes: string
+  creativeHeadline: string
+  creativePrimaryText: string
+  creativeDescription: string
+  creativeCta: string
 }
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -55,23 +78,60 @@ function fmtMoney(cents?: number | null, ccy?: string | null): string {
   return `${ccy ?? 'EUR'} ${(cents / 100).toFixed(2)}`
 }
 
+function toDatetimeLocal(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (v: number) => String(v).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function fromDatetimeLocal(value: string): string | null {
+  if (!value) return null
+  return new Date(value).toISOString()
+}
+
+function initEditForm(c: CampaignRow): EditFormState {
+  return {
+    name: c.name,
+    objective: c.objective,
+    startAt: toDatetimeLocal(c.startAt),
+    endAt: toDatetimeLocal(c.endAt),
+    budgetMode: c.budgetMode,
+    budgetAmountCents: c.budgetAmountCents == null ? '' : String(c.budgetAmountCents),
+    currencyCode: c.currencyCode ?? 'EUR',
+    destinationType: c.destinationType ?? 'shopify_komputerzz_product',
+    productSku: c.productSku ?? '',
+    destinationUrl: c.destinationUrl ?? '',
+    targetingJson: c.targetingJson ?? '',
+    trackingJson: c.trackingJson ?? '',
+    notes: c.notes ?? '',
+    creativeHeadline: c.creativeHeadline ?? '',
+    creativePrimaryText: c.creativePrimaryText ?? '',
+    creativeDescription: c.creativeDescription ?? '',
+    creativeCta: c.creativeCta ?? '',
+  }
+}
+
 export default function AdsPage() {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
   const [scheduleAt, setScheduleAt] = useState<Record<number, string>>({})
+  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null)
+  const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['ads-campaigns'],
     queryFn: () => apiFetch<{ data: CampaignRow[] }>('/api/ads/campaigns'),
   })
 
-  const campaigns = data?.data ?? []
+  const campaigns = data?.data
 
   const byProvider = useMemo(() => {
     const map = new Map<ProviderId, CampaignRow[]>()
     const keys: ProviderId[] = ['google_ads', 'meta_ads', 'tiktok_ads']
     for (const k of keys) map.set(k, [])
-    for (const c of campaigns) {
+    for (const c of campaigns ?? []) {
       const arr = map.get(c.providerId) ?? []
       arr.push(c)
       map.set(c.providerId, arr)
@@ -92,9 +152,100 @@ export default function AdsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ads-campaigns'] }),
   })
 
+  const mutateCampaign = useMutation({
+    mutationFn: ({ campaignPk, payload }: { campaignPk: number; payload: Record<string, unknown> }) =>
+      apiPatch(`/api/ads/campaigns/${campaignPk}`, payload),
+  })
+
   function toggle(campaignPk: number) {
     setExpanded((prev) => ({ ...prev, [campaignPk]: !prev[campaignPk] }))
   }
+
+  function openEdit(campaign: CampaignRow) {
+    setEditingCampaign(campaign)
+    setEditForm(initEditForm(campaign))
+  }
+
+  function closeEdit() {
+    setEditingCampaign(null)
+    setEditForm(null)
+  }
+
+  async function saveFromEditor(nextStatus: 'draft' | 'approved' | 'scheduled') {
+    if (!editingCampaign || !editForm) return
+
+    if (!editForm.productSku.trim()) {
+      alert('Product SKU is required.')
+      return
+    }
+
+    if (nextStatus === 'approved' && (editForm.startAt || editForm.endAt)) {
+      alert('Approved is only allowed when no period is selected.')
+      return
+    }
+
+    if (nextStatus === 'scheduled' && !editForm.startAt) {
+      alert('Scheduled requires a start date/time.')
+      return
+    }
+
+    let targeting: Record<string, unknown> | null = null
+    let tracking: Record<string, unknown> | null = null
+
+    try {
+      targeting = editForm.targetingJson.trim() ? JSON.parse(editForm.targetingJson) : null
+    } catch {
+      alert('Targeting must be valid JSON.')
+      return
+    }
+
+    try {
+      tracking = editForm.trackingJson.trim() ? JSON.parse(editForm.trackingJson) : null
+    } catch {
+      alert('Tracking must be valid JSON.')
+      return
+    }
+
+    const payload = {
+      name: editForm.name.trim(),
+      objective: editForm.objective.trim(),
+      startAt: fromDatetimeLocal(editForm.startAt),
+      endAt: fromDatetimeLocal(editForm.endAt),
+      budgetMode: editForm.budgetMode,
+      budgetAmountCents: editForm.budgetAmountCents.trim() ? Number(editForm.budgetAmountCents) : null,
+      currencyCode: editForm.currencyCode.trim().toUpperCase() || 'EUR',
+      destinationType: editForm.destinationType,
+      productSku: editForm.productSku.trim(),
+      destinationUrl: editForm.destinationUrl.trim() || null,
+      targeting,
+      tracking,
+      notes: editForm.notes.trim() || null,
+      creativeHeadline: editForm.creativeHeadline.trim() || null,
+      creativePrimaryText: editForm.creativePrimaryText.trim() || null,
+      creativeDescription: editForm.creativeDescription.trim() || null,
+      creativeCta: editForm.creativeCta.trim() || null,
+    }
+
+    if (payload.name.length === 0 || payload.objective.length === 0) {
+      alert('Name and objective are required.')
+      return
+    }
+
+    if (payload.budgetAmountCents != null && (!Number.isFinite(payload.budgetAmountCents) || payload.budgetAmountCents < 0)) {
+      alert('Budget amount must be a valid positive number (in cents).')
+      return
+    }
+
+    await mutateCampaign.mutateAsync({ campaignPk: editingCampaign.campaignPk, payload })
+
+    const scheduledFor = nextStatus === 'scheduled' ? editForm.startAt : undefined
+    await mutateStatus.mutateAsync({ campaignPk: editingCampaign.campaignPk, status: nextStatus, scheduledFor })
+
+    await qc.invalidateQueries({ queryKey: ['ads-campaigns'] })
+    closeEdit()
+  }
+
+  const isSaving = mutateCampaign.isPending || mutateStatus.isPending
 
   return (
     <div className="space-y-4">
@@ -142,10 +293,21 @@ export default function AdsPage() {
                             <div className="text-[10px] mt-1">Status: {c.status}</div>
                             <div className="text-[10px]">Objective: {c.objective}</div>
                             <div className="text-[10px]">Start: {fmtDate(c.startAt)}</div>
-                            <div className="text-[10px]">Budget: {c.budgetMode} • {fmtMoney(c.budgetAmountCents, c.currencyCode)}</div>
+                            <div className="text-[10px]">Budget: {c.budgetMode} | {fmtMoney(c.budgetAmountCents, c.currencyCode)}</div>
                             <div className="text-[10px]">
-                              Dest: {c.destinationType ?? '-'} • {c.productSku ?? '-'} • {c.destinationPending ? 'pending' : 'ready'}
+                              Dest: {c.destinationType ?? '-'} | {c.productSku ?? '-'} | {c.destinationPending ? 'pending' : 'ready'}
                             </div>
+                            {c.status !== 'live' && (
+                              <button
+                                className="mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-400 bg-white"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openEdit(c)
+                                }}
+                              >
+                                Edit
+                              </button>
+                            )}
 
                             {expanded[c.campaignPk] && (
                               <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
@@ -228,6 +390,14 @@ export default function AdsPage() {
                             <div className="text-[10px] mt-1">Status: {c.status}</div>
                             <div className="text-[10px]">Provider ID: {c.providerCampaignId ?? '-'}</div>
                             <div className="text-[10px]">Updated: {fmtDate(c.updatedAt)}</div>
+                            {c.status !== 'live' && (
+                              <button
+                                className="mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-400 bg-white"
+                                onClick={() => openEdit(c)}
+                              >
+                                Edit
+                              </button>
+                            )}
                           </article>
                         ))
                       )}
@@ -237,6 +407,61 @@ export default function AdsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {editingCampaign && editForm && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded border border-border bg-background p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Edit Campaign #{editingCampaign.campaignPk}</h2>
+              <button className="text-xs border border-border rounded px-2 py-1" onClick={closeEdit}>Close</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input className="text-xs border border-border rounded px-2 py-1" placeholder="Campaign name" value={editForm.name} onChange={(e) => setEditForm((prev) => prev ? { ...prev, name: e.target.value } : prev)} />
+              <input className="text-xs border border-border rounded px-2 py-1" placeholder="Objective" value={editForm.objective} onChange={(e) => setEditForm((prev) => prev ? { ...prev, objective: e.target.value } : prev)} />
+
+              <input type="datetime-local" className="text-xs border border-border rounded px-2 py-1" value={editForm.startAt} onChange={(e) => setEditForm((prev) => prev ? { ...prev, startAt: e.target.value } : prev)} />
+              <input type="datetime-local" className="text-xs border border-border rounded px-2 py-1" value={editForm.endAt} onChange={(e) => setEditForm((prev) => prev ? { ...prev, endAt: e.target.value } : prev)} />
+
+              <select className="text-xs border border-border rounded px-2 py-1 bg-background" value={editForm.budgetMode} onChange={(e) => setEditForm((prev) => prev ? { ...prev, budgetMode: e.target.value as 'daily' | 'lifetime' } : prev)}>
+                <option value="daily">daily</option>
+                <option value="lifetime">lifetime</option>
+              </select>
+              <input type="number" min="0" className="text-xs border border-border rounded px-2 py-1" placeholder="Budget (cents)" value={editForm.budgetAmountCents} onChange={(e) => setEditForm((prev) => prev ? { ...prev, budgetAmountCents: e.target.value } : prev)} />
+
+              <input className="text-xs border border-border rounded px-2 py-1" placeholder="Currency (EUR)" value={editForm.currencyCode} onChange={(e) => setEditForm((prev) => prev ? { ...prev, currencyCode: e.target.value } : prev)} />
+              <select className="text-xs border border-border rounded px-2 py-1 bg-background" value={editForm.destinationType} onChange={(e) => setEditForm((prev) => prev ? { ...prev, destinationType: e.target.value as DestinationType } : prev)}>
+                <option value="shopify_komputerzz_product">shopify_komputerzz_product</option>
+                <option value="tiktok_shop_product">tiktok_shop_product</option>
+              </select>
+
+              <input className="text-xs border border-border rounded px-2 py-1" placeholder="Product SKU" value={editForm.productSku} onChange={(e) => setEditForm((prev) => prev ? { ...prev, productSku: e.target.value } : prev)} />
+              <input className="text-xs border border-border rounded px-2 py-1" placeholder="Destination URL" value={editForm.destinationUrl} onChange={(e) => setEditForm((prev) => prev ? { ...prev, destinationUrl: e.target.value } : prev)} />
+            </div>
+
+            <textarea className="w-full min-h-[70px] text-xs border border-border rounded px-2 py-1" placeholder="Ad headline" value={editForm.creativeHeadline} onChange={(e) => setEditForm((prev) => prev ? { ...prev, creativeHeadline: e.target.value } : prev)} />
+            <textarea className="w-full min-h-[90px] text-xs border border-border rounded px-2 py-1" placeholder="Ad text" value={editForm.creativePrimaryText} onChange={(e) => setEditForm((prev) => prev ? { ...prev, creativePrimaryText: e.target.value } : prev)} />
+            <textarea className="w-full min-h-[70px] text-xs border border-border rounded px-2 py-1" placeholder="Ad description" value={editForm.creativeDescription} onChange={(e) => setEditForm((prev) => prev ? { ...prev, creativeDescription: e.target.value } : prev)} />
+            <input className="w-full text-xs border border-border rounded px-2 py-1" placeholder="CTA" value={editForm.creativeCta} onChange={(e) => setEditForm((prev) => prev ? { ...prev, creativeCta: e.target.value } : prev)} />
+
+            <textarea className="w-full min-h-[70px] text-xs border border-border rounded px-2 py-1 font-mono" placeholder="Targeting JSON" value={editForm.targetingJson} onChange={(e) => setEditForm((prev) => prev ? { ...prev, targetingJson: e.target.value } : prev)} />
+            <textarea className="w-full min-h-[70px] text-xs border border-border rounded px-2 py-1 font-mono" placeholder="Tracking JSON" value={editForm.trackingJson} onChange={(e) => setEditForm((prev) => prev ? { ...prev, trackingJson: e.target.value } : prev)} />
+            <textarea className="w-full min-h-[70px] text-xs border border-border rounded px-2 py-1" placeholder="Notes" value={editForm.notes} onChange={(e) => setEditForm((prev) => prev ? { ...prev, notes: e.target.value } : prev)} />
+
+            <div className="flex flex-wrap gap-2 pt-2">
+              <button disabled={isSaving} className="text-xs px-2 py-1 rounded border border-slate-400" onClick={() => saveFromEditor('draft')}>
+                Save as draft
+              </button>
+              <button disabled={isSaving} className="text-xs px-2 py-1 rounded border border-green-400 bg-green-200" onClick={() => saveFromEditor('approved')}>
+                Save as approved
+              </button>
+              <button disabled={isSaving} className="text-xs px-2 py-1 rounded border border-blue-400 bg-blue-200" onClick={() => saveFromEditor('scheduled')}>
+                Save as scheduled
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   const skus = Array.from(new Set(rows.map((r) => r.productSku).filter((s): s is string => Boolean(s))))
   const campaignIds = rows.map((r) => r.campaignPk)
   const imageMap = new Map<string, string>()
-  const creativeMap = new Map<number, { primaryText: string | null; headline: string | null }>()
+  const creativeMap = new Map<number, { primaryText: string | null; headline: string | null; description: string | null; cta: string | null }>()
   if (skus.length > 0) {
     const images = await db.query.productImages.findMany({
       where: inArray(productImages.productId, skus),
@@ -98,6 +98,8 @@ export async function GET(req: NextRequest) {
         campaignPk: true,
         primaryText: true,
         headline: true,
+        description: true,
+        cta: true,
         createdAt: true,
       },
       orderBy: [asc(adsCreatives.campaignPk), asc(adsCreatives.createdAt), asc(adsCreatives.creativePk)],
@@ -107,6 +109,8 @@ export async function GET(req: NextRequest) {
         creativeMap.set(c.campaignPk, {
           primaryText: c.primaryText ?? null,
           headline: c.headline ?? null,
+          description: c.description ?? null,
+          cta: c.cta ?? null,
         })
       }
     }
@@ -117,6 +121,8 @@ export async function GET(req: NextRequest) {
     productImageUrl: r.productSku ? (imageMap.get(r.productSku) ?? null) : null,
     creativePrimaryText: creativeMap.get(r.campaignPk)?.primaryText ?? null,
     creativeHeadline: creativeMap.get(r.campaignPk)?.headline ?? null,
+    creativeDescription: creativeMap.get(r.campaignPk)?.description ?? null,
+    creativeCta: creativeMap.get(r.campaignPk)?.cta ?? null,
   }))
 
   return apiResponse(withImages)
