@@ -37,47 +37,76 @@ interface DashboardSummary {
   suppliers: { lastInvoiceDate: string | null }
 }
 
+interface ChannelConfig {
+  id: string
+  label: string
+  href: string
+}
+
+const CHANNELS: ChannelConfig[] = [
+  { id: 'woocommerce', label: 'COINCART', href: '/channels/woocommerce' },
+  { id: 'shopify_komputerzz', label: 'KOMPUTERZZ', href: '/channels/shopify_komputerzz' },
+  { id: 'shopify_tiktok', label: 'TIKTOK TECH STORE', href: '/channels/shopify_tiktok' },
+  { id: 'ebay_ie', label: 'EBAY', href: '/channels/ebay_ie' },
+  { id: 'amazon', label: 'AMAZON', href: '/channels/amazon' },
+  { id: 'libre_market', label: 'LIBRE MARKET', href: '/channels/libre_market' },
+  { id: 'xmr_bazaar', label: 'XMR BAZAAR', href: '/channels/xmr_bazaar' },
+]
+
+const CHANNEL_PLACEHOLDER_EUR: Record<string, number> = {
+  woocommerce: 338,
+  shopify_komputerzz: 912,
+  shopify_tiktok: 745,
+  ebay_ie: 402,
+  amazon: 667,
+  libre_market: 289,
+  xmr_bazaar: 554,
+}
+
+const WAREHOUSE_ORDER = [
+  { id: 'ireland', label: 'Ireland', href: '/warehouses/ireland' },
+  { id: 'poland', label: 'Poland', href: '/warehouses/poland' },
+  { id: 'acer_store', label: 'ACER Store', href: '/warehouses/acer_store' },
+] as const
+
+const WAREHOUSE_INCOMING: Record<string, number> = {
+  ireland: 18,
+  poland: 12,
+  acer_store: 15,
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
 function fmtDate(iso?: string | null): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString([], { year: 'numeric', month: 'long', day: '2-digit' })
 }
 
 function fmtMoney(cents: number | null | undefined): string {
-  if (cents == null) return '—'
-  return `${Math.round(cents / 100)} €`
+  if (cents == null) return '-'
+  return `EUR ${Math.round(cents / 100)}`
 }
 
-function StockNode({
-  title,
-  sub,
-  href,
-  className,
-}: {
-  title: string
-  sub: string
-  href?: string
-  className?: string
-}) {
-  const body = (
-    <div className={`rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2 shadow-sm ${className ?? ''}`}>
-      <p className="text-[11px] font-semibold tracking-wide text-slate-100">{title}</p>
-      <p className="text-[10px] text-slate-400">{sub}</p>
-    </div>
-  )
-  if (!href) return body
-  return <Link href={href}>{body}</Link>
+function getWarehouseProgress(refsInStock: number, maxRefsInStock: number, warehouseId: string) {
+  const incoming = clamp(WAREHOUSE_INCOMING[warehouseId] ?? 12, 0, 35)
+  if (maxRefsInStock <= 0) {
+    return { occupied: clamp(45 - incoming, 10, 85), incoming }
+  }
+  const scaled = Math.round((refsInStock / maxRefsInStock) * 72) + 18
+  const occupied = clamp(scaled, 10, 88 - incoming)
+  return { occupied, incoming }
 }
 
 function ActionButton({
   label,
-  icon,
   onClick,
   disabled,
 }: {
   label: string
-  icon: string
   onClick: () => void
   disabled?: boolean
 }) {
@@ -85,11 +114,101 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+      className="inline-flex items-center justify-center rounded-md border border-[#2F5A85] bg-[#11203A] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)] transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.28)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
     >
-      <span aria-hidden>{icon}</span>
-      <span>{label}</span>
+      {label}
     </button>
+  )
+}
+
+function DataStamp({ label, iso }: { label: string; iso: string | null }) {
+  return (
+    <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--text-muted)]">
+      {label}:{' '}
+      {iso ? (
+        <time dateTime={iso} className="font-mono text-[var(--text-primary)]">
+          {fmtDate(iso)}
+        </time>
+      ) : (
+        <span className="font-mono text-[var(--text-primary)]">-</span>
+      )}
+    </p>
+  )
+}
+
+function WarehouseCard({
+  name,
+  refsInStock,
+  occupied,
+  incoming,
+  href,
+}: {
+  name: string
+  refsInStock: number | null
+  occupied: number
+  incoming: number
+  href: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)] focus-visible:ring-offset-0"
+    >
+      <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        {refsInStock != null ? `${refsInStock} SKUs in stock` : 'Stock unavailable'}
+      </p>
+      <div className="mt-3 h-3 w-full overflow-hidden rounded-full border border-[#283550] bg-[#111B33]">
+        <div className="h-full bg-[var(--black-fill)]" style={{ width: `${occupied}%` }} />
+        <div
+          className="relative -mt-3 h-3 bg-[var(--incoming-gray)] opacity-90"
+          style={{ width: `${incoming}%`, left: `${occupied}%` }}
+        />
+      </div>
+      <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
+        occupied {occupied}% - incoming {incoming}%
+      </p>
+    </Link>
+  )
+}
+
+function ChannelCard({
+  name,
+  href,
+  revenueEur,
+  campaignChip,
+}: {
+  name: string
+  href: string
+  revenueEur: number
+  campaignChip?: { label: string; color: 'yellow' | 'green' }
+}) {
+  const chipClass =
+    campaignChip?.color === 'yellow'
+      ? 'border-[var(--glow-yellow)] bg-[rgba(255,216,77,0.14)] text-[var(--glow-yellow)] shadow-[0_0_22px_rgba(255,216,77,0.45)]'
+      : 'border-[var(--glow-green)] bg-[rgba(53,242,161,0.14)] text-[var(--glow-green)] shadow-[0_0_22px_rgba(53,242,161,0.45)]'
+
+  return (
+    <Link
+      href={href}
+      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
+        {campaignChip ? (
+          <span
+            aria-label={`${name} ad campaign`}
+            className={`campaign-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-xs font-bold tracking-[0.14em] ${chipClass} ${
+              campaignChip.label === 'G' ? 'campaign-chip-fast' : 'campaign-chip-fast-alt'
+            }`}
+          >
+            {campaignChip.label}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">24H Revenue</p>
+      <p className="font-mono text-lg font-bold text-[var(--text-primary)]">EUR {revenueEur}</p>
+    </Link>
   )
 }
 
@@ -112,9 +231,11 @@ export function DashboardHome() {
   const [pushResult, setPushResult] = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
   const [lastStockScan, setLastStockScan] = useState<string | null>(null)
+  const [lastChannelPush, setLastChannelPush] = useState<string | null>(null)
 
   useEffect(() => {
     setLastStockScan(localStorage.getItem('lastStockScan'))
+    setLastChannelPush(localStorage.getItem('lastChannelPush'))
   }, [])
 
   async function handleScanStocks() {
@@ -185,7 +306,10 @@ export function DashboardHome() {
         platforms: ['shopify_komputerzz', 'woocommerce', 'ebay_ie'],
         triggeredBy: 'human',
       })
-      setPushResult(res.data)
+      setPushResult((res as { data: ChannelSyncResult[] }).data)
+      const now = new Date().toISOString()
+      localStorage.setItem('lastChannelPush', now)
+      setLastChannelPush(now)
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       setPushError(err instanceof Error ? err.message : 'Unknown error')
@@ -194,15 +318,39 @@ export function DashboardHome() {
     }
   }
 
-  const whIreland = warehouses.find((w) => w.id === 'ireland')
-  const whAcer = warehouses.find((w) => w.id === 'acer_store')
-  const whPoland = warehouses.find((w) => w.id === 'poland')
+  const warehouseMaxStock = useMemo(() => {
+    return Math.max(...warehouses.map((w) => w.refsInStock), 0)
+  }, [warehouses])
 
-  const chKomp = channels.find((c) => c.id === 'shopify_komputerzz')
-  const chTikTok = channels.find((c) => c.id === 'shopify_tiktok')
-  const chEbay = channels.find((c) => c.id === 'ebay_ie')
-  const chXmr = channels.find((c) => c.id === 'xmr_bazaar')
-  const chAmazon = channels.find((c) => c.id === 'amazon')
+  const channelMap = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels])
+
+  const orderedWarehouses = useMemo(() => {
+    return WAREHOUSE_ORDER.map((warehouse) => {
+      const found = warehouses.find((item) => item.id === warehouse.id)
+      const refsInStock = found?.refsInStock ?? null
+      const progress = getWarehouseProgress(refsInStock ?? 0, warehouseMaxStock, warehouse.id)
+      return {
+        ...warehouse,
+        refsInStock,
+        occupied: progress.occupied,
+        incoming: progress.incoming,
+      }
+    })
+  }, [warehouses, warehouseMaxStock])
+
+  const orderedChannels = useMemo(() => {
+    return CHANNELS.map((channel) => {
+      const found = channelMap.get(channel.id)
+      const revenueEur =
+        found?.sales24hCents != null ? Math.round(found.sales24hCents / 100) : CHANNEL_PLACEHOLDER_EUR[channel.id]
+      return {
+        ...channel,
+        revenueEur: clamp(revenueEur, 200, 999),
+        hasCampaignG: channel.id === 'shopify_komputerzz',
+        hasCampaignT: channel.id === 'shopify_tiktok',
+      }
+    })
+  }, [channelMap])
 
   const sales24h = useMemo(
     () => channels.reduce((sum, c) => sum + (c.sales24hCents ?? 0), 0),
@@ -210,158 +358,237 @@ export function DashboardHome() {
   )
 
   return (
-    <div className="space-y-3">
-      <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-800 bg-[#060D1F]">
-        <div className="relative h-[840px] w-[1360px]">
-          <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1360 840" fill="none" aria-hidden>
-            <path d="M290 190C390 190 390 360 500 360" stroke="#1E3A5F" strokeWidth="2" />
-            <path d="M290 430C390 430 390 410 500 410" stroke="#163020" strokeWidth="2" />
-            <path d="M800 390C860 390 860 340 920 340" stroke="#1E3A5F" strokeWidth="2" />
-            <path d="M970 140L970 245" stroke="#374151" strokeWidth="1.5" />
-            <path d="M1090 132L1170 56" stroke="#374151" strokeWidth="1.5" />
-            <path d="M1130 310L1188 310" stroke="#FF2D55" strokeWidth="1.5" />
-            <path d="M1130 205L1188 205" stroke="#374151" strokeWidth="1.5" />
-            <path d="M970 430L970 520" stroke="#374151" strokeWidth="1.5" />
-            <path d="M1065 430L1065 580" stroke="#374151" strokeWidth="1.5" />
-            <path d="M1130 430L1210 560" stroke="#374151" strokeWidth="1.5" />
-          </svg>
+    <div className="space-y-4">
+      <section
+        className="relative overflow-hidden rounded-2xl border border-[var(--panel-border)] p-4 md:p-6"
+        style={
+          {
+            background:
+              'radial-gradient(1200px 320px at 50% -10%, rgba(53,167,255,0.18), transparent 60%), radial-gradient(800px 280px at 70% 120%, rgba(53,242,161,0.08), transparent 60%), var(--bg-main)',
+            '--bg-main': '#060D1F',
+            '--panel': '#0B1328',
+            '--panel-border': '#1E2A44',
+            '--text-primary': '#E6ECFF',
+            '--text-muted': '#8FA0C7',
+            '--black-fill': '#0A0A0A',
+            '--incoming-gray': '#7A7F87',
+            '--glow-blue': '#35A7FF',
+            '--glow-green': '#35F2A1',
+            '--glow-yellow': '#FFD84D',
+            '--danger': '#FF5C7A',
+          } as React.CSSProperties
+        }
+      >
+        <svg className="pointer-events-none absolute inset-0 hidden lg:block" viewBox="0 0 1200 640" aria-hidden>
+          <path d="M320 180C420 180 430 270 520 320" stroke="rgba(53,167,255,0.45)" strokeWidth="1.5" />
+          <path d="M320 320C440 320 440 320 520 320" stroke="rgba(53,167,255,0.32)" strokeWidth="1.5" />
+          <path d="M320 460C420 460 430 370 520 320" stroke="rgba(53,167,255,0.45)" strokeWidth="1.5" />
+          <path d="M680 320C760 320 770 190 900 170" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
+          <path d="M680 320C760 320 770 260 900 250" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
+          <path d="M680 320C760 320 770 330 900 330" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
+          <path d="M680 320C760 320 770 400 900 410" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
+          <path d="M680 320C760 320 770 470 900 490" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
+        </svg>
 
-          <p className="absolute left-8 top-6 text-sm font-bold tracking-[0.15em] text-slate-300">WIZHARD NETWORK</p>
-
-          <div className="absolute right-28 top-5 rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
-            <p className="text-[10px] tracking-wide text-slate-400">SALES 24H</p>
-            <p className="text-sm font-semibold text-slate-100">{fmtMoney(sales24h)}</p>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Wizhard Network</p>
+            <p className="font-heading text-2xl font-semibold text-[var(--text-primary)]">WIZHARD</p>
           </div>
-          <div className="absolute right-8 top-5 rounded-lg border border-slate-700 bg-slate-900/85 px-3 py-2">
-            <p className="text-[10px] tracking-wide text-slate-400">TIKTOK STORE 24H</p>
-            <p className="text-sm font-semibold text-slate-100">{fmtMoney(chTikTok?.sales24hCents)}</p>
+          <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Sales 24H</p>
+            <p className="font-mono text-sm font-bold text-[var(--text-primary)]">{fmtMoney(sales24h)}</p>
           </div>
+        </div>
 
-          <StockNode
-            className="absolute left-8 top-[76px] w-[140px]"
-            title="ACER STORE"
-            sub={`${whAcer?.refsInStock ?? '—'} SKUs`}
-            href="/warehouses/acer_store"
-          />
-          <StockNode
-            className="absolute left-[172px] top-[64px] w-[130px]"
-            title="IRELAND"
-            sub={`${whIreland?.refsInStock ?? '—'} SKUs`}
-            href="/warehouses/ireland"
-          />
-          <StockNode
-            className="absolute left-8 top-[272px] w-[130px]"
-            title="POLAND"
-            sub={`${whPoland?.refsInStock ?? '—'} SKUs`}
-            href="/warehouses/poland"
-          />
-
-          <div className="absolute left-6 top-[136px] w-[300px] rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-3">
-            <p className="text-[11px] font-semibold tracking-wide text-slate-300">WAREHOUSES</p>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Last scan: {lastStockScan ? <time dateTime={lastStockScan}>{fmtDate(lastStockScan)}</time> : '—'}
-            </p>
-          </div>
-
-          <StockNode className="absolute left-8 top-[530px] w-[140px]" title="ACER" sub="EU Supplier" href="/suppliers" />
-          <div className="absolute left-6 top-[430px] w-[300px] rounded-lg border border-slate-700 bg-slate-900/65 px-4 py-3">
-            <p className="text-[11px] font-semibold tracking-wide text-slate-300">SUPPLIERS</p>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Last invoice: {summary?.suppliers.lastInvoiceDate ? (
-                <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
-              ) : '—'}
-            </p>
-          </div>
-
-          <div className="absolute left-[528px] top-[330px] w-[310px] rounded-xl border border-blue-500/40 bg-slate-900/90 px-5 py-4 shadow-[0_0_40px_rgba(37,99,235,0.22)]">
-            <p className="text-sm font-semibold tracking-wide text-blue-300">WIZHARD</p>
-            <p className="mt-3 text-[13px] text-slate-100">{summary?.wizhard.productsToFill ?? '—'} products to fill</p>
-            <p className="text-[12px] text-slate-300">{summary?.readyToPush.count ?? '—'} products to push</p>
-          </div>
-
-          <div className="absolute left-[350px] top-[270px]">
-            <ActionButton label={scanning ? 'SCANNING' : 'SCAN'} icon="↻" onClick={handleScanStocks} disabled={scanning} />
-          </div>
-          <div className="absolute left-[846px] top-[368px]">
-            <ActionButton label={pushing ? 'PUSHING' : 'PUSH PRODUCTS'} icon="→" onClick={handleUpdateChannels} disabled={pushing} />
-          </div>
-
-          <div className="absolute left-[906px] top-[255px] w-[246px] rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3">
-            <p className="text-[11px] font-semibold tracking-wide text-slate-300">SALE CHANNELS</p>
-            <p className="mt-2 text-[11px] text-slate-200">{chKomp?.googleAdsCampaignsProgrammed ?? 0} Google Ads programmed</p>
-            <p className="text-[11px] text-slate-200">{chTikTok?.googleAdsCampaignsProgrammed ?? 0} TikTok Ads programmed</p>
-          </div>
-
-          <StockNode className="absolute left-[900px] top-[92px] w-[148px]" title="COINCART" sub="WooCommerce" href="/channels/woocommerce" />
-          <StockNode
-            className="absolute left-[1068px] top-[78px] w-[160px]"
-            title="KOMPUTERZZ"
-            sub={`Shopify · ${chKomp?.googleAdsCampaignsProgrammed ?? 0} Google Ads`}
-            href="/channels/shopify_komputerzz"
-          />
-          <StockNode
-            className="absolute left-[1204px] top-[285px] w-[164px]"
-            title="TIKTOK TECH STORE"
-            sub={`by ACER · ${chTikTok?.googleAdsCampaignsProgrammed ?? 0} TT Ads`}
-            href="/channels/shopify_tiktok"
-          />
-          <StockNode className="absolute left-[1232px] top-[174px] w-[96px]" title="EBAY" sub={chEbay ? 'API' : '—'} href="/channels/ebay_ie" />
-          <StockNode className="absolute left-[898px] top-[570px] w-[130px]" title="AMAZON" sub={chAmazon ? 'API' : '—'} />
-          <StockNode className="absolute left-[1056px] top-[624px] w-[148px]" title="LIBRE MARKET" sub="Browser" href="/channels/libre_market" />
-          <StockNode className="absolute left-[1228px] top-[584px] w-[130px]" title="XMR BAZAAR" sub={chXmr ? 'Browser' : '—'} href="/channels/xmr_bazaar" />
-
-          {(isLoading || scanProgressText || scanError || pushError || isError) && (
-            <div className="absolute bottom-4 left-8 right-8 rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-xs text-slate-300">
-              {isLoading ? <p>Loading dashboard data...</p> : null}
-              {scanProgressText ? <p>{scanProgressText}</p> : null}
-              {scanError ? <p className="text-rose-400">Scan error: {scanError}</p> : null}
-              {pushError ? <p className="text-rose-400">Push error: {pushError}</p> : null}
-              {isError ? <p className="text-rose-400">Summary unavailable. Check API/database.</p> : null}
+        <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr_1fr]">
+          <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Warehouses</p>
+              <DataStamp label="Last scan" iso={lastStockScan} />
             </div>
-          )}
-        </div>
-      </div>
+            {orderedWarehouses.map((warehouse) => (
+              <WarehouseCard
+                key={warehouse.id}
+                name={warehouse.label}
+                refsInStock={warehouse.refsInStock}
+                occupied={warehouse.occupied}
+                incoming={warehouse.incoming}
+                href={warehouse.href}
+              />
+            ))}
+          </div>
 
-      <div className="lg:hidden space-y-3">
-        <div className="rounded-xl border border-slate-700 bg-[#060D1F] p-4">
-          <p className="text-xs font-semibold tracking-[0.12em] text-slate-300">WIZHARD NETWORK</p>
-          <p className="mt-2 text-sm text-slate-100">
-            {summary?.wizhard.productsToFill ?? '—'} products to fill · {summary?.readyToPush.count ?? '—'} to push
-          </p>
-          <p className="mt-1 text-xs text-slate-400">Sales 24h: {fmtMoney(sales24h)}</p>
+          <div className="flex flex-col justify-center">
+            <div className="relative mx-auto w-full max-w-[360px] rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_0_46px_rgba(53,167,255,0.22)]">
+              <div className="absolute left-1/2 top-3 h-[110px] w-[110px] -translate-x-1/2 rounded-full border border-[#335987] bg-[radial-gradient(circle_at_50%_45%,rgba(53,167,255,0.35),rgba(11,19,40,1)_75%)]" />
+              <div className="pt-[130px] text-center">
+                <p className="font-heading text-xl font-semibold tracking-[0.03em] text-[var(--text-primary)]">WIZHARD</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                  {summary?.wizhard.productsToFill ?? '-'} products to fill - {summary?.readyToPush.count ?? '-'} to push
+                </p>
+              </div>
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <ActionButton
+                    label={scanning ? 'Scanning Warehouses' : 'Scan Warehouses'}
+                    onClick={handleScanStocks}
+                    disabled={scanning}
+                  />
+                  <DataStamp label="Last scan" iso={lastStockScan} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <ActionButton
+                    label={pushing ? 'Pushing To Channels' : 'Push To Channels'}
+                    onClick={handleUpdateChannels}
+                    disabled={pushing}
+                  />
+                  <DataStamp label="Last push" iso={lastChannelPush} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Sale Channels</p>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">7 channels active</p>
+            </div>
+            {orderedChannels.map((channel) => (
+              <ChannelCard
+                key={channel.id}
+                name={channel.label}
+                href={channel.href}
+                revenueEur={channel.revenueEur}
+                campaignChip={
+                  channel.hasCampaignG
+                    ? { label: 'G', color: 'yellow' }
+                    : channel.hasCampaignT
+                      ? { label: 'T', color: 'green' }
+                      : undefined
+                }
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-2">
-          <StockNode title="Warehouses" sub={`Last scan: ${lastStockScan ? fmtDate(lastStockScan) : '—'}`} />
-          <StockNode title="Suppliers" sub={`Last invoice: ${fmtDate(summary?.suppliers.lastInvoiceDate)}`} href="/suppliers" />
-          <StockNode title="Sale Channels" sub={`${channels.length} channels`} href="/channels" />
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <Link
+            href="/suppliers"
+            className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3 transition duration-200 hover:shadow-[0_0_20px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Suppliers</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">ACER</p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Last invoice:{' '}
+              {summary?.suppliers.lastInvoiceDate ? (
+                <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
+              ) : (
+                '-'
+              )}
+            </p>
+          </Link>
+          <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">System Status</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">
+              {isLoading ? 'Loading summary...' : isError ? 'Summary unavailable' : 'Operational'}
+            </p>
+            {scanProgressText ? <p className="text-[11px] text-[var(--text-muted)]">{scanProgressText}</p> : null}
+          </div>
         </div>
+      </section>
 
-        <div className="flex flex-wrap gap-2">
-          <ActionButton label={scanning ? 'SCANNING' : 'SCAN'} icon="↻" onClick={handleScanStocks} disabled={scanning} />
-          <ActionButton label={pushing ? 'PUSHING' : 'PUSH PRODUCTS'} icon="→" onClick={handleUpdateChannels} disabled={pushing} />
+      {scanError || pushError || isError ? (
+        <div className="rounded-xl border border-[var(--danger)]/50 bg-[rgba(255,92,122,0.08)] p-3 text-xs text-[var(--text-primary)]">
+          {scanError ? <p>Scan error: {scanError}</p> : null}
+          {pushError ? <p>Push error: {pushError}</p> : null}
+          {isError ? <p>Summary unavailable. Check API/database.</p> : null}
         </div>
-      </div>
+      ) : null}
 
       {scanResult?.length ? (
-        <div className="rounded-md border border-border bg-card p-3 text-xs space-y-1">
-          {scanResult.map((r) => (
-            <p key={r.warehouseId} className={r.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
-              {r.warehouseId}: {r.errors[0] ?? `${r.productsUpdated} refs updated`}
+        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
+          {scanResult.map((result) => (
+            <p key={result.warehouseId} className={result.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
+              {result.warehouseId}: {result.errors[0] ?? `${result.productsUpdated} refs updated`}
             </p>
           ))}
         </div>
       ) : null}
 
       {pushResult?.length ? (
-        <div className="rounded-md border border-border bg-card p-3 text-xs space-y-1">
-          {pushResult.map((r) => (
-            <p key={r.platform}>
-              {r.platform}: {r.errors[0] ?? `${r.statusUpdated} updated | ${r.newProductsCreated} new | ${r.zeroedOutOfStock} zeroed`}
+        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
+          {pushResult.map((result) => (
+            <p key={result.platform}>
+              {result.platform}:{' '}
+              {result.errors[0] ??
+                `${result.statusUpdated} updated | ${result.newProductsCreated} new | ${result.zeroedOutOfStock} zeroed`}
             </p>
           ))}
         </div>
       ) : null}
+
+      <style jsx global>{`
+        .font-heading {
+          font-family: var(--font-heading), serif;
+        }
+
+        .campaign-chip {
+          animation: campaignPulse 1.9s ease-in-out infinite;
+        }
+
+        .campaign-chip-fast {
+          animation: campaignPulseStrong 1.2s ease-in-out infinite;
+        }
+
+        .campaign-chip-fast-alt {
+          animation: campaignPulseStrongAlt 1.2s ease-in-out infinite;
+        }
+
+        @keyframes campaignPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          50% {
+            transform: scale(1.03);
+            filter: brightness(1.2);
+          }
+        }
+
+        @keyframes campaignPulseStrong {
+          0%,
+          100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          50% {
+            transform: scale(1.08);
+            filter: brightness(1.35);
+          }
+        }
+
+        @keyframes campaignPulseStrongAlt {
+          0%,
+          100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          55% {
+            transform: scale(1.07);
+            filter: brightness(1.25);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .campaign-chip,
+          .campaign-chip-fast,
+          .campaign-chip-fast-alt {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

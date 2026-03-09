@@ -915,180 +915,23 @@
         },
         {
           "type": "frame",
-          "id": "nbD19",
-          "x": 556,
-          "y": 160,
-          "name": "brain_outer",
-          "clip": true,
-          "width": 408,
-          "height": 408,
-          "fill": "#060D1F",
-          "cornerRadius": 204,
-          "stroke": {
-            "align": "inside",
-            "thickness": 2,
-            "fill": "#35A7FF"
-          },
-          "layout": "none"
-        },
-        {
-          "type": "frame",
-          "id": "xBtmA",
-          "x": 574,
-          "y": 178,
-          "name": "brain_inner",
-          "clip": true,
-          "width": 372,
-          "height": 372,
-          "fill": "#0B1328",
-          "cornerRadius": 186,
-          "layout": "none",
-          "children": [
-            {
-              "type": "text",
-              "id": "RspHN",
-              "x": 162,
-              "y": 60,
-              "name": "brain_symbol",
-              "fill": "#35A7FF",
-              "content": "◉",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 28,
-              "fontWeight": "normal"
-            },
-            {
-              "type": "text",
-              "id": "st3EN",
-              "x": 117,
-              "y": 102,
-              "name": "brain_title",
-              "fill": "#E6ECFF",
-              "content": "WIZHARD",
-              "fontFamily": "Playfair Display",
-              "fontSize": 22,
-              "fontWeight": "700"
-            },
-            {
-              "type": "text",
-              "id": "6jQU8",
-              "x": 126,
-              "y": 134,
-              "name": "brain_sub",
-              "fill": "#8FA0C7",
-              "content": "Master catalogue",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 11,
-              "fontWeight": "normal"
-            }
-          ]
-        },
-        {
-          "type": "frame",
           "id": "39CAI",
-          "x": 538,
-          "y": 393,
+          "x": 534,
+          "y": 388,
           "name": "conn_left",
-          "width": 22,
+          "width": 16,
           "height": 2,
           "fill": "#1E2A44"
         },
         {
           "type": "frame",
           "id": "MEvRd",
-          "x": 960,
-          "y": 393,
+          "x": 970,
+          "y": 388,
           "name": "conn_right",
-          "width": 24,
+          "width": 14,
           "height": 2,
           "fill": "#1E2A44"
-        },
-        {
-          "type": "frame",
-          "id": "5AQip",
-          "x": 592,
-          "y": 596,
-          "name": "scan_btn",
-          "clip": true,
-          "width": 196,
-          "height": 40,
-          "fill": "#1E2A44",
-          "cornerRadius": 6,
-          "stroke": {
-            "align": "inside",
-            "thickness": 1,
-            "fill": "#35A7FF"
-          },
-          "layout": "none",
-          "children": [
-            {
-              "type": "text",
-              "id": "JvEei",
-              "x": 34,
-              "y": 12,
-              "name": "scan_txt",
-              "fill": "#35A7FF",
-              "content": "Scan Warehouses",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 12,
-              "fontWeight": "600"
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "Rh12x",
-          "x": 592,
-          "y": 646,
-          "name": "push_btn",
-          "clip": true,
-          "width": 196,
-          "height": 40,
-          "fill": "#1E2A44",
-          "cornerRadius": 6,
-          "stroke": {
-            "align": "inside",
-            "thickness": 1,
-            "fill": "#35F2A1"
-          },
-          "layout": "none",
-          "children": [
-            {
-              "type": "text",
-              "id": "ALbN5",
-              "x": 30,
-              "y": 12,
-              "name": "push_txt",
-              "fill": "#35F2A1",
-              "content": "Push To Channels",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 12,
-              "fontWeight": "600"
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "id": "ImxjR",
-          "x": 798,
-          "y": 608,
-          "name": "scan_meta",
-          "fill": "#8FA0C7",
-          "content": "Last scan: 2h ago",
-          "fontFamily": "Space Mono",
-          "fontSize": 9,
-          "fontWeight": "normal"
-        },
-        {
-          "type": "text",
-          "id": "yHSNL",
-          "x": 798,
-          "y": 658,
-          "name": "push_meta",
-          "fill": "#8FA0C7",
-          "content": "Last push: 4h ago",
-          "fontFamily": "Space Mono",
-          "fontSize": 9,
-          "fontWeight": "normal"
         },
         {
           "type": "text",
@@ -1619,6 +1462,190 @@
                   "fontWeight": "700"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Fa7Pi",
+          "x": 548,
+          "y": 180,
+          "name": "card2",
+          "clip": true,
+          "width": 426,
+          "height": 420,
+          "fill": "#0B1328",
+          "cornerRadius": 20,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1.5,
+            "fill": "#35A7FF"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "2MMvx",
+              "x": 0,
+              "y": 0,
+              "name": "accent2",
+              "width": 426,
+              "height": 3,
+              "fill": "#35A7FF"
+            },
+            {
+              "type": "ellipse",
+              "id": "8lyyN",
+              "x": 113,
+              "y": 54,
+              "name": "deco2",
+              "fill": "#0D1830",
+              "width": 200,
+              "height": 200
+            },
+            {
+              "type": "text",
+              "id": "7a2qX",
+              "x": 186,
+              "y": 30,
+              "name": "sym2",
+              "fill": "#35A7FF",
+              "content": "◉",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 32,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "5DuuC",
+              "x": 108,
+              "y": 74,
+              "name": "title2",
+              "fill": "#E6ECFF",
+              "content": "WIZHARD",
+              "fontFamily": "Playfair Display",
+              "fontSize": 30,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "LGaSD",
+              "x": 143,
+              "y": 116,
+              "name": "sub2",
+              "fill": "#8FA0C7",
+              "content": "MASTER CATALOGUE",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "D8yXb",
+              "x": 30,
+              "y": 144,
+              "name": "sep2",
+              "width": 366,
+              "height": 1,
+              "fill": "#1E2A44"
+            },
+            {
+              "type": "frame",
+              "id": "QRMlT",
+              "x": 53,
+              "y": 170,
+              "name": "scan2",
+              "clip": true,
+              "width": 320,
+              "height": 46,
+              "fill": "#0D1830",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#35A7FF"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "vjIbQ",
+                  "x": 86,
+                  "y": 14,
+                  "name": "scan_txt2",
+                  "fill": "#35A7FF",
+                  "content": "Scan Warehouses",
+                  "fontFamily": "Space Grotesk",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "HWlnW",
+              "x": 53,
+              "y": 228,
+              "name": "push2",
+              "clip": true,
+              "width": 320,
+              "height": 46,
+              "fill": "#0D1830",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#35F2A1"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "YmSHt",
+                  "x": 84,
+                  "y": 14,
+                  "name": "push_txt2",
+                  "fill": "#35F2A1",
+                  "content": "Push To Channels",
+                  "fontFamily": "Space Grotesk",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Nv908",
+              "x": 30,
+              "y": 294,
+              "name": "meta_sep2",
+              "width": 366,
+              "height": 1,
+              "fill": "#1E2A44"
+            },
+            {
+              "type": "text",
+              "id": "bIwKK",
+              "x": 53,
+              "y": 312,
+              "name": "meta_scan2",
+              "fill": "#8FA0C7",
+              "content": "Last scan · 08 Mar 2026",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "SwqBq",
+              "x": 53,
+              "y": 336,
+              "name": "meta_push2",
+              "fill": "#8FA0C7",
+              "content": "Last push · 09 Mar 2026",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
             }
           ]
         }

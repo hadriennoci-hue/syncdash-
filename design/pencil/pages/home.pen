@@ -795,175 +795,22 @@
         {
           "type": "frame",
           "id": "xJWeV",
-          "x": 538,
-          "y": 393,
+          "x": 534,
+          "y": 388,
           "name": "connLeft",
-          "width": 22,
+          "width": 16,
           "height": 2,
           "fill": "#1E2A44"
         },
         {
           "type": "frame",
           "id": "AFPdR",
-          "x": 960,
-          "y": 393,
+          "x": 970,
+          "y": 388,
           "name": "connRight",
-          "width": 24,
+          "width": 14,
           "height": 2,
           "fill": "#1E2A44"
-        },
-        {
-          "type": "frame",
-          "id": "BjYYk",
-          "x": 556,
-          "y": 160,
-          "name": "wzBrain",
-          "width": 408,
-          "height": 408,
-          "fill": "#060D1F",
-          "cornerRadius": 204,
-          "stroke": {
-            "align": "inside",
-            "thickness": 2,
-            "fill": "#35A7FF"
-          },
-          "layout": "vertical",
-          "gap": 8,
-          "justifyContent": "center",
-          "alignItems": "center"
-        },
-        {
-          "type": "frame",
-          "id": "g7i2k",
-          "x": 574,
-          "y": 178,
-          "name": "wzBrainInner",
-          "width": 372,
-          "height": 372,
-          "fill": "#0B1328",
-          "cornerRadius": 186,
-          "layout": "vertical",
-          "gap": 6,
-          "justifyContent": "center",
-          "alignItems": "center",
-          "children": [
-            {
-              "type": "text",
-              "id": "z9BJe",
-              "name": "brainSymbol",
-              "fill": "#35A7FF",
-              "content": "◉",
-              "fontFamily": "Space Mono",
-              "fontSize": 28,
-              "fontWeight": "normal"
-            },
-            {
-              "type": "text",
-              "id": "tj8lI",
-              "name": "brainTitle",
-              "fill": "#E6ECFF",
-              "content": "WIZHARD",
-              "fontFamily": "Playfair Display",
-              "fontSize": 22,
-              "fontWeight": "700"
-            },
-            {
-              "type": "text",
-              "id": "xbpqR",
-              "name": "brainSub",
-              "fill": "#8FA0C7",
-              "content": "Master catalogue",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 11,
-              "fontWeight": "normal"
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "zxbot",
-          "x": 592,
-          "y": 596,
-          "name": "btnScan",
-          "width": 196,
-          "height": 40,
-          "fill": "#1E2A44",
-          "cornerRadius": 8,
-          "stroke": {
-            "align": "inside",
-            "thickness": 1,
-            "fill": "#35A7FF"
-          },
-          "gap": 8,
-          "justifyContent": "center",
-          "alignItems": "center",
-          "children": [
-            {
-              "type": "text",
-              "id": "GXG3z",
-              "name": "btnScanTxt",
-              "fill": "#35A7FF",
-              "content": "Scan Warehouses",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 12,
-              "fontWeight": "500"
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "id": "6ZXGI",
-          "x": 798,
-          "y": 608,
-          "name": "lastScan",
-          "fill": "#8FA0C7",
-          "content": "Last scan: 08 Mar",
-          "fontFamily": "Space Mono",
-          "fontSize": 10,
-          "fontWeight": "normal"
-        },
-        {
-          "type": "frame",
-          "id": "SNV1a",
-          "x": 592,
-          "y": 646,
-          "name": "btnPush",
-          "width": 196,
-          "height": 40,
-          "fill": "#1E2A44",
-          "cornerRadius": 8,
-          "stroke": {
-            "align": "inside",
-            "thickness": 1,
-            "fill": "#35F2A1"
-          },
-          "gap": 8,
-          "justifyContent": "center",
-          "alignItems": "center",
-          "children": [
-            {
-              "type": "text",
-              "id": "pU2ZO",
-              "name": "btnPushTxt",
-              "fill": "#35F2A1",
-              "content": "Push To Channels",
-              "fontFamily": "Space Grotesk",
-              "fontSize": 12,
-              "fontWeight": "500"
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "id": "N9r85",
-          "x": 798,
-          "y": 658,
-          "name": "lastPush",
-          "fill": "#8FA0C7",
-          "content": "Last push: 09 Mar",
-          "fontFamily": "Space Mono",
-          "fontSize": 10,
-          "fontWeight": "normal"
         },
         {
           "type": "text",
@@ -1511,6 +1358,190 @@
               "fontFamily": "Space Mono",
               "fontSize": 20,
               "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ANdx1",
+          "x": 548,
+          "y": 180,
+          "name": "card",
+          "clip": true,
+          "width": 426,
+          "height": 420,
+          "fill": "#0B1328",
+          "cornerRadius": 20,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1.5,
+            "fill": "#35A7FF"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "1oPE8",
+              "x": 0,
+              "y": 0,
+              "name": "accent",
+              "width": 426,
+              "height": 3,
+              "fill": "#35A7FF"
+            },
+            {
+              "type": "ellipse",
+              "id": "jErme",
+              "x": 113,
+              "y": 54,
+              "name": "deco",
+              "fill": "#0D1830",
+              "width": 200,
+              "height": 200
+            },
+            {
+              "type": "text",
+              "id": "18QIc",
+              "x": 186,
+              "y": 30,
+              "name": "sym",
+              "fill": "#35A7FF",
+              "content": "◉",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 32,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "3p7I1",
+              "x": 108,
+              "y": 74,
+              "name": "title",
+              "fill": "#E6ECFF",
+              "content": "WIZHARD",
+              "fontFamily": "Playfair Display",
+              "fontSize": 30,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "iFHOb",
+              "x": 143,
+              "y": 116,
+              "name": "sub",
+              "fill": "#8FA0C7",
+              "content": "MASTER CATALOGUE",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 9,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "uijJC",
+              "x": 30,
+              "y": 144,
+              "name": "sep",
+              "width": 366,
+              "height": 1,
+              "fill": "#1E2A44"
+            },
+            {
+              "type": "frame",
+              "id": "pUytT",
+              "x": 53,
+              "y": 170,
+              "name": "scan",
+              "clip": true,
+              "width": 320,
+              "height": 46,
+              "fill": "#0D1830",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#35A7FF"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "GqUtF",
+                  "x": 86,
+                  "y": 14,
+                  "name": "scan_txt",
+                  "fill": "#35A7FF",
+                  "content": "Scan Warehouses",
+                  "fontFamily": "Space Grotesk",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "duiP9",
+              "x": 53,
+              "y": 228,
+              "name": "push",
+              "clip": true,
+              "width": 320,
+              "height": 46,
+              "fill": "#0D1830",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#35F2A1"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QEdLf",
+                  "x": 84,
+                  "y": 14,
+                  "name": "push_txt",
+                  "fill": "#35F2A1",
+                  "content": "Push To Channels",
+                  "fontFamily": "Space Grotesk",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "9WRTW",
+              "x": 30,
+              "y": 294,
+              "name": "meta_sep",
+              "width": 366,
+              "height": 1,
+              "fill": "#1E2A44"
+            },
+            {
+              "type": "text",
+              "id": "FQ52T",
+              "x": 53,
+              "y": 312,
+              "name": "meta_scan",
+              "fill": "#8FA0C7",
+              "content": "Last scan · 08 Mar 2026",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "Vj0cQ",
+              "x": 53,
+              "y": 336,
+              "name": "meta_push",
+              "fill": "#8FA0C7",
+              "content": "Last push · 09 Mar 2026",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
             }
           ]
         }
