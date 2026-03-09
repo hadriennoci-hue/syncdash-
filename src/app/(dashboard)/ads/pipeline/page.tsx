@@ -257,7 +257,7 @@ export default function AdsPage() {
       {isLoading ? (
         <p className="text-xs text-muted-foreground">Loading campaigns...</p>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {(['google_ads', 'meta_ads', 'tiktok_ads'] as ProviderId[]).map((providerId) => {
             const rows = byProvider.get(providerId) ?? []
             const upcoming = rows.filter((r) => UPCOMING_STATUSES.has(r.status)).slice(0, 6)
@@ -267,22 +267,114 @@ export default function AdsPage() {
               .slice(0, 2)
 
             return (
-              <div key={providerId} className="border border-border rounded p-3 space-y-2">
+              <section key={providerId} className="border border-border rounded p-3 space-y-3">
                 <div className="text-xs font-medium">{PROVIDER_LABELS[providerId]}</div>
 
-                <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-start">
-                  <div className="space-y-2">
-                    <div className="text-[11px] text-muted-foreground">Upcoming</div>
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {upcoming.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">No upcoming campaigns</span>
-                      ) : (
-                        upcoming.map((c) => (
-                          <article
-                            key={c.campaignPk}
-                            className="min-w-[220px] max-w-[220px] border rounded p-2 bg-slate-50 border-slate-200 cursor-pointer"
-                            onClick={() => toggle(c.campaignPk)}
-                          >
+                <div className="space-y-2">
+                  <div className="text-[11px] text-muted-foreground">Upcoming</div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {upcoming.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No upcoming campaigns</span>
+                    ) : (
+                      upcoming.map((c) => (
+                        <article
+                          key={c.campaignPk}
+                          className="min-w-[220px] max-w-[220px] border rounded p-2 bg-slate-50 border-slate-200 cursor-pointer"
+                          onClick={() => toggle(c.campaignPk)}
+                        >
+                          {c.productImageUrl && (
+                            <div className="w-full h-24 mb-2 rounded overflow-hidden bg-white/70">
+                              <img src={c.productImageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            </div>
+                          )}
+                          <div className="text-[11px] font-medium truncate" title={c.name}>{c.name}</div>
+                          <div className="text-[10px] text-muted-foreground">{c.accountName}</div>
+                          <div className="text-[10px] mt-1">Status: {c.status}</div>
+                          <div className="text-[10px]">Objective: {c.objective}</div>
+                          <div className="text-[10px]">Start: {fmtDate(c.startAt)}</div>
+                          <div className="text-[10px]">Budget: {c.budgetMode} | {fmtMoney(c.budgetAmountCents, c.currencyCode)}</div>
+                          <div className="text-[10px]">
+                            Dest: {c.destinationType ?? '-'} | {c.productSku ?? '-'} | {c.destinationPending ? 'pending' : 'ready'}
+                          </div>
+                          {c.status !== 'live' && (
+                            <button
+                              className="mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-400 bg-white"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openEdit(c)
+                              }}
+                            >
+                              Edit
+                            </button>
+                          )}
+
+                          {expanded[c.campaignPk] && (
+                            <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
+                              <div className="text-[10px]">End: {fmtDate(c.endAt)}</div>
+                              <div className="text-[10px] break-all">URL: {c.destinationUrl ?? 'not set'}</div>
+                              <div className="text-[10px] break-all">Targeting: {c.targetingJson ?? '-'}</div>
+                              <div className="text-[10px] break-all">Tracking: {c.trackingJson ?? '-'}</div>
+                              <div className="text-[10px] break-all">Notes: {c.notes ?? '-'}</div>
+                              <div className="text-[10px] break-all">Ad headline: {c.creativeHeadline ?? '-'}</div>
+                              <div className="text-[10px] break-all">Ad text: {c.creativePrimaryText ?? '-'}</div>
+
+                              <div className="pt-1 flex flex-wrap gap-1">
+                                <button
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 bg-green-200"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    mutateStatus.mutate({ campaignPk: c.campaignPk, status: 'approved' })
+                                  }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-400 bg-red-200"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    mutateStatus.mutate({ campaignPk: c.campaignPk, status: 'canceled' })
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+
+                              <div className="pt-1 flex gap-1 items-center">
+                                <input
+                                  type="datetime-local"
+                                  className="text-[10px] border border-border rounded px-1 py-0.5 bg-background"
+                                  value={scheduleAt[c.campaignPk] ?? ''}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setScheduleAt((prev) => ({ ...prev, [c.campaignPk]: e.target.value }))}
+                                />
+                                <button
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-blue-400 bg-blue-200"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const when = scheduleAt[c.campaignPk]
+                                    if (!when) return
+                                    mutateStatus.mutate({ campaignPk: c.campaignPk, status: 'scheduled', scheduledFor: when })
+                                  }}
+                                >
+                                  Schedule
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t border-border pt-2">
+                  <div className="text-[11px] text-muted-foreground">Latest launched/completed</div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {history.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No campaign history</span>
+                    ) : (
+                      history.map((c) => (
+                        <article key={c.campaignPk} className="min-w-[220px] max-w-[220px] border border-blue-300 bg-blue-100 rounded p-2">
                             {c.productImageUrl && (
                               <div className="w-full h-24 mb-2 rounded overflow-hidden bg-white/70">
                                 <img src={c.productImageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
@@ -388,23 +480,22 @@ export default function AdsPage() {
                             <div className="text-[11px] font-medium truncate" title={c.name}>{c.name}</div>
                             <div className="text-[10px] text-muted-foreground">{c.accountName}</div>
                             <div className="text-[10px] mt-1">Status: {c.status}</div>
-                            <div className="text-[10px]">Provider ID: {c.providerCampaignId ?? '-'}</div>
-                            <div className="text-[10px]">Updated: {fmtDate(c.updatedAt)}</div>
-                            {c.status !== 'live' && (
-                              <button
-                                className="mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-400 bg-white"
-                                onClick={() => openEdit(c)}
-                              >
-                                Edit
-                              </button>
-                            )}
-                          </article>
-                        ))
-                      )}
-                    </div>
+                          <div className="text-[10px]">Provider ID: {c.providerCampaignId ?? '-'}</div>
+                          <div className="text-[10px]">Updated: {fmtDate(c.updatedAt)}</div>
+                          {c.status !== 'live' && (
+                            <button
+                              className="mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-400 bg-white"
+                              onClick={() => openEdit(c)}
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </article>
+                      ))
+                    )}
                   </div>
                 </div>
-              </div>
+              </section>
             )
           })}
         </div>
