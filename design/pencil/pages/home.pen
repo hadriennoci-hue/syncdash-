@@ -627,13 +627,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "i3krA",
+              "type": "text",
+              "id": "tMVZp",
               "name": "whIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#0EA5E9"
+              "fill": "#0EA5E9",
+              "content": "🏭",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -678,13 +679,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "NGhNE",
+              "type": "text",
+              "id": "CUh3H",
               "name": "supIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#16A34A"
+              "fill": "#16A34A",
+              "content": "🚚",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -729,13 +731,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "m3Oz3",
+              "type": "text",
+              "id": "RwfHN",
               "name": "brainIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#2563EB"
+              "fill": "#2563EB",
+              "content": "⬡",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -762,8 +765,8 @@
         {
           "type": "frame",
           "id": "CBZI8",
-          "x": 473,
-          "y": 420,
+          "x": 480,
+          "y": 310,
           "name": "arr1",
           "width": 80,
           "height": 28,
@@ -830,13 +833,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "QrWjM",
+              "type": "text",
+              "id": "fUJ0T",
               "name": "scIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#EA580C"
+              "fill": "#EA580C",
+              "content": "🏪",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -1209,6 +1213,199 @@
               "fill": "#EC4899"
             }
           ]
+        },
+        {
+          "type": "frame",
+          "id": "5H34c",
+          "x": 268,
+          "y": 62,
+          "name": "nodeIreland",
+          "width": 200,
+          "height": 34,
+          "fill": "#FFFFFF",
+          "cornerRadius": 6,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#CBD5E1"
+          },
+          "padding": [
+            0,
+            10
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "uALMr",
+              "name": "irelandLabel",
+              "fill": "#374151",
+              "content": "Ireland",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "4QL6d",
+              "name": "irelandSub",
+              "fill": "#94A3B8",
+              "content": "read only",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "nyayD",
+          "x": 268,
+          "y": 100,
+          "name": "nodePoland",
+          "width": 200,
+          "height": 34,
+          "fill": "#FFFFFF",
+          "cornerRadius": 6,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#CBD5E1"
+          },
+          "padding": [
+            0,
+            10
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "D03cQ",
+              "name": "polandLabel",
+              "fill": "#374151",
+              "content": "Poland",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "1t0ES",
+              "name": "polandSub",
+              "fill": "#94A3B8",
+              "content": "read only",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "V68ts",
+          "x": 268,
+          "y": 138,
+          "name": "nodeAcer",
+          "width": 200,
+          "height": 34,
+          "fill": "#FFFFFF",
+          "cornerRadius": 6,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#4ADE80"
+          },
+          "padding": [
+            0,
+            10
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "a5RRp",
+              "name": "acerLabel",
+              "fill": "#374151",
+              "content": "ACER Store",
+              "fontFamily": "Space Grotesk",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "G0Zej",
+              "name": "acerSub",
+              "fill": "#059669",
+              "content": "writable",
+              "fontFamily": "Space Mono",
+              "fontSize": 10,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "cTWf2",
+          "x": 480,
+          "y": 282,
+          "name": "lastScanLabel",
+          "fill": "#94A3B8",
+          "content": "Last scan: 08 Mar",
+          "fontFamily": "Space Mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "oAPEZ",
+          "x": 758,
+          "y": 393,
+          "name": "lastPushLabel",
+          "fill": "#94A3B8",
+          "content": "Last push: 09 Mar",
+          "fontFamily": "Space Mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "rhFZI",
+          "x": 390,
+          "y": 536,
+          "name": "supArrow",
+          "width": 28,
+          "height": 28,
+          "fill": "#E2E8F0",
+          "cornerRadius": 14,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "pByFP",
+              "name": "supArrowTxt",
+              "fill": "#64748B",
+              "content": "↓",
+              "fontFamily": "Space Mono",
+              "fontSize": 14,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "DD2fB",
+          "x": 315,
+          "y": 520,
+          "name": "lastInvoiceLabel",
+          "fill": "#94A3B8",
+          "content": "Last invoice: INV-2025-042",
+          "fontFamily": "Space Mono",
+          "fontSize": 10,
+          "fontWeight": "normal"
         }
       ]
     }

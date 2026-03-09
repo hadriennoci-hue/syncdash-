@@ -624,13 +624,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "7YBM8",
+              "type": "text",
+              "id": "Sc1Wu",
               "name": "whIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#0EA5E9"
+              "fill": "#0EA5E9",
+              "content": "🏭",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -675,13 +676,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "yLnRI",
+              "type": "text",
+              "id": "TIqpt",
               "name": "supIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#16A34A"
+              "fill": "#16A34A",
+              "content": "🚚",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -726,13 +728,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "CRoIQ",
+              "type": "text",
+              "id": "6vvpV",
               "name": "brainIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#2563EB"
+              "fill": "#2563EB",
+              "content": "⬡",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
@@ -759,8 +762,8 @@
         {
           "type": "frame",
           "id": "SC3x1",
-          "x": 473,
-          "y": 420,
+          "x": 480,
+          "y": 313,
           "name": "arr1",
           "width": 80,
           "height": 28,
@@ -778,6 +781,13 @@
               "fontFamily": "Space Mono",
               "fontSize": 14,
               "fontWeight": "normal"
+            },
+            {
+              "type": "ellipse",
+              "id": "Bn0DR",
+              "fill": "#CCCCCC",
+              "width": 1,
+              "height": 1
             }
           ]
         },
@@ -827,13 +837,14 @@
           "alignItems": "center",
           "children": [
             {
-              "type": "icon_font",
-              "id": "PyP7a",
+              "type": "text",
+              "id": "NXApA",
               "name": "scIco",
-              "width": 36,
-              "height": 36,
-              "iconFontFamily": "Material Symbols Rounded",
-              "fill": "#EA580C"
+              "fill": "#EA580C",
+              "content": "🏪",
+              "fontFamily": "Inter",
+              "fontSize": 32,
+              "fontWeight": "normal"
             },
             {
               "type": "text",
