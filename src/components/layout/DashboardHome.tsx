@@ -358,7 +358,7 @@ export function DashboardHome() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="-ml-4 -mt-4 space-y-4 md:-ml-6 md:-mt-6">
       <section
         className="relative overflow-hidden rounded-2xl border border-[var(--panel-border)] p-4 md:p-6"
         style={
@@ -379,17 +379,6 @@ export function DashboardHome() {
           } as React.CSSProperties
         }
       >
-        <svg className="pointer-events-none absolute inset-0 hidden lg:block" viewBox="0 0 1200 640" aria-hidden>
-          <path d="M320 180C420 180 430 270 520 320" stroke="rgba(53,167,255,0.45)" strokeWidth="1.5" />
-          <path d="M320 320C440 320 440 320 520 320" stroke="rgba(53,167,255,0.32)" strokeWidth="1.5" />
-          <path d="M320 460C420 460 430 370 520 320" stroke="rgba(53,167,255,0.45)" strokeWidth="1.5" />
-          <path d="M680 320C760 320 770 190 900 170" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
-          <path d="M680 320C760 320 770 260 900 250" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
-          <path d="M680 320C760 320 770 330 900 330" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
-          <path d="M680 320C760 320 770 400 900 410" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
-          <path d="M680 320C760 320 770 470 900 490" stroke="rgba(53,167,255,0.35)" strokeWidth="1.5" />
-        </svg>
-
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Wizhard Network</p>
@@ -419,7 +408,7 @@ export function DashboardHome() {
             ))}
           </div>
 
-          <div className="flex flex-col justify-center">
+          <div className="flex flex-col justify-start lg:-mt-12">
             <div className="relative mx-auto w-full max-w-[360px] rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_0_46px_rgba(53,167,255,0.22)]">
               <div className="absolute left-1/2 top-3 h-[110px] w-[110px] -translate-x-1/2 rounded-full border border-[#335987] bg-[radial-gradient(circle_at_50%_45%,rgba(53,167,255,0.35),rgba(11,19,40,1)_75%)]" />
               <div className="pt-[130px] text-center">
