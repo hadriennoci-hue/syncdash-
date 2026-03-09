@@ -41,7 +41,7 @@ The Ireland warehouse and the TikTok Shop share the **same Shopify account** (`S
 - `SHOPIFY_TIKTOK_LOCATION_ID` and `SHOPIFY_TIKTOK_IRELAND_LOCATION_ID` currently point to the same location (the account has one location), but they are kept separate because that may change.
 
 ### Warehouse write guard — ENFORCE THIS
-- **ACER Store:** read + write allowed (`canModifyStock = 1`)
+- **ACER Store:** read only — do NOT write stock (`canModifyStock = 0`)
 - **Ireland:** read only — do NOT write stock (`canModifyStock = 0`)
 - **Poland:** read only — do NOT write stock (`canModifyStock = 0`)
 - Always check `warehouse.canModifyStock` before writing. Return 403 if false.

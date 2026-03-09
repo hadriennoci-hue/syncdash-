@@ -13,7 +13,7 @@ const SEED_SQL = `
 INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source_config, can_modify_stock, auto_sync, created_at) VALUES
   ('ireland',    'Entrepôt Irlande',  'Dublin, Ireland',   'shopify', '{"locationId": "SHOPIFY_TIKTOK_IRELAND_LOCATION_ID"}', 0, 1, datetime('now')),
   ('poland',     'Entrepôt Pologne',  'Warsaw, Poland',    'manual',  NULL,                                                    0, 0, datetime('now')),
-  ('acer_store', 'ACER Store',        'France',            'scraper', '{"url": "ACER_STORE_URL"}',                             1, 0, datetime('now'));
+  ('acer_store', 'ACER Store',        'France',            'scraper', '{"url": "ACER_STORE_URL"}',                             0, 0, datetime('now'));
 
 -- Warehouse channel rules
 INSERT OR IGNORE INTO warehouse_channel_rules (warehouse_id, platform, push_stock, push_status) VALUES

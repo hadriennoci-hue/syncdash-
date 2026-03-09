@@ -407,6 +407,10 @@ export async function overrideWarehouseStock(
   })
 
   if (!warehouse) throw new Error(`Warehouse not found: ${warehouseId}`)
+  const isStockWrite = override.quantity !== undefined || override.purchasePrice !== undefined
+  if (isStockWrite && !warehouse.canModifyStock) {
+    throw new Error(`Warehouse ${warehouseId} is read-only (canModifyStock = 0)`)
+  }
 
   const set: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (override.quantity !== undefined)        set.quantity = override.quantity
