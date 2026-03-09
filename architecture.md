@@ -4,7 +4,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    CLOUDFLARE PAGES (SyncDash)                   │
+│            CLOUDFLARE WORKERS (OpenNext deployment)              │
 │                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐  │
 │  │/products │ │/channels │ │/warehouse│ │ /orders  │ │/sync  │  │
@@ -65,7 +65,7 @@
 │   │   ├── (dashboard)/              # Cloudflare Access protected pages
 │   │   │   ├── page.tsx              # / — Dashboard (health, sync status, logs)
 │   │   │   ├── products/
-│   │   │   │   ├── page.tsx          # /products — product table + filters
+│   │   │   │   ├── page.tsx          # /products — currently redirects to /warehouses
 │   │   │   │   ├── new/page.tsx      # /products/new — create form
 │   │   │   │   └── [sku]/
 │   │   │   │       ├── page.tsx      # /products/[sku] — full detail, no scroll
@@ -87,12 +87,19 @@
 │   │   │   ├── mappings/page.tsx     # /mappings — Shopify ↔ WooCommerce mapping
 │   │   │   ├── validate/page.tsx     # /validate — WooCommerce readiness
 │   │   │   ├── sync/
-│   │   │   │   ├── page.tsx          # /sync — bulk push actions
+│   │   │   │   ├── page.tsx          # /sync — daily sync runs + manual trigger
 │   │   │   │   └── logs/page.tsx     # /sync/logs — full operation history
+│   │   │   ├── ads/
+│   │   │   │   ├── pipeline/page.tsx
+│   │   │   │   └── performance/page.tsx
+│   │   │   ├── social-media/
+│   │   │   │   ├── pipeline/page.tsx
+│   │   │   │   └── performance/page.tsx
 │   │   │   ├── tiktok/page.tsx       # /tiktok — TikTok selection (30-40 products)
 │   │   │   └── settings/
 │   │   │       ├── page.tsx          # /settings — API keys, config
-│   │   │       └── import/page.tsx   # /settings/import — import from platforms
+│   │   │       ├── import/page.tsx   # /settings/import — import from platforms
+│   │   │       └── routing/page.tsx  # /settings/routing — warehouse-channel rules
 │   │   │
 │   │   └── api/                      # REST API routes (Bearer token auth)
 │   │       ├── products/
@@ -110,7 +117,7 @@
 │   │       │   ├── route.ts
 │   │       │   └── [sku]/route.ts
 │   │       ├── channels/
-│   │       │   └── [id]/route.ts     # GET /api/channels/:id/products
+│   │       │   └── [id]/route.ts     # GET /api/channels/:id
 │   │       ├── warehouses/
 │   │       │   ├── route.ts          # GET /api/warehouses
 │   │       │   └── [id]/
@@ -127,7 +134,14 @@
 │   │       │   ├── logs/route.ts     # GET /api/sync/logs
 │   │       │   └── daily/route.ts    # POST /api/sync/daily (cron trigger)
 │   │       ├── health/route.ts       # GET /api/health (last check), POST (force check)
+│   │       ├── dashboard/summary/route.ts
+│   │       ├── cron/route.ts
 │   │       ├── mappings/route.ts
+│   │       ├── ads/
+│   │       ├── social/
+│   │       ├── marketing/consolidated/route.ts
+│   │       ├── google-ads/import/route.ts
+│   │       ├── sales/import/route.ts
 │   │       ├── validate/woocommerce-readiness/route.ts
 │   │       └── tiktok/selection/route.ts
 │   │
@@ -236,6 +250,9 @@ export function getConnector(platform: Platform): PlatformConnector {
     case 'woocommerce':        return new WooCommerceConnector(...)
     case 'shopify_komputerzz': return new ShopifyConnector(SHOPIFY_KOMPUTERZZ_SHOP, ...)
     case 'shopify_tiktok':     return new ShopifyConnector(SHOPIFY_TIKTOK_SHOP, ...)
+    case 'ebay_ie':            return new EbayConnector(...)
+    case 'xmr_bazaar':         throw new Error('browser channel; use local runner')
+    case 'libre_market':       throw new Error('browser channel; use local runner')
     case 'platform_4':         throw new Error('platform_4 connector not implemented')
     case 'platform_5':         throw new Error('platform_5 connector not implemented')
   }
@@ -257,6 +274,7 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
 
 ### Daily Automation Flow (Cloudflare Cron)
 ```
+0. Refresh OAuth tokens for channels that use stored tokens.
 1. For each warehouse with auto_sync = 1:
    a. Call getWarehouseConnector(id).getStock()
    b. Upsert into warehouse_stock
@@ -323,7 +341,8 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
 | Concern | Mitigation |
 |---------|------------|
 | Web UI access | Cloudflare Access (SSO) — no credentials in the app |
-| API access | Bearer token required on all /api/* routes |
+| API access | Bearer token on API routes, except internal `/api/cron` (Cloudflare scheduled call) |
+| Ads read access | Dedicated ads-read bearer accepted on `/api/marketing/consolidated` |
 | Secrets | All API keys in Cloudflare env vars (never in D1 or code) |
 | SQL injection | Drizzle ORM parameterized queries |
 | XSS | React auto-escaping |

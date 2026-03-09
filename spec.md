@@ -3,7 +3,7 @@
 ## Overview
 
 **Product Name:** SyncDash — Product Catalogue Sync Dashboard
-**One-liner:** Internal tool to manage and synchronize a product catalogue across 3 e-commerce platforms (WooCommerce, Shopify ×2), 3 warehouses (Ireland, Poland, ACER Store), and a supplier/order tracking system — accessible by a human operator and by an external AI agent (Claude) via REST API.
+**One-liner:** Internal tool to manage and synchronize a product catalogue across API and browser-driven sales channels, 3 warehouses (Ireland, Poland, ACER Store), and supplier/order tracking — accessible by a human operator and by an external AI agent (Claude) via REST API.
 
 **Problem Statement:** Managing 300+ products across multiple platforms, warehouses, and suppliers is error-prone and time-consuming. Descriptions diverge, images go missing, prices get out of sync, stock levels are unknown. SyncDash provides a single source of truth, deterministic push functions, daily automated stock sync, and a clean interface to keep everything aligned.
 
@@ -24,6 +24,8 @@
 - No custom auth in the application
 - Access controlled at the Cloudflare level (Google SSO or other identity provider)
 - Bearer token authentication on all `/api/*` routes (same token used by both the web UI and the AI agent)
+- Internal exception: `GET /api/cron` is called by Cloudflare Cron and is not bearer-protected in-route
+- Ads-read exception: `GET /api/marketing/consolidated` uses `ADS_AGENT_BEARER_TOKEN` (with admin fallback)
 
 ---
 
@@ -52,7 +54,10 @@ The import function remains available for re-import / reconciliation, but is no 
 |----|-------------|----------|-----|
 | `woocommerce` | COINCART.STORE | WooCommerce REST API | coincart.store |
 | `shopify_komputerzz` | KOMPUTERZZ.COM | Shopify GraphQL API | komputerzz.com |
-| `shopify_tiktok` | TECHSTORE TikTok Shop | Shopify GraphQL API + TikTok Shop API | (TikTok account) |
+| `shopify_tiktok` | TECHSTORE TikTok Shop | Shopify GraphQL API | (TikTok-linked Shopify account) |
+| `ebay_ie` | eBay.ie | eBay API | ebay.ie |
+| `xmr_bazaar` | XMR Bazaar | Browser-automated local runner | xmrbazaar.com |
+| `libre_market` | Libre Market | Browser-automated local runner | libre.market |
 | `platform_4` | (future) | TBD | TBD |
 | `platform_5` | (future) | TBD | TBD |
 
@@ -184,11 +189,12 @@ Per supplier:
 ### 7. Daily Automation
 
 Runs once per day automatically:
-1. **Sync warehouses:** Read Ireland stock (Shopify), scrape ACER Store, Poland (when API available)
-2. **Confirm on home page:** Show last sync timestamp per warehouse (success/failure)
-3. **Push to channels:** Update stock levels + product status on configured channels (not TikTok — auto-updated by warehouse). Channel push rules are configurable.
-4. **Reconcile orders:** Compare stock delta vs open purchase orders → auto-update order received/partially-received status
-5. **Manual overrides:** Force-sync button per warehouse in the UI
+1. **Refresh tokens:** OAuth channel tokens refreshed on schedule
+2. **Sync warehouses:** Read Ireland stock (Shopify), scrape ACER Store, Poland (when API available)
+3. **Confirm on home page:** Show last sync timestamp per warehouse (success/failure)
+4. **Push to channels:** Update stock levels + product status on configured channels
+5. **Reconcile orders:** Compare stock delta vs open purchase orders and update arrival statuses
+6. **Manual overrides:** Force-sync button per warehouse in the UI
 
 ### 8. Daily API Health Check
 
@@ -209,48 +215,56 @@ All functions exposed as authenticated REST endpoints. Callable by:
 
 ## UI Design Principles
 
+
 - **Minimalist but information-dense:** Show maximum relevant data with minimum visual noise
 - **Clickable cross-references everywhere:**
-  - SKUs → `/products/[sku]`
-  - Sales channels → `/channels/[id]`
-  - Warehouses → `/warehouses/[id]`
-  - Suppliers → `/suppliers/[id]`
-  - Order numbers → `/orders/[id]`
-- **Desktop-first:** Not mobile-optimized (internal tool)
-- **No scrolling on product detail:** All info visible on one screen
+  - SKUs -> `/products/[sku]`
+  - Sales channels -> `/channels/[id]`
+  - Warehouses -> `/warehouses/[id]`
+  - Suppliers -> `/suppliers/[id]`
+  - Order numbers -> `/orders/[id]`
+- **Desktop-first:** Internal tool with dense data layouts
+- **Responsive fallback exists:** key pages still support stacked/scroll mobile layouts
+- **No scrolling on product detail:** still the target behavior
 
 ---
 
 ## Page Map
 
-```
-/                           → Dashboard (stats, API health, daily sync status, recent logs)
-/products                   → Product table (filters + search)
-/products/new               → Create product
-/products/[sku]             → Product detail (all info, no scroll)
-/products/[sku]/edit        → Edit product
+```text
+/                           -> Dashboard (stats, API health, daily sync status, recent logs)
+/products                   -> currently redirects to /warehouses (implementation divergence)
+/products/new               -> Create product
+/products/[sku]             -> Product detail
+/products/[sku]/edit        -> Edit product
 
-/channels                   → Sales channels list
-/channels/[id]              → Channel product list (in stock / disabled / out of stock)
+/channels                   -> Sales channels list
+/channels/[id]              -> Channel detail/list
 
-/warehouses                 → Warehouses list
-/warehouses/[id]            → Warehouse detail (stock, orders, force sync)
+/warehouses                 -> Warehouses list
+/warehouses/[id]            -> Warehouse detail (stock, orders, force sync)
 
-/orders                     → Purchase orders list
-/orders/[id]                → Order detail
-/orders/new                 → Create order
+/orders                     -> Purchase orders list
+/orders/[id]                -> Order detail
+/orders/new                 -> Create order
 
-/suppliers                  → Suppliers list
-/suppliers/[id]             → Supplier detail
+/suppliers                  -> Suppliers list
+/suppliers/[id]             -> Supplier detail
 
-/analyze                    → Inconsistency report (cross-platform diffs)
-/mappings                   → Shopify collection ↔ WooCommerce category mapping
-/validate                   → WooCommerce readiness check
-/sync                       → Bulk push actions
-/sync/logs                  → Full sync/operation log
-/tiktok                     → TikTok selection management (30-40 products)
-/settings                   → API keys, env config
-/settings/import            → Import from platforms
+/ads/pipeline               -> Ads campaign pipeline
+/ads/performance            -> Ads performance
+/social-media/pipeline      -> Social media pipeline
+/social-media/performance   -> Social media performance
+
+/analyze                    -> Inconsistency report
+/mappings                   -> Shopify collection <-> WooCommerce category mapping
+/validate                   -> WooCommerce readiness check
+/sync                       -> Daily sync view and manual trigger
+/sync/logs                  -> Full sync/operation log
+/tiktok                     -> TikTok selection management
+/settings                   -> API keys and env config
+/settings/import            -> Import from platforms
+/settings/routing           -> Warehouse-channel routing rules
 ```
 
 ---

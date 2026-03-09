@@ -4,7 +4,7 @@
 
 ## API Overview
 
-- **Base URL:** `https://syncdash.pages.dev/api`
+- **Base URL (production):** `https://wizhard.store/api`
 - **Format:** JSON
 - **Authentication:** `Authorization: Bearer <AGENT_BEARER_TOKEN>`
 - **Versioning:** None (internal tool)
@@ -18,6 +18,10 @@ Authorization: Bearer <token>
 Token defined in `AGENT_BEARER_TOKEN` environment variable.
 The web UI, the AI agent (Claude), and any external application use the same token.
 Web UI access is additionally gated by Cloudflare Access (SSO).
+
+Exceptions and variants:
+- `GET /api/cron` is an internal scheduled endpoint (Cloudflare-triggered, no bearer check in route handler).
+- Ads reporting endpoint `GET /api/marketing/consolidated` uses ads-read bearer verification (`ADS_AGENT_BEARER_TOKEN`, with admin fallback).
 
 ---
 
@@ -67,12 +71,10 @@ List all products with sync status per platform and stock per warehouse.
 - `page` (default: 1), `perPage` (default: 50, max: 200)
 - `status` — `active` | `archived`
 - `search` — search by SKU or title
-- `platform` — filter by presence on a platform
-- `inconsistent` — `true` to show only products with cross-platform differences
-- `collection` — filter by Shopify collection ID
-- `category` — filter by WooCommerce category ID
-- `warehouse` — filter by warehouse ID (products with qty > 0 in that warehouse)
-- `onPromo` — `true` to show only products with a compare_at price set on at least one channel
+- `pendingReview` — `1` to show products flagged for manual review
+- `missingFields` — `1` to show products missing required enrichment
+- `hasStock` — `1` to show products with stock > 0 in `ireland` or `acer_store`
+- `pushedPlatform` — one of `libre_market` | `xmr_bazaar` | `ebay_ie`
 
 **Response (200):**
 ```json
@@ -683,8 +685,38 @@ Force a new health check immediately.
 ## TikTok Selection Endpoints
 
 ### GET /api/tiktok/selection
-### POST /api/tiktok/selection/:sku — Add to TikTok selection
+### POST /api/tiktok/selection — Add to TikTok selection (body includes `sku`)
 ### DELETE /api/tiktok/selection/:sku — Remove from TikTok selection
+
+---
+
+## Additional Live Endpoints
+
+### Dashboard
+- `GET /api/dashboard/summary`
+
+### Warehouse operations
+- `GET /api/warehouses/sync-all/stream` (SSE progress stream)
+- `GET/PUT /api/warehouses/rules`
+
+### Sync orchestration
+- `POST /api/sync/channel-availability`
+
+### Ads
+- `GET/POST /api/ads/campaigns`
+- `PATCH /api/ads/campaigns/:id`
+- `PATCH /api/ads/campaigns/:id/status`
+- `GET /api/ads/analytics/curated`
+
+### Social media
+- `GET/POST /api/social/posts`
+- `PATCH /api/social/posts/:id`
+- `GET /api/social/analytics/curated`
+
+### Marketing attribution
+- `POST /api/google-ads/import`
+- `POST /api/sales/import`
+- `GET /api/marketing/consolidated`
 
 ---
 
@@ -695,6 +727,9 @@ type Platform =
   | 'woocommerce'
   | 'shopify_komputerzz'
   | 'shopify_tiktok'
+  | 'ebay_ie'
+  | 'xmr_bazaar'
+  | 'libre_market'
   | 'platform_4'
   | 'platform_5'
 

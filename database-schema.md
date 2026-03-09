@@ -2,6 +2,29 @@
 
 > Cloudflare D1 (SQLite) — managed via Drizzle ORM
 
+## Current Implementation Deltas
+
+This document describes the core commerce schema, but the live codebase includes additional columns/tables beyond this baseline.
+
+Notable product/stock deltas in implementation:
+- `products.tags` (JSON string of tags)
+- `products.pending_review`
+- per-channel push flags in `products` (`pushed_woocommerce`, `pushed_shopify_komputerzz`, `pushed_shopify_tiktok`, `pushed_ebay_ie`, `pushed_xmr_bazaar`, `pushed_libre_market`)
+- `product_prices.updated_at`
+- `platform_mappings.updated_at`
+- `warehouse_stock.import_price`, `warehouse_stock.import_promo_price`, `warehouse_stock.source_url`, `warehouse_stock.source_name`
+
+Additional implemented domains/tables:
+- `sales_channels`
+- `platform_tokens`
+- `runner_signals`
+- sales ingestion + normalized sales tables
+- google ads attribution/import tables
+- social media planning/metrics tables
+- ads planning/metrics tables
+
+Reference of truth for live schema: `src/lib/db/schema.ts`.
+
 ## Entity Relationship Diagram
 
 ```
@@ -614,6 +637,8 @@ export const tiktokSelection = sqliteTable('tiktok_selection', {
   addedAt:   text('added_at').default(sql`CURRENT_TIMESTAMP`),
 })
 ```
+
+Note: the snippet above is intentionally shortened to the core model; see `src/lib/db/schema.ts` for the complete live schema.
 
 ---
 
