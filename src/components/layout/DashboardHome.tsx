@@ -40,29 +40,27 @@ interface DashboardSummary {
 interface ChannelConfig {
   id: string
   label: string
-  sub: string
-  subColor?: string
   href: string
 }
 
 const CHANNELS: ChannelConfig[] = [
-  { id: 'woocommerce', label: 'WooCommerce', sub: 'coincart.store', href: '/channels/woocommerce' },
-  { id: 'shopify_komputerzz', label: 'Shopify Komputerzz', sub: 'komputerzz.com', href: '/channels/shopify_komputerzz' },
-  { id: 'shopify_tiktok', label: 'TikTok Tech Store', sub: 'shopify_tiktok', href: '/channels/shopify_tiktok' },
-  { id: 'ebay_ie', label: 'eBay Ireland', sub: 'ebay.ie', href: '/channels/ebay_ie' },
-  { id: 'amazon', label: 'Amazon', sub: 'amazon.ie', href: '/channels/amazon' },
-  { id: 'libre_market', label: 'Libre Market', sub: 'browser runner', subColor: '#FFD84D', href: '/channels/libre_market' },
-  { id: 'xmr_bazaar', label: 'XMR Bazaar', sub: 'browser runner', subColor: '#FFD84D', href: '/channels/xmr_bazaar' },
+  { id: 'woocommerce', label: 'COINCART', href: '/channels/woocommerce' },
+  { id: 'shopify_komputerzz', label: 'KOMPUTERZZ', href: '/channels/shopify_komputerzz' },
+  { id: 'shopify_tiktok', label: 'TIKTOK TECH STORE', href: '/channels/shopify_tiktok' },
+  { id: 'ebay_ie', label: 'EBAY', href: '/channels/ebay_ie' },
+  { id: 'amazon', label: 'AMAZON', href: '/channels/amazon' },
+  { id: 'libre_market', label: 'LIBRE MARKET', href: '/channels/libre_market' },
+  { id: 'xmr_bazaar', label: 'XMR BAZAAR', href: '/channels/xmr_bazaar' },
 ]
 
 const CHANNEL_PLACEHOLDER_EUR: Record<string, number> = {
-  woocommerce: 456,
-  shopify_komputerzz: 387,
-  shopify_tiktok: 218,
-  ebay_ie: 296,
-  amazon: 743,
-  libre_market: 322,
-  xmr_bazaar: 234,
+  woocommerce: 338,
+  shopify_komputerzz: 912,
+  shopify_tiktok: 745,
+  ebay_ie: 402,
+  amazon: 667,
+  libre_market: 289,
+  xmr_bazaar: 554,
 }
 
 const WAREHOUSE_ORDER = [
@@ -72,9 +70,9 @@ const WAREHOUSE_ORDER = [
 ] as const
 
 const WAREHOUSE_INCOMING: Record<string, number> = {
-  ireland: 12,
-  poland: 25,
-  acer_store: 0,
+  ireland: 18,
+  poland: 12,
+  acer_store: 15,
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -85,7 +83,12 @@ function fmtDate(iso?: string | null): string {
   if (!iso) return '-'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: '2-digit' })
+  return d.toLocaleDateString([], { year: 'numeric', month: 'long', day: '2-digit' })
+}
+
+function fmtMoney(cents: number | null | undefined): string {
+  if (cents == null) return '-'
+  return `EUR ${Math.round(cents / 100)}`
 }
 
 function getWarehouseProgress(refsInStock: number, maxRefsInStock: number, warehouseId: string) {
@@ -100,14 +103,10 @@ function getWarehouseProgress(refsInStock: number, maxRefsInStock: number, wareh
 
 function ActionButton({
   label,
-  borderColor,
-  textColor,
   onClick,
   disabled,
 }: {
   label: string
-  borderColor: string
-  textColor: string
   onClick: () => void
   disabled?: boolean
 }) {
@@ -115,119 +114,107 @@ function ActionButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="h-[46px] w-full rounded-[10px] border bg-[#0D1830] text-[13px] font-semibold transition duration-200 hover:-translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50"
-      style={{ borderColor, color: textColor }}
+      className="inline-flex items-center justify-center rounded-md border border-[#2F5A85] bg-[#11203A] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)] transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.28)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
     >
       {label}
     </button>
   )
 }
 
-function MetaLine({ label, iso }: { label: string; iso: string | null }) {
+function DataStamp({ label, iso }: { label: string; iso: string | null }) {
   return (
-    <p className="font-mono text-[10px] text-[var(--text-muted)]">
-      {label} · {iso ? <time dateTime={iso}>{fmtDate(iso)}</time> : '-'}
+    <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--text-muted)]">
+      {label}:{' '}
+      {iso ? (
+        <time dateTime={iso} className="font-mono text-[var(--text-primary)]">
+          {fmtDate(iso)}
+        </time>
+      ) : (
+        <span className="font-mono text-[var(--text-primary)]">-</span>
+      )}
     </p>
   )
 }
 
 function WarehouseCard({
   name,
-  subtitle,
-  subtitleColor,
   refsInStock,
   occupied,
   incoming,
-  borderColor,
   href,
 }: {
   name: string
-  subtitle: string
-  subtitleColor?: string
   refsInStock: number | null
   occupied: number
   incoming: number
-  borderColor?: string
   href: string
 }) {
   return (
     <Link
       href={href}
-      className="group flex h-[172px] flex-col rounded-[10px] border bg-[var(--panel)] px-[18px] py-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
-      style={{ borderColor: borderColor ?? 'var(--panel-border)' }}
+      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)] focus-visible:ring-offset-0"
     >
-      <p className="text-[14px] font-semibold text-[var(--text-primary)]">{name}</p>
-      <p className="mt-1 text-[11px]" style={{ color: subtitleColor ?? 'var(--text-muted)' }}>
-        {subtitle}
+      <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        {refsInStock != null ? `${refsInStock} SKUs in stock` : 'Stock unavailable'}
       </p>
-      <div className="h-3" />
-      <p className="font-mono text-[10px] text-[var(--text-muted)]">{refsInStock != null ? `${refsInStock} SKUs` : '- SKUs'}</p>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-[4px] bg-[var(--panel-border)]">
+      <div className="mt-3 h-3 w-full overflow-hidden rounded-full border border-[#283550] bg-[#111B33]">
         <div className="h-full bg-[var(--black-fill)]" style={{ width: `${occupied}%` }} />
-        <div className="relative -mt-2 h-2 bg-[var(--incoming-gray)]" style={{ width: `${incoming}%`, left: `${occupied}%` }} />
+        <div
+          className="relative -mt-3 h-3 bg-[var(--incoming-gray)] opacity-90"
+          style={{ width: `${incoming}%`, left: `${occupied}%` }}
+        />
       </div>
-      <p className="mt-2 font-mono text-[10px] text-[var(--text-muted)]">occupied {occupied}% · incoming {incoming}%</p>
+      <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
+        occupied {occupied}% - incoming {incoming}%
+      </p>
     </Link>
   )
 }
 
 function ChannelCard({
   name,
-  sub,
-  subColor,
   href,
   revenueEur,
-  borderColor,
   campaignChip,
 }: {
   name: string
-  sub: string
-  subColor?: string
   href: string
   revenueEur: number
-  borderColor?: string
-  campaignChip?: { label: 'G' | 'T'; tone: 'blue' | 'yellow' }
+  campaignChip?: { label: string; color: 'yellow' | 'green' }
 }) {
   const chipClass =
-    campaignChip?.tone === 'yellow'
-      ? 'border-[var(--glow-yellow)] bg-[#3A2A00] text-[var(--glow-yellow)] shadow-[0_0_22px_rgba(255,216,77,0.45)]'
-      : 'border-[var(--glow-blue)] bg-[#1E3A5F] text-[var(--glow-blue)] shadow-[0_0_22px_rgba(53,167,255,0.45)]'
+    campaignChip?.color === 'yellow'
+      ? 'border-[var(--glow-yellow)] bg-[rgba(255,216,77,0.14)] text-[var(--glow-yellow)] shadow-[0_0_22px_rgba(255,216,77,0.45)]'
+      : 'border-[var(--glow-green)] bg-[rgba(53,242,161,0.14)] text-[var(--glow-green)] shadow-[0_0_22px_rgba(53,242,161,0.45)]'
 
   return (
     <Link
       href={href}
-      className="group flex h-[100px] items-center justify-between rounded-[8px] border bg-[var(--panel)] px-5 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
-      style={{ borderColor: borderColor ?? 'var(--panel-border)' }}
+      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
     >
-      <div className="flex flex-col gap-1">
-        <p className="text-[13px] font-semibold text-[var(--text-primary)]">{name}</p>
-        <p className="text-[11px]" style={{ color: subColor ?? 'var(--text-muted)' }}>
-          {sub}
-        </p>
-      </div>
-      <div className="flex flex-col items-end gap-[6px]">
-        <p className="font-mono text-[20px] font-bold text-[var(--glow-green)]">€{revenueEur}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
         {campaignChip ? (
           <span
             aria-label={`${name} ad campaign`}
-            className={`campaign-chip inline-flex h-5 min-w-[48px] items-center justify-center gap-1 rounded-[10px] border px-[7px] text-[8px] font-semibold ${chipClass} ${
+            className={`campaign-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-xs font-bold tracking-[0.14em] ${chipClass} ${
               campaignChip.label === 'G' ? 'campaign-chip-fast' : 'campaign-chip-fast-alt'
             }`}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            <span>{campaignChip.label} ADS</span>
+            {campaignChip.label}
           </span>
-        ) : (
-          <span className="h-5" />
-        )}
+        ) : null}
       </div>
+      <p className="mt-2 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">24H Revenue</p>
+      <p className="font-mono text-lg font-bold text-[var(--text-primary)]">EUR {revenueEur}</p>
     </Link>
   )
 }
 
 export function DashboardHome() {
   const qc = useQueryClient()
-  const { data: summaryRes, isError } = useQuery({
+  const { data: summaryRes, isLoading, isError } = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: () => apiFetch<{ data: DashboardSummary }>('/api/dashboard/summary'),
   })
@@ -331,7 +318,9 @@ export function DashboardHome() {
     }
   }
 
-  const warehouseMaxStock = useMemo(() => Math.max(...warehouses.map((w) => w.refsInStock), 0), [warehouses])
+  const warehouseMaxStock = useMemo(() => {
+    return Math.max(...warehouses.map((w) => w.refsInStock), 0)
+  }, [warehouses])
 
   const channelMap = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels])
 
@@ -352,7 +341,8 @@ export function DashboardHome() {
   const orderedChannels = useMemo(() => {
     return CHANNELS.map((channel) => {
       const found = channelMap.get(channel.id)
-      const revenueEur = found?.sales24hCents != null ? Math.round(found.sales24hCents / 100) : CHANNEL_PLACEHOLDER_EUR[channel.id]
+      const revenueEur =
+        found?.sales24hCents != null ? Math.round(found.sales24hCents / 100) : CHANNEL_PLACEHOLDER_EUR[channel.id]
       return {
         ...channel,
         revenueEur: clamp(revenueEur, 200, 999),
@@ -361,6 +351,11 @@ export function DashboardHome() {
       }
     })
   }, [channelMap])
+
+  const sales24h = useMemo(
+    () => channels.reduce((sum, c) => sum + (c.sales24hCents ?? 0), 0),
+    [channels]
+  )
 
   return (
     <div className="-ml-4 -mt-4 space-y-4 md:-ml-6 md:-mt-6">
@@ -384,102 +379,126 @@ export function DashboardHome() {
           } as React.CSSProperties
         }
       >
-        <div className="grid gap-4 lg:grid-cols-[274px_minmax(360px,426px)_440px] lg:items-start lg:justify-between">
-          <div className="space-y-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">WAREHOUSES</p>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">Wizhard Network</p>
+            <p className="font-heading text-2xl font-semibold text-[var(--text-primary)]">WIZHARD</p>
+          </div>
+          <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Sales 24H</p>
+            <p className="font-mono text-sm font-bold text-[var(--text-primary)]">{fmtMoney(sales24h)}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr_1fr]">
+          <div className="space-y-3">
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Warehouses</p>
+              <DataStamp label="Last scan" iso={lastStockScan} />
+            </div>
             {orderedWarehouses.map((warehouse) => (
               <WarehouseCard
                 key={warehouse.id}
                 name={warehouse.label}
-                subtitle={warehouse.id === 'acer_store' ? 'Scraper · writable' : 'Auto-synced · read only'}
-                subtitleColor={warehouse.id === 'acer_store' ? 'var(--glow-green)' : undefined}
                 refsInStock={warehouse.refsInStock}
                 occupied={warehouse.occupied}
                 incoming={warehouse.incoming}
-                borderColor={warehouse.id === 'acer_store' ? 'var(--glow-green)' : undefined}
                 href={warehouse.href}
               />
             ))}
           </div>
 
-          <div className="flex flex-col justify-start lg:-mt-10">
-            <div className="relative mx-auto h-[420px] w-full max-w-[426px] rounded-[20px] border border-[var(--glow-blue)] bg-[var(--panel)] p-7 shadow-[0_0_46px_rgba(53,167,255,0.22)]">
-              <div className="absolute left-0 top-0 h-[3px] w-full bg-[var(--glow-blue)]" />
-              <div className="mx-auto mt-2 flex h-[200px] w-[200px] flex-col items-center justify-center rounded-full bg-[#0D1830] text-center">
-                <p className="text-[32px] text-[var(--glow-blue)]">?</p>
-                <p className="font-heading text-[30px] font-bold text-[var(--text-primary)]">WIZHARD</p>
-                <p className="text-[9px] font-semibold tracking-[0.12em] text-[var(--text-muted)]">MASTER CATALOGUE</p>
+          <div className="flex flex-col justify-start lg:-mt-12">
+            <div className="relative mx-auto w-full max-w-[360px] rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_0_46px_rgba(53,167,255,0.22)]">
+              <div className="absolute left-1/2 top-3 h-[110px] w-[110px] -translate-x-1/2 rounded-full border border-[#335987] bg-[radial-gradient(circle_at_50%_45%,rgba(53,167,255,0.35),rgba(11,19,40,1)_75%)]" />
+              <div className="pt-[130px] text-center">
+                <p className="font-heading text-xl font-semibold tracking-[0.03em] text-[var(--text-primary)]">WIZHARD</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                  {summary?.wizhard.productsToFill ?? '-'} products to fill - {summary?.readyToPush.count ?? '-'} to push
+                </p>
               </div>
-
-              <div className="mt-3 border-t border-[var(--panel-border)] pt-5">
-                <div className="space-y-3">
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
                   <ActionButton
                     label={scanning ? 'Scanning Warehouses' : 'Scan Warehouses'}
-                    borderColor='var(--glow-blue)'
-                    textColor='var(--glow-blue)'
                     onClick={handleScanStocks}
                     disabled={scanning}
                   />
+                  <DataStamp label="Last scan" iso={lastStockScan} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
                   <ActionButton
                     label={pushing ? 'Pushing To Channels' : 'Push To Channels'}
-                    borderColor='var(--glow-green)'
-                    textColor='var(--glow-green)'
                     onClick={handleUpdateChannels}
                     disabled={pushing}
                   />
+                  <DataStamp label="Last push" iso={lastChannelPush} />
                 </div>
-              </div>
-
-              <div className="mt-5 border-t border-[var(--panel-border)] pt-4">
-                <MetaLine label='Last scan' iso={lastStockScan} />
-                <MetaLine label='Last push' iso={lastChannelPush} />
               </div>
             </div>
           </div>
 
           <div className="space-y-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">SALE CHANNELS</p>
+            <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Sale Channels</p>
+              <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">7 channels active</p>
+            </div>
             {orderedChannels.map((channel) => (
               <ChannelCard
                 key={channel.id}
                 name={channel.label}
-                sub={channel.sub}
-                subColor={channel.subColor}
                 href={channel.href}
                 revenueEur={channel.revenueEur}
-                borderColor={
-                  channel.id === 'shopify_komputerzz'
-                    ? 'var(--glow-blue)'
-                    : channel.id === 'shopify_tiktok'
-                      ? 'var(--glow-yellow)'
-                      : undefined
-                }
                 campaignChip={
                   channel.hasCampaignG
-                    ? { label: 'G', tone: 'blue' }
+                    ? { label: 'G', color: 'yellow' }
                     : channel.hasCampaignT
-                      ? { label: 'T', tone: 'yellow' }
+                      ? { label: 'T', color: 'green' }
                       : undefined
                 }
               />
             ))}
           </div>
         </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <Link
+            href="/suppliers"
+            className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3 transition duration-200 hover:shadow-[0_0_20px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Suppliers</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">ACER</p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Last invoice:{' '}
+              {summary?.suppliers.lastInvoiceDate ? (
+                <time dateTime={summary.suppliers.lastInvoiceDate}>{fmtDate(summary.suppliers.lastInvoiceDate)}</time>
+              ) : (
+                '-'
+              )}
+            </p>
+          </Link>
+          <div className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">System Status</p>
+            <p className="mt-1 text-sm text-[var(--text-primary)]">
+              {isLoading ? 'Loading summary...' : isError ? 'Summary unavailable' : 'Operational'}
+            </p>
+            {scanProgressText ? <p className="text-[11px] text-[var(--text-muted)]">{scanProgressText}</p> : null}
+          </div>
+        </div>
       </section>
 
-      {(scanError || pushError || isError || scanProgressText) ? (
-        <div className="px-1 text-xs text-[var(--text-muted)]">
-          {scanProgressText ? <p>{scanProgressText}</p> : null}
-          {scanError ? <p className="text-[#FF9AAD]">Scan error: {scanError}</p> : null}
-          {pushError ? <p className="text-[#FF9AAD]">Push error: {pushError}</p> : null}
-          {isError ? <p className="text-[#FF9AAD]">Summary unavailable. Check API/database.</p> : null}
+      {scanError || pushError || isError ? (
+        <div className="rounded-xl border border-[var(--danger)]/50 bg-[rgba(255,92,122,0.08)] p-3 text-xs text-[var(--text-primary)]">
+          {scanError ? <p>Scan error: {scanError}</p> : null}
+          {pushError ? <p>Push error: {pushError}</p> : null}
+          {isError ? <p>Summary unavailable. Check API/database.</p> : null}
         </div>
       ) : null}
 
       {scanResult?.length ? (
-        <div className="space-y-1 px-1 text-xs text-[var(--text-muted)]">
+        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
           {scanResult.map((result) => (
-            <p key={result.warehouseId} className={result.errors.length > 0 ? 'text-[#FF9AAD]' : 'text-emerald-400'}>
+            <p key={result.warehouseId} className={result.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
               {result.warehouseId}: {result.errors[0] ?? `${result.productsUpdated} refs updated`}
             </p>
           ))}
@@ -487,10 +506,12 @@ export function DashboardHome() {
       ) : null}
 
       {pushResult?.length ? (
-        <div className="space-y-1 px-1 text-xs text-[var(--text-muted)]">
+        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
           {pushResult.map((result) => (
             <p key={result.platform}>
-              {result.platform}: {result.errors[0] ?? `${result.statusUpdated} updated | ${result.newProductsCreated} new | ${result.zeroedOutOfStock} zeroed`}
+              {result.platform}:{' '}
+              {result.errors[0] ??
+                `${result.statusUpdated} updated | ${result.newProductsCreated} new | ${result.zeroedOutOfStock} zeroed`}
             </p>
           ))}
         </div>
