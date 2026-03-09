@@ -3,9 +3,11 @@ import { db } from '@/lib/db/client'
 import {
   adsAccounts,
   adsCampaignDailyMetrics,
+  adsCreativeDailyMetrics,
   adsCampaignKpiDaily,
   adsCampaigns,
   adsProviders,
+  adsSegmentDailyMetrics,
   salesOrderItems,
   salesOrders,
   shopifySkuDailyMetrics,
@@ -348,6 +350,109 @@ export async function getCuratedAdsAnalytics(filters: CuratedFilters) {
   const cpcCents = s.clicks > 0 ? Math.round(s.spendCents / s.clicks) : null
   const cpaCents = s.providerConversions > 0 ? Math.round(s.spendCents / s.providerConversions) : null
 
+  const creativeRows = await db.select({
+    creativeKey: adsCreativeDailyMetrics.creativeKey,
+    creativeName: adsCreativeDailyMetrics.creativeName,
+    creativePreviewUrl: adsCreativeDailyMetrics.creativePreviewUrl,
+    spendCents: sql<number>`coalesce(sum(${adsCreativeDailyMetrics.spendCents}),0)`,
+    impressions: sql<number>`coalesce(sum(${adsCreativeDailyMetrics.impressions}),0)`,
+    clicks: sql<number>`coalesce(sum(${adsCreativeDailyMetrics.clicks}),0)`,
+    conversions: sql<number>`coalesce(sum(${adsCreativeDailyMetrics.conversions}),0)`,
+    conversionValueCents: sql<number>`coalesce(sum(${adsCreativeDailyMetrics.conversionValueCents}),0)`,
+  })
+    .from(adsCreativeDailyMetrics)
+    .where(and(
+      gte(adsCreativeDailyMetrics.metricDate, filters.from),
+      lte(adsCreativeDailyMetrics.metricDate, filters.to),
+      filters.providerId ? eq(adsCreativeDailyMetrics.providerId, filters.providerId) : undefined,
+      filters.campaignPk ? eq(adsCreativeDailyMetrics.campaignPk, filters.campaignPk) : undefined,
+    ))
+    .groupBy(
+      adsCreativeDailyMetrics.creativeKey,
+      adsCreativeDailyMetrics.creativeName,
+      adsCreativeDailyMetrics.creativePreviewUrl,
+    )
+
+  const creativeRanked = creativeRows.map((row) => {
+    const ctrValue = row.impressions > 0 ? row.clicks / row.impressions : null
+    const cpcValue = row.clicks > 0 ? Math.round(row.spendCents / row.clicks) : null
+    const cvrValue = row.clicks > 0 ? row.conversions / row.clicks : null
+    const cpaValue = row.conversions > 0 ? Math.round(row.spendCents / row.conversions) : null
+    const roasValue = row.spendCents > 0 ? row.conversionValueCents / row.spendCents : null
+    const qualityScore = (
+      (roasValue ?? 0) * 10
+      + (ctrValue ?? 0) * 100
+      + (cvrValue ?? 0) * 100
+      - ((cpaValue ?? 0) / 10000)
+    )
+    return {
+      ...row,
+      ctr: ctrValue,
+      cpcCents: cpcValue,
+      cvr: cvrValue,
+      cpaCents: cpaValue,
+      roas: roasValue,
+      qualityScore,
+    }
+  })
+
+  const topWinningCreatives = [...creativeRanked]
+    .sort((a, b) => b.qualityScore - a.qualityScore)
+    .slice(0, 3)
+    .map(({ qualityScore: _qualityScore, ...row }) => row)
+  const topLosingCreatives = [...creativeRanked]
+    .sort((a, b) => a.qualityScore - b.qualityScore)
+    .slice(0, 3)
+    .map(({ qualityScore: _qualityScore, ...row }) => row)
+
+  const segmentRows = await db.select({
+    segmentType: adsSegmentDailyMetrics.segmentType,
+    segmentValue: adsSegmentDailyMetrics.segmentValue,
+    spendCents: sql<number>`coalesce(sum(${adsSegmentDailyMetrics.spendCents}),0)`,
+    impressions: sql<number>`coalesce(sum(${adsSegmentDailyMetrics.impressions}),0)`,
+    clicks: sql<number>`coalesce(sum(${adsSegmentDailyMetrics.clicks}),0)`,
+    conversions: sql<number>`coalesce(sum(${adsSegmentDailyMetrics.conversions}),0)`,
+    conversionValueCents: sql<number>`coalesce(sum(${adsSegmentDailyMetrics.conversionValueCents}),0)`,
+  })
+    .from(adsSegmentDailyMetrics)
+    .where(and(
+      gte(adsSegmentDailyMetrics.metricDate, filters.from),
+      lte(adsSegmentDailyMetrics.metricDate, filters.to),
+      filters.providerId ? eq(adsSegmentDailyMetrics.providerId, filters.providerId) : undefined,
+      filters.campaignPk ? eq(adsSegmentDailyMetrics.campaignPk, filters.campaignPk) : undefined,
+    ))
+    .groupBy(
+      adsSegmentDailyMetrics.segmentType,
+      adsSegmentDailyMetrics.segmentValue,
+    )
+
+  const segmentBreakdown = segmentRows.map((row) => {
+    const ctrValue = row.impressions > 0 ? row.clicks / row.impressions : null
+    const cpcValue = row.clicks > 0 ? Math.round(row.spendCents / row.clicks) : null
+    const cvrValue = row.clicks > 0 ? row.conversions / row.clicks : null
+    const cpaValue = row.conversions > 0 ? Math.round(row.spendCents / row.conversions) : null
+    const roasValue = row.spendCents > 0 ? row.conversionValueCents / row.spendCents : null
+    const qualityScore = (
+      (roasValue ?? 0) * 10
+      + (ctrValue ?? 0) * 100
+      + (cvrValue ?? 0) * 100
+      - ((cpaValue ?? 0) / 10000)
+    )
+    return {
+      ...row,
+      ctr: ctrValue,
+      cpcCents: cpcValue,
+      cvr: cvrValue,
+      cpaCents: cpaValue,
+      roas: roasValue,
+      qualityScore,
+    }
+  })
+
+  const segmentRanked = [...segmentBreakdown].sort((a, b) => b.qualityScore - a.qualityScore)
+  const bestSegments = segmentRanked.slice(0, 3).map(({ qualityScore: _qualityScore, ...row }) => row)
+  const weakestSegments = [...segmentRanked].reverse().slice(0, 3).map(({ qualityScore: _qualityScore, ...row }) => row)
+
   return {
     rows,
     summary: {
@@ -358,6 +463,13 @@ export async function getCuratedAdsAnalytics(filters: CuratedFilters) {
       cpaCents,
       attributionModel: 'sku_time_window_proxy',
       attributionConfidence: 0.35,
+    },
+    topWinningCreatives,
+    topLosingCreatives,
+    segmentBreakdown: {
+      best: bestSegments,
+      weakest: weakestSegments,
+      all: segmentBreakdown.map(({ qualityScore: _qualityScore, ...row }) => row),
     },
   }
 }

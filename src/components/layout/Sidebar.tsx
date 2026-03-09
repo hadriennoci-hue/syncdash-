@@ -20,7 +20,9 @@ const nav: NavItem[] = [
   { href: '/orders',      label: 'Orders',       icon: ShoppingCart },
   { href: '/suppliers',   label: 'Suppliers',    icon: Users },
   { href: '/social-media', label: 'Social Media', icon: Share2 },
-  { href: '/ads',         label: 'Ads',          icon: Megaphone },
+  { type: 'section',      label: 'Ads',          icon: Megaphone },
+  { href: '/ads/pipeline', label: 'Pipeline',    icon: Megaphone },
+  { href: '/ads/performance', label: 'Performance', icon: BarChart2 },
   { href: '/tiktok',      label: 'TikTok',       icon: Video },
   { href: '/analyze',     label: 'Analysis',     icon: BarChart2 },
   { href: '/validate',    label: 'Validate',     icon: CheckSquare },
@@ -53,12 +55,14 @@ export function Sidebar() {
 
           const { href, label, icon: Icon } = item as NavLinkItem
           const active = href === '/' ? pathname === href : pathname.startsWith(href)
+          const isAdsSubItem = href.startsWith('/ads/')
           return (
             <Link
               key={href}
               href={href}
               className={cn(
-                'flex items-center gap-2 px-4 py-1.5 text-xs transition-colors',
+                'flex items-center gap-2 py-1.5 text-xs transition-colors',
+                isAdsSubItem ? 'pl-8 pr-4' : 'px-4',
                 active
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent'

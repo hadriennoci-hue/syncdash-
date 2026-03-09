@@ -12,6 +12,9 @@ const patchSchema = z.object({
   externalPostId: z.string().optional(),
   imageUrl: z.string().url().optional(),
   images: z.array(z.string().url()).max(4).optional(),
+  hypothesis: z.string().max(500).optional(),
+  variantLabel: z.string().max(120).optional(),
+  experimentGroup: z.string().max(120).optional(),
 })
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -39,6 +42,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     externalPostId: parsed.data.externalPostId ?? undefined,
     imageUrl: images ? (images[0] ?? null) : undefined,
     imageUrls: images ? JSON.stringify(images) : undefined,
+    hypothesis: parsed.data.hypothesis ?? undefined,
+    variantLabel: parsed.data.variantLabel ?? undefined,
+    experimentGroup: parsed.data.experimentGroup ?? undefined,
     publishedAt: parsed.data.status === 'published' ? now : null,
     updatedAt: now,
   }).where(eq(socialMediaPosts.postPk, postPk))

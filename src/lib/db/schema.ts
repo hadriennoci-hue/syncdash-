@@ -566,6 +566,9 @@ export const socialMediaPosts = sqliteTable('social_media_posts', {
   content:        text('content').notNull(),
   imageUrl:       text('image_url'),
   imageUrls:      text('image_urls'),
+  hypothesis:     text('hypothesis'),
+  variantLabel:   text('variant_label'),
+  experimentGroup:text('experiment_group'),
   scheduledFor:   text('scheduled_for').notNull(),
   status:         text('status').notNull().default('suggested'),
   externalPostId: text('external_post_id'),
@@ -574,6 +577,42 @@ export const socialMediaPosts = sqliteTable('social_media_posts', {
   createdAt:      text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt:      text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
+
+export const socialAccountDailyMetrics = sqliteTable('social_account_daily_metrics', {
+  accountId:       text('account_id').notNull().references(() => socialMediaAccounts.id),
+  metricDate:      text('metric_date').notNull(), // YYYY-MM-DD
+  impressions:     integer('impressions').notNull().default(0),
+  engagements:     integer('engagements').notNull().default(0),
+  linkClicks:      integer('link_clicks').notNull().default(0),
+  followersTotal:  integer('followers_total'),
+  followersDelta:  integer('followers_delta').notNull().default(0),
+  postsPublished:  integer('posts_published').notNull().default(0),
+  sourceJson:      text('source_json'),
+  updatedAt:       text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.accountId, t.metricDate] }),
+}))
+
+export const socialPostDailyMetrics = sqliteTable('social_post_daily_metrics', {
+  postPk:          integer('post_pk').notNull().references(() => socialMediaPosts.postPk),
+  metricDate:      text('metric_date').notNull(), // YYYY-MM-DD
+  impressions:     integer('impressions').notNull().default(0),
+  likes:           integer('likes').notNull().default(0),
+  reposts:         integer('reposts').notNull().default(0),
+  replies:         integer('replies').notNull().default(0),
+  bookmarks:       integer('bookmarks').notNull().default(0),
+  quotes:          integer('quotes').notNull().default(0),
+  profileClicks:   integer('profile_clicks').notNull().default(0),
+  linkClicks:      integer('link_clicks').notNull().default(0),
+  followerDelta24h: integer('follower_delta_24h'),
+  followerDelta72h: integer('follower_delta_72h'),
+  sentimentTag:    text('sentiment_tag'), // positive | neutral | negative | unknown
+  reasonTagsJson:  text('reason_tags_json'),
+  sourceJson:      text('source_json'),
+  updatedAt:       text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.postPk, t.metricDate] }),
+}))
 
 // Ads campaign planning pipeline
 export const adsProviders = sqliteTable('ads_providers', {
@@ -737,6 +776,43 @@ export const adsCampaignKpiDaily = sqliteTable('ads_campaign_kpi_daily', {
   attributionConfidence:     real('attribution_confidence').notNull().default(0.35),
   updatedAt:                 text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.campaignPk, t.metricDate] }) }))
+
+export const adsCreativeDailyMetrics = sqliteTable('ads_creative_daily_metrics', {
+  campaignPk:              integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  metricDate:              text('metric_date').notNull(),
+  providerId:              text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountPk:               integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  creativeKey:             text('creative_key').notNull(),
+  creativeName:            text('creative_name'),
+  creativePreviewUrl:      text('creative_preview_url'),
+  impressions:             integer('impressions').notNull().default(0),
+  clicks:                  integer('clicks').notNull().default(0),
+  spendCents:              integer('spend_cents').notNull().default(0),
+  conversions:             integer('conversions').notNull().default(0),
+  conversionValueCents:    integer('conversion_value_cents').notNull().default(0),
+  sourceJson:              text('source_json'),
+  updatedAt:               text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.campaignPk, t.metricDate, t.creativeKey] }),
+}))
+
+export const adsSegmentDailyMetrics = sqliteTable('ads_segment_daily_metrics', {
+  campaignPk:              integer('campaign_pk').notNull().references(() => adsCampaigns.campaignPk),
+  metricDate:              text('metric_date').notNull(),
+  providerId:              text('provider_id').notNull().references(() => adsProviders.providerId),
+  accountPk:               integer('account_pk').notNull().references(() => adsAccounts.accountPk),
+  segmentType:             text('segment_type').notNull(), // audience | placement | device | geography | other
+  segmentValue:            text('segment_value').notNull(),
+  impressions:             integer('impressions').notNull().default(0),
+  clicks:                  integer('clicks').notNull().default(0),
+  spendCents:              integer('spend_cents').notNull().default(0),
+  conversions:             integer('conversions').notNull().default(0),
+  conversionValueCents:    integer('conversion_value_cents').notNull().default(0),
+  sourceJson:              text('source_json'),
+  updatedAt:               text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.campaignPk, t.metricDate, t.segmentType, t.segmentValue] }),
+}))
 
 // ---------------------------------------------------------------------------
 // Automation & Health
