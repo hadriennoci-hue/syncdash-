@@ -5,14 +5,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 
+// ---- types ----
+
 interface WarehouseSyncResult {
   warehouseId: string
   productsUpdated: number
   errors: string[]
-}
-
-interface WarehouseScanProgress {
-  message: string
 }
 
 interface ChannelSyncResult {
@@ -37,267 +35,205 @@ interface DashboardSummary {
   suppliers: { lastInvoiceDate: string | null }
 }
 
-interface ChannelConfig {
-  id: string
-  label: string
-  href: string
-}
+// ---- config ----
 
-const CHANNELS: ChannelConfig[] = [
-  { id: 'woocommerce', label: 'COINCART', href: '/channels/woocommerce' },
-  { id: 'shopify_komputerzz', label: 'KOMPUTERZZ', href: '/channels/shopify_komputerzz' },
-  { id: 'shopify_tiktok', label: 'TIKTOK TECH STORE', href: '/channels/shopify_tiktok' },
-  { id: 'ebay_ie', label: 'EBAY', href: '/channels/ebay_ie' },
-  { id: 'amazon', label: 'AMAZON', href: '/channels/amazon' },
-  { id: 'libre_market', label: 'LIBRE MARKET', href: '/channels/libre_market' },
-  { id: 'xmr_bazaar', label: 'XMR BAZAAR', href: '/channels/xmr_bazaar' },
-]
-
-const CHANNEL_PLACEHOLDER_EUR: Record<string, number> = {
-  woocommerce: 338,
-  shopify_komputerzz: 912,
-  shopify_tiktok: 745,
-  ebay_ie: 402,
-  amazon: 667,
-  libre_market: 289,
-  xmr_bazaar: 554,
-}
-
-const WAREHOUSE_ORDER = [
-  { id: 'ireland', label: 'Ireland', href: '/warehouses/ireland' },
-  { id: 'poland', label: 'Poland', href: '/warehouses/poland' },
-  { id: 'acer_store', label: 'ACER Store', href: '/warehouses/acer_store' },
+const WAREHOUSES = [
+  { id: 'ireland',     label: 'Ireland',    sub: 'Auto-synced · read only', href: '/warehouses/ireland' },
+  { id: 'poland',      label: 'Poland',     sub: 'API sync · read only',    href: '/warehouses/poland' },
+  { id: 'acer_store',  label: 'ACER Store', sub: 'Scraper · writable',      href: '/warehouses/acer_store', green: true },
 ] as const
 
-const WAREHOUSE_INCOMING: Record<string, number> = {
-  ireland: 18,
-  poland: 12,
-  acer_store: 15,
+const CHANNELS = [
+  { id: 'woocommerce',         label: 'COINCART',          sub: 'coincart.store',  href: '/channels/woocommerce' },
+  { id: 'shopify_komputerzz',  label: 'KOMPUTERZZ',        sub: 'komputerzz.com',  href: '/channels/shopify_komputerzz', chip: 'G' as const },
+  { id: 'shopify_tiktok',      label: 'TIKTOK TECH STORE', sub: 'shopify_tiktok',  href: '/channels/shopify_tiktok',     chip: 'T' as const },
+  { id: 'ebay_ie',             label: 'EBAY IRELAND',      sub: 'ebay.ie',         href: '/channels/ebay_ie' },
+  { id: 'amazon',              label: 'AMAZON',            sub: 'amazon.ie',       href: '/channels/amazon' },
+  { id: 'libre_market',        label: 'LIBRE MARKET',      sub: 'browser runner',  href: '/channels/libre_market',       browser: true },
+  { id: 'xmr_bazaar',          label: 'XMR BAZAAR',        sub: 'browser runner',  href: '/channels/xmr_bazaar',         browser: true },
+] as const
+
+const PLACEHOLDER_EUR: Record<string, number> = {
+  woocommerce: 338, shopify_komputerzz: 912, shopify_tiktok: 745,
+  ebay_ie: 402, amazon: 667, libre_market: 289, xmr_bazaar: 554,
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
+const INCOMING: Record<string, number> = { ireland: 18, poland: 12, acer_store: 15 }
 
-function fmtDate(iso?: string | null): string {
-  if (!iso) return '-'
+// ---- utils ----
+
+function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)) }
+
+function fmtDate(iso?: string | null) {
+  if (!iso) return '—'
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString([], { year: 'numeric', month: 'long', day: '2-digit' })
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function fmtMoney(cents: number | null | undefined): string {
-  if (cents == null) return '-'
-  return `EUR ${Math.round(cents / 100)}`
+function getProgress(stock: number, maxStock: number, id: string) {
+  const inc = clamp(INCOMING[id] ?? 12, 0, 35)
+  if (maxStock <= 0) return { occ: clamp(45 - inc, 10, 85), inc }
+  const scaled = Math.round((stock / maxStock) * 72) + 18
+  return { occ: clamp(scaled, 10, 88 - inc), inc }
 }
 
-function getWarehouseProgress(refsInStock: number, maxRefsInStock: number, warehouseId: string) {
-  const incoming = clamp(WAREHOUSE_INCOMING[warehouseId] ?? 12, 0, 35)
-  if (maxRefsInStock <= 0) {
-    return { occupied: clamp(45 - incoming, 10, 85), incoming }
-  }
-  const scaled = Math.round((refsInStock / maxRefsInStock) * 72) + 18
-  const occupied = clamp(scaled, 10, 88 - incoming)
-  return { occupied, incoming }
-}
+// ---- sub-components ----
 
-function ActionButton({
-  label,
-  onClick,
-  disabled,
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-}) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center justify-center rounded-md border border-[#2F5A85] bg-[#11203A] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)] transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.28)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
-    >
-      {label}
-    </button>
-  )
-}
-
-function DataStamp({ label, iso }: { label: string; iso: string | null }) {
-  return (
-    <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--text-muted)]">
-      {label}:{' '}
-      {iso ? (
-        <time dateTime={iso} className="font-mono text-[var(--text-primary)]">
-          {fmtDate(iso)}
-        </time>
-      ) : (
-        <span className="font-mono text-[var(--text-primary)]">-</span>
-      )}
+    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-[#8FA0C7]">
+      {children}
     </p>
   )
 }
 
 function WarehouseCard({
-  name,
-  refsInStock,
-  occupied,
-  incoming,
-  href,
+  label, sub, href, refsInStock, occ, inc, green,
 }: {
-  name: string
-  refsInStock: number | null
-  occupied: number
-  incoming: number
-  href: string
+  label: string; sub: string; href: string
+  refsInStock: number | null; occ: number; inc: number; green?: boolean
 }) {
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)] focus-visible:ring-offset-0"
+      className="block rounded-[10px] bg-[#0B1328] p-4 transition duration-200 hover:-translate-y-px hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#35A7FF]"
+      style={{ border: `1px solid ${green ? '#35F2A1' : '#1E2A44'}` }}
     >
-      <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
-      <p className="mt-1 text-xs text-[var(--text-muted)]">
-        {refsInStock != null ? `${refsInStock} SKUs in stock` : 'Stock unavailable'}
-      </p>
-      <div className="mt-3 h-3 w-full overflow-hidden rounded-full border border-[#283550] bg-[#111B33]">
-        <div className="h-full bg-[var(--black-fill)]" style={{ width: `${occupied}%` }} />
-        <div
-          className="relative -mt-3 h-3 bg-[var(--incoming-gray)] opacity-90"
-          style={{ width: `${incoming}%`, left: `${occupied}%` }}
-        />
+      <p className="text-sm font-semibold text-[#E6ECFF]">{label}</p>
+      <p className="mt-0.5 text-xs" style={{ color: green ? '#35F2A1' : '#8FA0C7' }}>{sub}</p>
+      <div className="relative mt-4 h-2 w-full overflow-hidden rounded-full bg-[#1E2A44]">
+        <div className="absolute inset-y-0 left-0 bg-[#0A0A0A]" style={{ width: `${occ}%` }} />
+        <div className="absolute inset-y-0 bg-[#7A7F87]" style={{ left: `${occ}%`, width: `${inc}%` }} />
       </div>
-      <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">
-        occupied {occupied}% - incoming {incoming}%
+      <p className="mt-1.5 font-mono text-[10px] text-[#8FA0C7]">
+        occupied {occ}% · incoming {inc}%
       </p>
+      {refsInStock != null && (
+        <p className="mt-1.5 font-mono text-xs font-bold" style={{ color: green ? '#35F2A1' : '#35A7FF' }}>
+          {refsInStock} refs in stock
+        </p>
+      )}
     </Link>
+  )
+}
+
+function AdChip({ label, pulse }: { label: string; pulse: 'blue' | 'yellow' }) {
+  const cls =
+    pulse === 'blue'
+      ? 'border-[#35A7FF] bg-[rgba(53,167,255,0.12)] text-[#35A7FF] chip-blue'
+      : 'border-[#FFD84D] bg-[rgba(255,216,77,0.12)] text-[#FFD84D] chip-yellow'
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] border ${cls}`}>
+      {label}
+    </span>
   )
 }
 
 function ChannelCard({
-  name,
-  href,
-  revenueEur,
-  campaignChip,
+  label, sub, href, revenueEur, chip, browser,
 }: {
-  name: string
-  href: string
-  revenueEur: number
-  campaignChip?: { label: string; color: 'yellow' | 'green' }
+  label: string; sub: string; href: string
+  revenueEur: number; chip?: 'G' | 'T'; browser?: boolean
 }) {
-  const chipClass =
-    campaignChip?.color === 'yellow'
-      ? 'border-[var(--glow-yellow)] bg-[rgba(255,216,77,0.14)] text-[var(--glow-yellow)] shadow-[0_0_22px_rgba(255,216,77,0.45)]'
-      : 'border-[var(--glow-green)] bg-[rgba(53,242,161,0.14)] text-[var(--glow-green)] shadow-[0_0_22px_rgba(53,242,161,0.45)]'
-
+  const borderColor = chip === 'G' ? '#35A7FF' : chip === 'T' || browser ? '#FFD84D' : '#1E2A44'
   return (
     <Link
       href={href}
-      className="group rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-4 transition duration-200 hover:-translate-y-[1px] hover:shadow-[0_0_24px_rgba(53,167,255,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--glow-blue)]"
+      className="flex min-h-[88px] items-center justify-between rounded-lg bg-[#0B1328] px-5 py-3 transition duration-200 hover:-translate-y-px hover:shadow-[0_0_24px_rgba(53,167,255,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#35A7FF]"
+      style={{ border: `1px solid ${borderColor}` }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-primary)]">{name}</p>
-        {campaignChip ? (
-          <span
-            aria-label={`${name} ad campaign`}
-            className={`campaign-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-xs font-bold tracking-[0.14em] ${chipClass} ${
-              campaignChip.label === 'G' ? 'campaign-chip-fast' : 'campaign-chip-fast-alt'
-            }`}
-          >
-            {campaignChip.label}
-          </span>
-        ) : null}
+      <div className="flex flex-col gap-1">
+        <p className="text-[13px] font-semibold text-[#E6ECFF]">{label}</p>
+        <p className="text-[11px] text-[#8FA0C7]">{sub}</p>
+        {chip === 'G' && <AdChip label="G ADS" pulse="blue" />}
+        {chip === 'T' && <AdChip label="T ADS" pulse="yellow" />}
+        {!chip && browser && <AdChip label="BROWSER" pulse="yellow" />}
       </div>
-      <p className="mt-2 text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)]">24H Revenue</p>
-      <p className="font-mono text-lg font-bold text-[var(--text-primary)]">EUR {revenueEur}</p>
+      <p className="font-mono text-xl font-bold text-[#35F2A1]">{revenueEur}€</p>
     </Link>
   )
 }
 
+// ---- main ----
+
 export function DashboardHome() {
   const qc = useQueryClient()
-  const { data: summaryRes, isLoading, isError } = useQuery({
+  const { data: summaryRes, isError } = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: () => apiFetch<{ data: DashboardSummary }>('/api/dashboard/summary'),
   })
 
   const summary = summaryRes?.data
-  const warehouses = useMemo(() => summary?.warehouses ?? [], [summary])
-  const channels = useMemo(() => summary?.channels ?? [], [summary])
+  const warehouseData = useMemo(() => summary?.warehouses ?? [], [summary])
+  const channelData = useMemo(() => summary?.channels ?? [], [summary])
 
   const [scanning, setScanning] = useState(false)
+  const [scanProgress, setScanProgress] = useState('')
   const [scanResult, setScanResult] = useState<WarehouseSyncResult[] | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
-  const [scanProgressText, setScanProgressText] = useState<string>('')
+
   const [pushing, setPushing] = useState(false)
   const [pushResult, setPushResult] = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
-  const [lastStockScan, setLastStockScan] = useState<string | null>(null)
-  const [lastChannelPush, setLastChannelPush] = useState<string | null>(null)
+
+  const [lastScan, setLastScan] = useState<string | null>(null)
+  const [lastPush, setLastPush] = useState<string | null>(null)
 
   useEffect(() => {
-    setLastStockScan(localStorage.getItem('lastStockScan'))
-    setLastChannelPush(localStorage.getItem('lastChannelPush'))
+    setLastScan(localStorage.getItem('lastStockScan'))
+    setLastPush(localStorage.getItem('lastChannelPush'))
   }, [])
 
-  async function handleScanStocks() {
+  async function handleScan() {
     setScanning(true)
     setScanResult(null)
     setScanError(null)
-    setScanProgressText('Starting warehouse scan...')
+    setScanProgress('Starting...')
     try {
       const res = await fetch('/api/warehouses/sync-all/stream', {
         method: 'GET',
         headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN ?? ''}` },
       })
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
-
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
-      let finalResults: WarehouseSyncResult[] | null = null
-
-      const parseEvent = (chunk: string) => {
-        const lines = chunk.split('\n')
-        let eventName = 'message'
-        let dataText = ''
-        for (const line of lines) {
-          if (line.startsWith('event:')) eventName = line.slice(6).trim()
-          if (line.startsWith('data:')) dataText += line.slice(5).trim()
-        }
-        if (!dataText) return
-        const data = JSON.parse(dataText)
-        if (eventName === 'progress') {
-          const progress = data as WarehouseScanProgress
-          setScanProgressText(progress.message)
-          return
-        }
-        if (eventName === 'scan_done') finalResults = (data.results ?? []) as WarehouseSyncResult[]
-      }
-
+      let buf = ''
+      let final: WarehouseSyncResult[] | null = null
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let boundary = buffer.indexOf('\n\n')
-        while (boundary >= 0) {
-          parseEvent(buffer.slice(0, boundary))
-          buffer = buffer.slice(boundary + 2)
-          boundary = buffer.indexOf('\n\n')
+        buf += decoder.decode(value, { stream: true })
+        let b = buf.indexOf('\n\n')
+        while (b >= 0) {
+          const chunk = buf.slice(0, b)
+          buf = buf.slice(b + 2)
+          b = buf.indexOf('\n\n')
+          let name = 'message'
+          let data = ''
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('event:')) name = line.slice(6).trim()
+            if (line.startsWith('data:')) data += line.slice(5).trim()
+          }
+          if (!data) continue
+          const parsed = JSON.parse(data) as { message?: string; results?: WarehouseSyncResult[] }
+          if (name === 'progress') setScanProgress(parsed.message ?? '')
+          if (name === 'scan_done') final = parsed.results ?? []
         }
       }
-
-      setScanResult(finalResults ?? [])
+      setScanResult(final ?? [])
       const now = new Date().toISOString()
       localStorage.setItem('lastStockScan', now)
-      setLastStockScan(now)
+      setLastScan(now)
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setScanning(false)
+      setScanProgress('')
     }
   }
 
-  async function handleUpdateChannels() {
+  async function handlePush() {
     setPushing(true)
     setPushResult(null)
     setPushError(null)
@@ -309,7 +245,7 @@ export function DashboardHome() {
       setPushResult((res as { data: ChannelSyncResult[] }).data)
       const now = new Date().toISOString()
       localStorage.setItem('lastChannelPush', now)
-      setLastChannelPush(now)
+      setLastPush(now)
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       setPushError(err instanceof Error ? err.message : 'Unknown error')
@@ -318,220 +254,179 @@ export function DashboardHome() {
     }
   }
 
-  const warehouseMaxStock = useMemo(() => {
-    return Math.max(...warehouses.map((w) => w.refsInStock), 0)
-  }, [warehouses])
+  const maxStock = useMemo(() => Math.max(...warehouseData.map((w) => w.refsInStock), 0), [warehouseData])
 
-  const channelMap = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels])
+  const warehouses = useMemo(
+    () =>
+      WAREHOUSES.map((w) => {
+        const found = warehouseData.find((x) => x.id === w.id)
+        const refsInStock = found?.refsInStock ?? null
+        const { occ, inc } = getProgress(refsInStock ?? 0, maxStock, w.id)
+        return { ...w, refsInStock, occ, inc }
+      }),
+    [warehouseData, maxStock],
+  )
 
-  const orderedWarehouses = useMemo(() => {
-    return WAREHOUSE_ORDER.map((warehouse) => {
-      const found = warehouses.find((item) => item.id === warehouse.id)
-      const refsInStock = found?.refsInStock ?? null
-      const progress = getWarehouseProgress(refsInStock ?? 0, warehouseMaxStock, warehouse.id)
-      return {
-        ...warehouse,
-        refsInStock,
-        occupied: progress.occupied,
-        incoming: progress.incoming,
-      }
-    })
-  }, [warehouses, warehouseMaxStock])
+  const channelMap = useMemo(() => new Map(channelData.map((c) => [c.id, c])), [channelData])
 
-  const orderedChannels = useMemo(() => {
-    return CHANNELS.map((channel) => {
-      const found = channelMap.get(channel.id)
-      const revenueEur =
-        found?.sales24hCents != null ? Math.round(found.sales24hCents / 100) : CHANNEL_PLACEHOLDER_EUR[channel.id]
-      return {
-        ...channel,
-        revenueEur: clamp(revenueEur, 200, 999),
-        hasCampaignG: channel.id === 'shopify_komputerzz',
-        hasCampaignT: channel.id === 'shopify_tiktok',
-      }
-    })
-  }, [channelMap])
-
-  const sales24h = useMemo(
-    () => channels.reduce((sum, c) => sum + (c.sales24hCents ?? 0), 0),
-    [channels]
+  const channels = useMemo(
+    () =>
+      CHANNELS.map((c) => {
+        const found = channelMap.get(c.id)
+        const eur =
+          found?.sales24hCents != null
+            ? Math.round(found.sales24hCents / 100)
+            : PLACEHOLDER_EUR[c.id]
+        return { ...c, revenueEur: clamp(eur, 0, 9999) }
+      }),
+    [channelMap],
   )
 
   return (
-    <div className="-ml-4 -mt-4 space-y-4 md:-ml-6 md:-mt-6">
-      <section
-        className="relative overflow-hidden rounded-2xl border border-[var(--panel-border)] p-4 md:p-6"
-        style={
-          {
-            background:
-              'radial-gradient(1200px 320px at 50% -10%, rgba(53,167,255,0.18), transparent 60%), radial-gradient(800px 280px at 70% 120%, rgba(53,242,161,0.08), transparent 60%), var(--bg-main)',
-            '--bg-main': '#060D1F',
-            '--panel': '#0B1328',
-            '--panel-border': '#1E2A44',
-            '--text-primary': '#E6ECFF',
-            '--text-muted': '#8FA0C7',
-            '--black-fill': '#0A0A0A',
-            '--incoming-gray': '#7A7F87',
-            '--glow-blue': '#35A7FF',
-            '--glow-green': '#35F2A1',
-            '--glow-yellow': '#FFD84D',
-            '--danger': '#FF5C7A',
-          } as React.CSSProperties
-        }
-      >
-        <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr_1fr]">
+    <div className="-mx-4 -mt-4 min-h-screen bg-[#060D1F] px-6 py-6 md:-mx-6 md:-mt-6">
+      {isError && (
+        <div className="mb-4 rounded-lg border border-[rgba(255,92,122,0.4)] bg-[rgba(255,92,122,0.07)] px-4 py-2 text-xs text-[#FF5C7A]">
+          Summary unavailable — check API / database
+        </div>
+      )}
+
+      <div className="grid grid-cols-[1fr_410px_1fr] items-start gap-6">
+        {/* LEFT: Warehouses */}
+        <div>
+          <SectionLabel>Warehouses</SectionLabel>
           <div className="space-y-3">
-            {orderedWarehouses.map((warehouse) => (
-              <WarehouseCard
-                key={warehouse.id}
-                name={warehouse.label}
-                refsInStock={warehouse.refsInStock}
-                occupied={warehouse.occupied}
-                incoming={warehouse.incoming}
-                href={warehouse.href}
-              />
+            {warehouses.map((w) => (
+              <WarehouseCard key={w.id} {...w} />
             ))}
           </div>
+        </div>
 
-          <div className="flex flex-col justify-start lg:-mt-12">
-            <div className="relative mx-auto w-full max-w-[360px] rounded-[28px] border border-[var(--panel-border)] bg-[var(--panel)] p-5 shadow-[0_0_46px_rgba(53,167,255,0.22)]">
-              <div className="absolute left-1/2 top-3 h-[110px] w-[110px] -translate-x-1/2 rounded-full border border-[#335987] bg-[radial-gradient(circle_at_50%_45%,rgba(53,167,255,0.35),rgba(11,19,40,1)_75%)]" />
-              <div className="pt-[130px] text-center">
-                <p className="font-heading text-xl font-semibold tracking-[0.03em] text-[var(--text-primary)]">WIZHARD</p>
-                <p className="mt-1 text-xs uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                  {summary?.wizhard.productsToFill ?? '-'} products to fill - {summary?.readyToPush.count ?? '-'} to push
+        {/* CENTER: WIZHARD */}
+        <div>
+          <SectionLabel>&nbsp;</SectionLabel>
+          <div
+            className="relative overflow-hidden rounded-[20px] bg-[#0B1328]"
+            style={{ border: '1.5px solid #35A7FF', boxShadow: '0 0 40px rgba(53,167,255,0.15)' }}
+          >
+            {/* Top accent bar */}
+            <div className="absolute left-0 right-0 top-0 h-[3px] bg-[#35A7FF]" />
+            {/* Background decoration ellipse */}
+            <div className="absolute left-1/2 top-8 h-[200px] w-[200px] -translate-x-1/2 rounded-full bg-[#0D1830]" />
+
+            {/* Header */}
+            <div className="relative px-8 pb-4 pt-7 text-center">
+              <p className="text-3xl leading-none text-[#35A7FF]">◉</p>
+              <p className="font-heading mt-2 text-[28px] font-bold leading-none tracking-wide text-[#E6ECFF]">
+                WIZHARD
+              </p>
+              <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.15em] text-[#8FA0C7]">
+                Master Catalogue
+              </p>
+              {summary && (
+                <p className="mt-1 font-mono text-[10px] text-[#8FA0C7]">
+                  {summary.wizhard.productsToFill} to fill · {summary.readyToPush.count} to push
                 </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="relative space-y-4 px-8 pb-8">
+              <div className="h-px bg-[#1E2A44]" />
+
+              {/* Scan */}
+              <div>
+                <button
+                  onClick={handleScan}
+                  disabled={scanning}
+                  className="w-full rounded-[10px] border border-[#35A7FF] bg-[#0D1830] px-4 py-3 text-[13px] font-semibold text-[#35A7FF] transition duration-200 hover:-translate-y-px hover:shadow-[0_0_16px_rgba(53,167,255,0.3)] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#35A7FF]"
+                >
+                  {scanning ? (scanProgress || 'Scanning…') : 'Scan Warehouses'}
+                </button>
+                {(scanResult || scanError) && (
+                  <div className="mt-2 space-y-0.5">
+                    {scanError && (
+                      <p className="font-mono text-[10px] text-[#FF5C7A]">{scanError}</p>
+                    )}
+                    {scanResult?.map((r) => (
+                      <p
+                        key={r.warehouseId}
+                        className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : 'text-[#35F2A1]'}`}
+                      >
+                        {r.warehouseId}: {r.errors[0] ?? `${r.productsUpdated} updated`}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <ActionButton
-                    label={scanning ? 'Scanning Warehouses' : 'Scan Warehouses'}
-                    onClick={handleScanStocks}
-                    disabled={scanning}
-                  />
-                  <DataStamp label="Last scan" iso={lastStockScan} />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <ActionButton
-                    label={pushing ? 'Pushing To Channels' : 'Push To Channels'}
-                    onClick={handleUpdateChannels}
-                    disabled={pushing}
-                  />
-                  <DataStamp label="Last push" iso={lastChannelPush} />
-                </div>
+
+              {/* Push */}
+              <div>
+                <button
+                  onClick={handlePush}
+                  disabled={pushing}
+                  className="w-full rounded-[10px] border border-[#35F2A1] bg-[#0D1830] px-4 py-3 text-[13px] font-semibold text-[#35F2A1] transition duration-200 hover:-translate-y-px hover:shadow-[0_0_16px_rgba(53,242,161,0.3)] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#35F2A1]"
+                >
+                  {pushing ? 'Pushing…' : 'Push To Channels'}
+                </button>
+                {(pushResult || pushError) && (
+                  <div className="mt-2 space-y-0.5">
+                    {pushError && (
+                      <p className="font-mono text-[10px] text-[#FF5C7A]">{pushError}</p>
+                    )}
+                    {pushResult?.map((r) => (
+                      <p
+                        key={r.platform}
+                        className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : 'text-[#35F2A1]'}`}
+                      >
+                        {r.platform}: {r.errors[0] ?? `${r.statusUpdated} upd · ${r.newProductsCreated} new · ${r.zeroedOutOfStock} zeroed`}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-[#1E2A44]" />
+
+              {/* Timestamps */}
+              <div className="space-y-1">
+                <p className="font-mono text-[10px] text-[#8FA0C7]">
+                  Last scan · <span className="text-[#E6ECFF]">{fmtDate(lastScan)}</span>
+                </p>
+                <p className="font-mono text-[10px] text-[#8FA0C7]">
+                  Last push · <span className="text-[#E6ECFF]">{fmtDate(lastPush)}</span>
+                </p>
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="space-y-3">
-            {orderedChannels.map((channel) => (
-              <ChannelCard
-                key={channel.id}
-                name={channel.label}
-                href={channel.href}
-                revenueEur={channel.revenueEur}
-                campaignChip={
-                  channel.hasCampaignG
-                    ? { label: 'G', color: 'yellow' }
-                    : channel.hasCampaignT
-                      ? { label: 'T', color: 'green' }
-                      : undefined
-                }
-              />
+        {/* RIGHT: Channels */}
+        <div>
+          <SectionLabel>Sale Channels</SectionLabel>
+          <div className="space-y-2">
+            {channels.map((c) => (
+              <ChannelCard key={c.id} {...c} />
             ))}
           </div>
         </div>
-      </section>
-
-      {scanError || pushError || isError ? (
-        <div className="rounded-xl border border-[var(--danger)]/50 bg-[rgba(255,92,122,0.08)] p-3 text-xs text-[var(--text-primary)]">
-          {scanError ? <p>Scan error: {scanError}</p> : null}
-          {pushError ? <p>Push error: {pushError}</p> : null}
-          {isError ? <p>Summary unavailable. Check API/database.</p> : null}
-        </div>
-      ) : null}
-
-      {scanResult?.length ? (
-        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
-          {scanResult.map((result) => (
-            <p key={result.warehouseId} className={result.errors.length > 0 ? 'text-destructive' : 'text-emerald-700'}>
-              {result.warehouseId}: {result.errors[0] ?? `${result.productsUpdated} refs updated`}
-            </p>
-          ))}
-        </div>
-      ) : null}
-
-      {pushResult?.length ? (
-        <div className="space-y-1 rounded-md border border-border bg-card p-3 text-xs">
-          {pushResult.map((result) => (
-            <p key={result.platform}>
-              {result.platform}:{' '}
-              {result.errors[0] ??
-                `${result.statusUpdated} updated | ${result.newProductsCreated} new | ${result.zeroedOutOfStock} zeroed`}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      </div>
 
       <style jsx global>{`
         .font-heading {
-          font-family: var(--font-heading), serif;
+          font-family: var(--font-heading), 'Playfair Display', serif;
         }
-
-        .campaign-chip {
-          animation: campaignPulse 1.9s ease-in-out infinite;
+        @keyframes chipBlue {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.08); filter: brightness(1.35); }
         }
-
-        .campaign-chip-fast {
-          animation: campaignPulseStrong 1.2s ease-in-out infinite;
+        @keyframes chipYellow {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          55% { transform: scale(1.07); filter: brightness(1.25); }
         }
-
-        .campaign-chip-fast-alt {
-          animation: campaignPulseStrongAlt 1.2s ease-in-out infinite;
-        }
-
-        @keyframes campaignPulse {
-          0%,
-          100% {
-            transform: scale(1);
-            filter: brightness(1);
-          }
-          50% {
-            transform: scale(1.03);
-            filter: brightness(1.2);
-          }
-        }
-
-        @keyframes campaignPulseStrong {
-          0%,
-          100% {
-            transform: scale(1);
-            filter: brightness(1);
-          }
-          50% {
-            transform: scale(1.08);
-            filter: brightness(1.35);
-          }
-        }
-
-        @keyframes campaignPulseStrongAlt {
-          0%,
-          100% {
-            transform: scale(1);
-            filter: brightness(1);
-          }
-          55% {
-            transform: scale(1.07);
-            filter: brightness(1.25);
-          }
-        }
-
+        .chip-blue  { animation: chipBlue  1.2s ease-in-out infinite; }
+        .chip-yellow { animation: chipYellow 1.2s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .campaign-chip,
-          .campaign-chip-fast,
-          .campaign-chip-fast-alt {
-            animation: none !important;
-          }
+          .chip-blue, .chip-yellow { animation: none !important; }
         }
       `}</style>
     </div>
