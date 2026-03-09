@@ -36,9 +36,9 @@ export function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <aside className="w-48 shrink-0 border-r border-border bg-card flex flex-col">
-      <div className="px-4 py-3 border-b border-border">
-        <span className="text-sm font-semibold tracking-tight">Wizhard</span>
+    <aside className="w-56 shrink-0 border-r border-slate-800 bg-slate-900 text-slate-100 flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-800">
+        <span className="text-base font-semibold tracking-tight" style={{ fontFamily: 'var(--font-heading), serif' }}>Wizhard</span>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
         {nav.map((item) => {
@@ -47,7 +47,7 @@ export function Sidebar() {
             return (
               <div
                 key={`section-${item.label}`}
-                className="flex items-center gap-2 px-4 pt-3 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/80"
+                className="flex items-center gap-2 px-4 pt-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400/90"
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 {item.label}
@@ -63,11 +63,11 @@ export function Sidebar() {
               key={href}
               href={href}
               className={cn(
-                'flex items-center gap-2 py-1.5 text-xs transition-colors',
+                'flex items-center gap-2 py-1.5 text-xs transition-colors rounded-md mx-2',
                 isSubItem ? 'pl-8 pr-4' : 'px-4',
                 active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
               )}
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />

@@ -8,13 +8,14 @@ const isBlockedAcerSku = (sku: string) =>
   sku.toUpperCase().includes('_MEDIAKEY')
 
 import { db } from '@/lib/db/client'
-import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers } from '@/lib/db/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
+import { eq, and, inArray, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
 import type { WarehouseStockProgress } from '@/lib/connectors/types'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy } from '@/types/platform'
 import { PLATFORMS } from '@/types/platform'
+import { generateId } from '@/lib/utils/id'
 
 interface SyncResult {
   warehouseId: string
@@ -168,6 +169,18 @@ interface ChannelStockResult {
   errors: string[]
 }
 
+type WooSkuAware = {
+  bulkSetStockForSkus: (items: Array<{ platformId: string; sku: string; quantity: number }>) => Promise<void>
+}
+
+function isWooSkuAware(connector: unknown): connector is WooSkuAware {
+  return !!connector && typeof (connector as WooSkuAware).bulkSetStockForSkus === 'function'
+}
+
+function supportsBatchTouchFinalize(platform: Platform): boolean {
+  return platform === 'shopify_komputerzz' || platform === 'woocommerce'
+}
+
 export async function pushStockToChannels(
   platforms: Platform[] = PLATFORMS,
   triggeredBy: TriggeredBy = 'system'
@@ -177,6 +190,11 @@ export async function pushStockToChannels(
   for (const platform of platforms) {
     const errors: string[] = []
     let productsUpdated = 0
+    let touchedCount = 0
+    let zeroedCount = 0
+    let currentBatchId: string | null = null
+    const startedAt = new Date().toISOString()
+    const syncJobId = generateId()
 
     // Get all warehouse → channel rules for this platform, ordered by priority
     const rules = await db.query.warehouseChannelRules.findMany({
@@ -197,43 +215,169 @@ export async function pushStockToChannels(
     })
 
     const connector = await createConnector(platform)
+    await db.insert(syncJobs).values({
+      id: syncJobId,
+      jobType: 'push_stock',
+      platform,
+      status: 'running',
+      startedAt,
+      triggeredBy,
+    })
 
-    for (const mapping of mappings) {
-      try {
-        // Sum stock from all allowed warehouses for this product
-        const stockRows = await db.query.warehouseStock.findMany({
-          where: eq(warehouseStock.productId, mapping.productId),
-        })
+    const stockRows = await db.query.warehouseStock.findMany({
+      where: inArray(warehouseStock.warehouseId, allowedWarehouseIds),
+      columns: { productId: true, quantity: true },
+    })
+    const quantityByProductId = new Map<string, number>()
+    for (const row of stockRows) {
+      quantityByProductId.set(row.productId, (quantityByProductId.get(row.productId) ?? 0) + (row.quantity ?? 0))
+    }
 
-        const totalQuantity = allowedWarehouseIds.reduce((sum, warehouseId) => {
-          const row = stockRows.find((s) => s.warehouseId === warehouseId)
-          return sum + (row?.quantity ?? 0)
-        }, 0)
+    if (supportsBatchTouchFinalize(platform)) {
+      const syncBatchId = generateId()
+      currentBatchId = syncBatchId
+      const touchedPlatformIds = new Set<string>()
 
-        await connector.updateStock(mapping.platformId, totalQuantity)
+      for (const mapping of mappings) {
+        const totalQuantity = quantityByProductId.get(mapping.productId) ?? 0
+        if (totalQuantity <= 0) continue
 
+        try {
+          await connector.updateStock(mapping.platformId, totalQuantity)
+          touchedPlatformIds.add(mapping.platformId)
+          touchedCount++
+          await db.update(platformMappings)
+            .set({
+              lastStockSyncBatchId: syncBatchId,
+              lastSeenInFeedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+            .where(and(
+              eq(platformMappings.productId, mapping.productId),
+              eq(platformMappings.platform, platform)
+            ))
+
+          await logOperation({
+            productId:   mapping.productId,
+            platform,
+            action:      'push_stock',
+            status:      'success',
+            message:     `qty=${totalQuantity} batch=${syncBatchId} warehouses=[${allowedWarehouseIds.join(',')}]`,
+            triggeredBy,
+          })
+          productsUpdated++
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          errors.push(`${mapping.productId}: ${message}`)
+          await logOperation({
+            productId: mapping.productId,
+            platform,
+            action:    'push_stock',
+            status:    'error',
+            message,
+            triggeredBy,
+          })
+        }
+      }
+
+      if (errors.length === 0) {
+        const toZero = mappings
+          .filter((m) => !touchedPlatformIds.has(m.platformId))
+          .map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
+
+        if (toZero.length > 0) {
+          try {
+            if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+              await connector.bulkSetStockForSkus(toZero)
+            } else {
+              await connector.bulkSetStock(
+                toZero.map(({ platformId, quantity }) => ({ platformId, quantity }))
+              )
+            }
+
+            for (const item of toZero) {
+              await db.update(platformMappings)
+                .set({
+                  lastStockSyncBatchId: syncBatchId,
+                  updatedAt: new Date().toISOString(),
+                })
+                .where(and(
+                  eq(platformMappings.productId, item.sku),
+                  eq(platformMappings.platform, platform)
+                ))
+            }
+
+            productsUpdated += toZero.length
+            zeroedCount += toZero.length
+            await logOperation({
+              platform,
+              action: 'push_stock_finalize_zero',
+              status: 'success',
+              message: `batch=${syncBatchId} zeroed=${toZero.length}`,
+              triggeredBy,
+            })
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown error'
+            errors.push(`finalize_zero: ${message}`)
+            await logOperation({
+              platform,
+              action: 'push_stock_finalize_zero',
+              status: 'error',
+              message: `batch=${syncBatchId} ${message}`,
+              triggeredBy,
+            })
+          }
+        }
+      } else {
         await logOperation({
-          productId:   mapping.productId,
           platform,
-          action:      'push_stock',
-          status:      'success',
-          message:     `qty=${totalQuantity} from warehouses=[${allowedWarehouseIds.join(',')}]`,
-          triggeredBy,
-        })
-        productsUpdated++
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        errors.push(`${mapping.productId}: ${message}`)
-        await logOperation({
-          productId: mapping.productId,
-          platform,
-          action:    'push_stock',
-          status:    'error',
-          message,
+          action: 'push_stock_finalize_zero',
+          status: 'error',
+          message: `batch=${syncBatchId} skipped due to per-SKU errors=${errors.length}`,
           triggeredBy,
         })
       }
+    } else {
+      for (const mapping of mappings) {
+        try {
+          const totalQuantity = quantityByProductId.get(mapping.productId) ?? 0
+          await connector.updateStock(mapping.platformId, totalQuantity)
+
+          await logOperation({
+            productId:   mapping.productId,
+            platform,
+            action:      'push_stock',
+            status:      'success',
+            message:     `qty=${totalQuantity} from warehouses=[${allowedWarehouseIds.join(',')}]`,
+            triggeredBy,
+          })
+          productsUpdated++
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          errors.push(`${mapping.productId}: ${message}`)
+          await logOperation({
+            productId: mapping.productId,
+            platform,
+            action:    'push_stock',
+            status:    'error',
+            message,
+            triggeredBy,
+          })
+        }
+      }
     }
+
+    await db.update(syncJobs)
+      .set({
+        batchId: currentBatchId,
+        status: errors.length > 0 ? 'error' : 'success',
+        finishedAt: new Date().toISOString(),
+        touched: touchedCount,
+        zeroed: zeroedCount,
+        errorsCount: errors.length,
+        message: errors.length > 0 ? errors.join('; ').slice(0, 1000) : null,
+      })
+      .where(eq(syncJobs.id, syncJobId))
 
     results.push({ platform, productsUpdated, errors })
   }

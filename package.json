@@ -38,6 +38,8 @@
     "db:migrate25": "wrangler d1 execute syncdash-db --local --file=./drizzle/0025_ads_analytics_curated.sql",
     "db:migrate26": "wrangler d1 execute syncdash-db --local --file=./drizzle/0026_ads_creative_segment_metrics.sql",
     "db:migrate27": "wrangler d1 execute syncdash-db --local --file=./drizzle/0027_social_analytics.sql",
+    "db:migrate28": "wrangler d1 execute syncdash-db --local --file=./drizzle/0028_platform_mappings_stock_batch.sql",
+    "db:migrate29": "wrangler d1 execute syncdash-db --local --file=./drizzle/0029_sync_jobs_observability.sql",
     "db:bootstrap": "node ./scripts/db-bootstrap.mjs",
     "db:query:inventory": "node ./query-inventory.mjs --local",
     "db:studio": "drizzle-kit studio",

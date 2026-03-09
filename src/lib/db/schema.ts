@@ -101,8 +101,26 @@ export const platformMappings = sqliteTable('platform_mappings', {
   variantId:  text('variant_id'),
   syncStatus: text('sync_status').notNull().default('pending'), // 'pending' | 'synced' | 'error'
   lastSynced: text('last_synced'),
+  lastSeenInFeedAt: text('last_seen_in_feed_at'),
+  lastStockSyncBatchId: text('last_stock_sync_batch_id'),
   updatedAt:  text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
+
+export const syncJobs = sqliteTable('sync_jobs', {
+  id:          text('id').primaryKey(),
+  jobType:     text('job_type').notNull(), // e.g. 'push_stock'
+  platform:    text('platform'),
+  batchId:     text('batch_id'),
+  status:      text('status').notNull(),   // 'running' | 'success' | 'error'
+  startedAt:   text('started_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  finishedAt:  text('finished_at'),
+  touched:     integer('touched').notNull().default(0),
+  zeroed:      integer('zeroed').notNull().default(0),
+  errorsCount: integer('errors_count').notNull().default(0),
+  message:     text('message'),
+  triggeredBy: text('triggered_by'),
+  createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
+})
 
 // ---------------------------------------------------------------------------
 // Categories

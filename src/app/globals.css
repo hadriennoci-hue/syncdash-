@@ -4,26 +4,26 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 40% 96%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 56%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 93%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.3rem;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 56%;
+    --radius: 0.625rem;
   }
 
   .dark {
@@ -53,7 +53,43 @@
   * {
     @apply border-border;
   }
+
+  html, body {
+    min-height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body), sans-serif;
+  }
+
+  .dashboard-main h1,
+  .dashboard-main h2 {
+    font-family: var(--font-heading), serif;
+    letter-spacing: -0.01em;
+  }
+
+  .dashboard-main h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  .dashboard-main .font-mono,
+  .dashboard-main code,
+  .dashboard-main pre,
+  .dashboard-main kbd {
+    font-family: var(--font-mono), monospace;
+  }
+
+  .dashboard-main table {
+    background: #ffffff;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .dashboard-main table thead tr {
+    background: #f8fafc;
   }
 }
