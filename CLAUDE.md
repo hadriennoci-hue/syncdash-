@@ -168,8 +168,9 @@ npm run dev            # UI only (no D1-backed APIs)
 npm run dev:cf         # Full Worker runtime + bindings
 
 # Build
-npm run build          # next build
-npm run build:cf       # OpenNext build (creates .open-next/worker.js)
+npm run build          # CI-safe OpenNext build wrapper (creates .open-next/worker.js)
+npm run build:next     # Plain Next.js build
+npm run build:cf       # Alias of OpenNext build
 
 # Deploy
 npm run deploy         # OpenNext deploy wrapper
@@ -188,7 +189,7 @@ npm run db:bootstrap
 If CI deploy command is `npx wrangler deploy`, CI build must be OpenNext build, not plain Next build.
 
 Valid pairings:
-- Build: `npm run build:cf`
+- Build: `npm run build` (or `npm run build:cf`)
 - Deploy: `npx wrangler deploy`
 
 or
@@ -201,6 +202,7 @@ Common failure symptom:
 
 Cause:
 - running `next build` before `wrangler deploy`.
+- recursive OpenNext build loop when `npm run build` is misconfigured.
 
 ## 11) Ops Quick Checks
 

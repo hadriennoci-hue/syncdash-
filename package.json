@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "dev:cf": "opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion && wrangler dev",
-    "build": "next build",
+    "build": "node ./scripts/build-dispatch.mjs",
     "build:cf": "opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion",
     "deploy": "opennextjs-cloudflare deploy",
+    "build:next": "next build",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
