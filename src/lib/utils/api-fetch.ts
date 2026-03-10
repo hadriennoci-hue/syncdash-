@@ -7,13 +7,17 @@ type ApiErrorBody = {
 }
 
 export async function apiFetch<T = any>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> | undefined),
+  }
+  if (!headers.Authorization && BEARER) {
+    headers.Authorization = `Bearer ${BEARER}`
+  }
+
   const res = await fetch(path, {
     ...options,
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${BEARER}`,
-      ...options?.headers,
-    },
+    headers,
   })
   if (!res.ok) {
     const rawBody: unknown = await res.json().catch(() => undefined)

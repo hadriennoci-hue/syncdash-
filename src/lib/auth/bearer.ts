@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export function verifyBearer(req: NextRequest): NextResponse | null {
+  const cfAccessEmail = req.headers.get('cf-access-authenticated-user-email')
+  if (cfAccessEmail) {
+    return null
+  }
+
   const authHeader = req.headers.get('authorization')
   const token = process.env.AGENT_BEARER_TOKEN
 

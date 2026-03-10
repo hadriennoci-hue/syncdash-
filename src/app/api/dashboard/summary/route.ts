@@ -6,7 +6,7 @@ import { salesChannels, products, adsCampaigns, orders, salesOrders } from '@/li
 import { eq, or, and, like, sql, gte, inArray } from 'drizzle-orm'
 import { PLATFORM_LABELS, PLATFORMS, WAREHOUSE_LABELS } from '@/types/platform'
 
-const ACTIVE_WAREHOUSES = ['ireland', 'acer_store'] as const
+const ACTIVE_WAREHOUSES = ['ireland', 'poland', 'acer_store'] as const
 
 function isMissingSchemaError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (auth) return auth
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const programmedStatuses = ['draft', 'approved', 'scheduled', 'live', 'paused'] as const
+  const programmedStatuses = ['scheduled'] as const
 
   const [stockRows, mappingRows, channels, productsToFillRows, campaignRows, sales24Rows, lastInvoiceRows] = await Promise.all([
     db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }).catch((err) => {
