@@ -135,9 +135,9 @@ ON CONFLICT(id) DO UPDATE SET
 async function main() {
   const env = parseEnvFile(DEV_VARS)
 
-  const wooBase = mustGet(env, 'WOO_BASE_URL')
-  const wooKey = mustGet(env, 'WOO_CONSUMER_KEY')
-  const wooSecret = mustGet(env, 'WOO_CONSUMER_SECRET')
+  const wooBase = mustGet(env, 'COINCART_URL')
+  const wooKey = mustGet(env, 'COINCART_KEY')
+  const wooSecret = mustGet(env, 'COINCART_SECRET')
 
   const shopKomp = mustGet(env, 'SHOPIFY_KOMPUTERZZ_SHOP')
   const kompClientId = mustGet(env, 'SHOPIFY_KOMPUTERZZ_CLIENT_ID')

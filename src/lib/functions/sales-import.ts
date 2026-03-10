@@ -188,9 +188,9 @@ async function fetchShopifyTransactions(channelId: SalesImportChannel, orderId: 
 }
 
 async function fetchWooOrders(since: string | null, limitPerChannel: number): Promise<any[]> {
-  const siteUrl = process.env.WOO_BASE_URL
-  const ck = process.env.WOO_CONSUMER_KEY
-  const cs = process.env.WOO_CONSUMER_SECRET
+  const siteUrl = process.env.COINCART_URL
+  const ck = process.env.COINCART_KEY
+  const cs = process.env.COINCART_SECRET
   if (!siteUrl || !ck || !cs) throw new Error('Missing WooCommerce credentials')
 
   const collected: any[] = []

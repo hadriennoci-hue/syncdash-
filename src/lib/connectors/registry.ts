@@ -15,9 +15,9 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
   switch (platform) {
     case 'woocommerce':
       return new WooCommerceConnector(
-        process.env.WOO_BASE_URL!,
-        process.env.WOO_CONSUMER_KEY!,
-        process.env.WOO_CONSUMER_SECRET!
+        process.env.COINCART_URL!,
+        process.env.COINCART_KEY!,
+        process.env.COINCART_SECRET!
       )
 
     case 'shopify_komputerzz':

@@ -34,9 +34,9 @@ NEXT_PUBLIC_APP_URL=https://syncdash.pages.dev
 AGENT_BEARER_TOKEN=<long-random-secret>
 
 # WooCommerce — coincart.store
-WOO_BASE_URL=https://coincart.store
-WOO_CONSUMER_KEY=ck_xxx
-WOO_CONSUMER_SECRET=cs_xxx
+COINCART_URL=https://coincart.store
+COINCART_KEY=ck_xxx
+COINCART_SECRET=cs_xxx
 
 # Shopify — komputerzz.com (source of truth)
 SHOPIFY_KOMPUTERZZ_SHOP=komputerzz.myshopify.com

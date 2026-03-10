@@ -105,9 +105,9 @@ AGENT_BEARER_TOKEN=                        # server-side bearer check (verifyBea
 NEXT_PUBLIC_AGENT_BEARER_TOKEN=            # client-side API calls (apiFetch)
 
 # WooCommerce — coincart.store
-WOO_BASE_URL=                              # e.g. https://coincart.store
-WOO_CONSUMER_KEY=
-WOO_CONSUMER_SECRET=
+COINCART_URL=                              # e.g. https://coincart.store
+COINCART_KEY=
+COINCART_SECRET=
 
 # Shopify — komputerzz.com
 SHOPIFY_KOMPUTERZZ_SHOP=                   # e.g. komputerzz.myshopify.com

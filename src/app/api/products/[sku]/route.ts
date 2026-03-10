@@ -35,7 +35,7 @@ function buildListingUrl(platform: string, platformId: string | null): string | 
   if (!platformId) return null
   switch (platform) {
     case 'woocommerce': {
-      const base = process.env.WOO_BASE_URL
+      const base = process.env.COINCART_URL
       return base ? `${base}/?p=${platformId}` : null
     }
     case 'shopify_komputerzz':
