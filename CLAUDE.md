@@ -405,7 +405,8 @@ npm run dev            # UI only — fast HMR, no D1 (all API routes return 500)
 npm run dev:cf         # Full stack worker runtime (OpenNext build + Wrangler dev)
                        # Slower (requires full build) but D1 + all bindings work
                        # Run db:migrate + db:seed first if local DB is empty
-npm run build          # Build app artifacts
+npm run build          # Plain Next.js build
+npm run build:cf       # Cloudflare/OpenNext build (creates .open-next/worker.js)
 npm run deploy         # Deploy Worker via OpenNext/Cloudflare
 
 # Quality
@@ -431,6 +432,17 @@ npm run db:generate    # Generate new migration from schema changes
 npx wrangler d1 list                          # List D1 databases
 npx wrangler d1 execute syncdash-db --local   # Run SQL locally
 ```
+
+### Cloudflare CI/CD Deploy Recipe (Important)
+- If deploy command is `npx wrangler deploy`, build command MUST be:
+  - `npm run build:cf` (OpenNext build), OR
+  - `npx opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion`
+- Do NOT use `next build` before `wrangler deploy` in CI.
+  - `next build` does not create `.open-next/worker.js`
+  - Symptom: `ERROR The entry-point file at ".open-next/worker.js" was not found`
+- Alternative single-command deploy in CI:
+  - Build command: empty/skip
+  - Deploy command: `npm run deploy`
 
 ---
 
