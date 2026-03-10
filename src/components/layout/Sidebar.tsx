@@ -41,23 +41,23 @@ const nav: NavItem[] = [
 
 function Logo() {
   return (
-    <div className="grid size-9 shrink-0 place-content-center rounded-lg bg-[#1E2A44] border border-[#35A7FF]/40">
-      <span className="text-[18px] leading-none text-[#35A7FF]">◉</span>
+    <div className="grid size-8 shrink-0 place-content-center rounded-lg bg-[#1E2A44] border border-[#35A7FF]/40">
+      <span className="text-[15px] leading-none text-[#35A7FF]">◉</span>
     </div>
   )
 }
 
 function TitleSection({ open }: { open: boolean }) {
   return (
-    <div className="mb-4 border-b border-[#1E2A44] pb-4 px-1">
-      <div className="flex items-center gap-3 rounded-md px-1 py-2">
+    <div className="mb-2 border-b border-[#1E2A44] pb-2 px-1">
+      <div className="flex items-center gap-2.5 rounded-md px-1 py-1">
         <Logo />
         {open && (
           <div>
             <span className="block text-sm font-bold tracking-wide text-[#E6ECFF]" style={{ fontFamily: 'var(--font-heading), serif' }}>
               WIZHARD
             </span>
-            <span className="block text-[10px] text-[#8FA0C7]">Master Catalogue</span>
+            <span className="block text-[9px] text-[#8FA0C7]">Master Catalogue</span>
           </div>
         )}
       </div>
@@ -72,7 +72,7 @@ function NavOption({
     <Link
       href={href}
       className={cn(
-        'relative flex h-11 w-full items-center rounded-md transition-all duration-150',
+        'relative flex h-8 w-full items-center rounded-md transition-all duration-150',
         active
           ? 'border-l-2 border-[#35A7FF] bg-[#1E2A44] text-[#E6ECFF]'
           : 'border-l-2 border-transparent text-[#8FA0C7] hover:bg-[#1E2A44]/60 hover:text-[#E6ECFF]',
@@ -91,10 +91,10 @@ function NavOption({
 
 function SectionDivider({ label, open }: { label: string; open: boolean }) {
   if (!open) {
-    return <div className="mx-3 my-2 h-px bg-[#1E2A44]" />
+    return <div className="mx-3 my-1 h-px bg-[#1E2A44]" />
   }
   return (
-    <div className="px-4 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-[0.15em] text-[#8FA0C7]/70">
+    <div className="px-4 pb-0.5 pt-2 text-[9px] font-semibold uppercase tracking-[0.15em] text-[#8FA0C7]/70">
       {label}
     </div>
   )
@@ -138,12 +138,12 @@ export function Sidebar() {
         open ? 'w-56' : 'w-16',
       )}
     >
-      <div className="flex h-full flex-col overflow-hidden pb-14 pt-4">
+      <div className="flex h-full flex-col overflow-hidden pb-12 pt-2">
         <div className="px-2">
           <TitleSection open={open} />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
+        <div className="flex-1 overflow-hidden px-2 space-y-0">
           {nav.map((item, i) => {
             if ('type' in item) {
               return <SectionDivider key={`section-${i}`} label={item.label} open={open} />
