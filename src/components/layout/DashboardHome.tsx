@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
+import { BackgroundPaths } from '@/components/ui/background-paths'
 
 // ---- types ----
 
@@ -283,7 +284,8 @@ export function DashboardHome() {
   )
 
   return (
-    <div className="-mx-4 -mt-4 min-h-screen bg-[#060D1F] px-6 py-6 md:-mx-6 md:-mt-6">
+    <div className="relative -mx-4 -mt-4 min-h-screen bg-[#060D1F] px-6 py-6 md:-mx-6 md:-mt-6">
+      <BackgroundPaths />
       {isError && (
         <div className="mb-4 rounded-lg border border-[rgba(255,92,122,0.4)] bg-[rgba(255,92,122,0.07)] px-4 py-2 text-xs text-[#FF5C7A]">
           Summary unavailable — check API / database
