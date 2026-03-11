@@ -38,7 +38,7 @@ export async function assignCategories(
         continue
       }
       const connector = await createConnector(platform)
-      const payloadIds = platform === 'woocommerce'
+      const payloadIds = platform === 'coincart2'
         ? categoryIds
           .map((id) => collectionNameById.get(id))
           .filter((name): name is string => Boolean(name && name.trim()))
@@ -56,3 +56,4 @@ export async function assignCategories(
 
   return results
 }
+

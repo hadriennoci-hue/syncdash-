@@ -5,7 +5,7 @@ import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { importSalesData } from '@/lib/functions/sales-import'
 
 const schema = z.object({
-  channels: z.array(z.enum(['woocommerce', 'shopify_komputerzz', 'shopify_tiktok'])).optional(),
+  channels: z.array(z.enum(['coincart2', 'shopify_komputerzz', 'shopify_tiktok'])).optional(),
   since: z.string().datetime().optional(),
   limitPerChannel: z.number().int().positive().max(5000).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
@@ -28,4 +28,5 @@ export async function POST(req: NextRequest) {
   const allOk = result.channels.every((c) => c.ok)
   return apiResponse(result, allOk ? 200 : 207)
 }
+
 

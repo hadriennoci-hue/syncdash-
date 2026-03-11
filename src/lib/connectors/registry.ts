@@ -13,7 +13,7 @@ import { getStoredToken } from '@/lib/functions/tokens'
 
 export function getConnector(platform: Platform, tokenOverride?: string): PlatformConnector {
   switch (platform) {
-    case 'woocommerce':
+    case 'coincart2':
       return new WooCommerceConnector(
         process.env.COINCART_URL!,
         process.env.COINCART_KEY!,
@@ -146,7 +146,7 @@ export async function createWarehouseConnector(warehouseId: string): Promise<War
 // ---------------------------------------------------------------------------
 
 export const ALL_PLATFORMS: Platform[] = [
-  'woocommerce',
+  'coincart2',
   'shopify_komputerzz',
   'shopify_tiktok',
   'ebay_ie',

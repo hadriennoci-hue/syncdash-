@@ -3,7 +3,7 @@ import {
   products, productVariants, productImages, productPrices,
   productMetafields, platformMappings, categories, productCategories,
 } from '@/lib/db/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
@@ -14,6 +14,27 @@ interface ImportResult {
   updated: number
   skipped: number
   errors: string[]
+}
+
+const WIZHARD_COLLECTION_PLATFORM: Platform = 'shopify_komputerzz'
+const KEYBOARD_LAYOUT_SLUGS = new Set([
+  'fra-azerty',
+  'ger-qwertz',
+  'ita-qwerty',
+  'spa-qwerty',
+  'swe-qwerty',
+  'swiss-qwertz',
+  'uk-qwerty',
+  'us-qwerty',
+])
+
+function normalizeCollectionSlug(slug: string | null, name: string): string {
+  const base = (slug ?? name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return base
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -61,6 +82,27 @@ export async function importFromPlatform(
     ? await db.select({ id: products.id }).from(products).where(inArray(products.id, skus))
     : []
   const existingSkus = new Set(existingRows.map((r) => r.id))
+
+  const collectionPlatforms: Platform[] = isAcerPlatform
+    ? [platform, WIZHARD_COLLECTION_PLATFORM]
+    : [platform]
+  const existingCategoryRows = await db.select({
+    id: categories.id,
+    platform: categories.platform,
+    slug: categories.slug,
+    name: categories.name,
+  }).from(categories).where(inArray(categories.platform, collectionPlatforms))
+  const collectionIdByPlatformSlug = new Map<string, string>()
+  const categoryIdsByPlatform = new Map<string, Set<string>>()
+  for (const row of existingCategoryRows) {
+    const normSlug = normalizeCollectionSlug(row.slug ?? null, row.name)
+    if (!normSlug) continue
+    const key = `${row.platform}:${normSlug}`
+    if (!collectionIdByPlatformSlug.has(key)) collectionIdByPlatformSlug.set(key, row.id)
+    const set = categoryIdsByPlatform.get(row.platform) ?? new Set<string>()
+    set.add(row.id)
+    categoryIdsByPlatform.set(row.platform, set)
+  }
 
   let imported = 0
   let updated  = 0
@@ -172,22 +214,83 @@ export async function importFromPlatform(
 
       // Collections / categories — batch upsert categories, then batch insert joins
       if (raw.collections.length > 0) {
-        for (const col of raw.collections) {
-          await db.insert(categories).values({
-            id:             `${platform}_${col.platformId}`,
-            platform,
-            name:           col.name,
-            slug:           col.slug,
-            collectionType: 'product',
-          }).onConflictDoUpdate({
-            target: categories.id,
-            set: { name: col.name },
-          })
+        const normalizedCollections = raw.collections
+          .map((col) => ({
+            name: col.name.trim(),
+            slug: normalizeCollectionSlug(col.slug ?? null, col.name),
+            platformId: col.platformId,
+          }))
+          .filter((col) => col.name.length > 0 && col.slug.length > 0)
+          .filter((col) => !(isAcerPlatform && KEYBOARD_LAYOUT_SLUGS.has(col.slug)))
+        const seenSlugs = new Set<string>()
+        const dedupedCollections = normalizedCollections.filter((col) => {
+          if (seenSlugs.has(col.slug)) return false
+          seenSlugs.add(col.slug)
+          return true
+        })
+
+        const removableIds = new Set<string>([
+          ...(categoryIdsByPlatform.get(platform)?.values() ?? []),
+          ...(isAcerPlatform ? (categoryIdsByPlatform.get(WIZHARD_COLLECTION_PLATFORM)?.values() ?? []) : []),
+        ])
+        if (removableIds.size > 0) {
+          await db.delete(productCategories).where(and(
+            eq(productCategories.productId, raw.sku),
+            inArray(productCategories.categoryId, Array.from(removableIds.values()))
+          ))
         }
+
+        const categoryIdsToLink = new Set<string>()
+        for (const col of dedupedCollections) {
+          const sourceKey = `${platform}:${col.slug}`
+          let sourceCategoryId = collectionIdByPlatformSlug.get(sourceKey) ?? null
+          if (!sourceCategoryId) {
+            sourceCategoryId = `${platform}_${col.platformId}`
+            await db.insert(categories).values({
+              id: sourceCategoryId,
+              platform,
+              name: col.name,
+              slug: col.slug,
+              collectionType: 'product',
+            }).onConflictDoUpdate({
+              target: categories.id,
+              set: { name: col.name, slug: col.slug },
+            })
+            collectionIdByPlatformSlug.set(sourceKey, sourceCategoryId)
+            const sourceSet = categoryIdsByPlatform.get(platform) ?? new Set<string>()
+            sourceSet.add(sourceCategoryId)
+            categoryIdsByPlatform.set(platform, sourceSet)
+          }
+          categoryIdsToLink.add(sourceCategoryId)
+
+          if (isAcerPlatform) {
+            const wizhardKey = `${WIZHARD_COLLECTION_PLATFORM}:${col.slug}`
+            let wizhardCategoryId = collectionIdByPlatformSlug.get(wizhardKey) ?? null
+            if (!wizhardCategoryId) {
+              wizhardCategoryId = `wizhard_${col.slug}`
+              await db.insert(categories).values({
+                id: wizhardCategoryId,
+                platform: WIZHARD_COLLECTION_PLATFORM,
+                name: col.name,
+                slug: col.slug,
+                collectionType: 'product',
+              }).onConflictDoUpdate({
+                target: categories.id,
+                set: { name: col.name, slug: col.slug },
+              })
+              collectionIdByPlatformSlug.set(wizhardKey, wizhardCategoryId)
+              const wizhardSet = categoryIdsByPlatform.get(WIZHARD_COLLECTION_PLATFORM) ?? new Set<string>()
+              wizhardSet.add(wizhardCategoryId)
+              categoryIdsByPlatform.set(WIZHARD_COLLECTION_PLATFORM, wizhardSet)
+            }
+            categoryIdsToLink.add(wizhardCategoryId)
+          }
+        }
+
         await db.insert(productCategories)
-          .values(raw.collections.map((col) => ({
-            productId:  raw.sku,
-            categoryId: `${platform}_${col.platformId}`,
+          .values(Array.from(categoryIdsToLink.values()).map((categoryId) => ({
+            productId: raw.sku,
+            categoryId,
           })))
           .onConflictDoNothing()
       }

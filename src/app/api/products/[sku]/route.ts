@@ -34,6 +34,10 @@ function shopifyAdminUrl(shopEnvVar: string | undefined, platformId: string): st
 function buildListingUrl(platform: string, platformId: string | null): string | null {
   if (!platformId) return null
   switch (platform) {
+    case 'coincart2': {
+      const base = process.env.COINCART_URL
+      return base ? `${base}/?p=${platformId}` : null
+    }
     case 'woocommerce': {
       const base = process.env.COINCART_URL
       return base ? `${base}/?p=${platformId}` : null
@@ -154,9 +158,10 @@ export async function GET(
     acerStoreSourceUrl:   acerSource?.sourceUrl ?? null,
     acerStoreSourceName:  acerSource?.sourceName ?? null,
     localization,
-    collections: categoryItems.filter((c) => c.platform !== 'woocommerce'),
+    collections: categoryItems.filter((c) => c.platform !== 'coincart2'),
     pushStatus: {
-      woocommerce:        product.pushedWoocommerce,
+      coincart2:          product.pushedCoincart2,
+      woocommerce:        product.pushedCoincart2, // legacy alias
       shopify_komputerzz: product.pushedShopifyKomputerzz,
       shopify_tiktok:     product.pushedShopifyTiktok,
       ebay_ie:            product.pushedEbayIe,
@@ -210,3 +215,4 @@ export async function DELETE(
 
   return apiResponse(results)
 }
+

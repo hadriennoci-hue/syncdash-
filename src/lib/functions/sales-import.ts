@@ -20,7 +20,7 @@ import { getStoredToken, refreshShopifyToken } from './tokens'
 import { extractOrderMarketingSignals, upsertOrderAttribution } from './google-ads'
 import type { TriggeredBy } from '@/types/platform'
 
-type SalesImportChannel = 'woocommerce' | 'shopify_komputerzz' | 'shopify_tiktok'
+type SalesImportChannel = 'coincart2' | 'shopify_komputerzz' | 'shopify_tiktok'
 
 interface SalesImportOptions {
   channels?: SalesImportChannel[]
@@ -559,7 +559,7 @@ async function replaceTransactionsForOrder(channelId: SalesImportChannel, platfo
 async function importOneChannel(channelId: SalesImportChannel, options: Required<Pick<SalesImportOptions, 'limitPerChannel'>> & { since: string | null; triggeredBy: TriggeredBy }): Promise<ChannelImportResult> {
   const cursorFrom = await getChannelCursor(channelId)
   const since = options.since ?? cursorFrom ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const platform = channelId.startsWith('shopify') ? 'shopify' : 'woocommerce'
+  const platform = channelId.startsWith('shopify') ? 'shopify' : 'coincart2'
   const result: ChannelImportResult = {
     channelId,
     ok: true,
@@ -650,7 +650,7 @@ export async function importSalesData(options: SalesImportOptions = {}): Promise
   const startedAt = new Date().toISOString()
   const requested = options.channels?.length
     ? options.channels
-    : (['woocommerce', 'shopify_komputerzz', 'shopify_tiktok'] as SalesImportChannel[])
+    : (['coincart2', 'shopify_komputerzz', 'shopify_tiktok'] as SalesImportChannel[])
 
   const enabledRows = await db.query.salesChannels.findMany({
     where: and(
@@ -681,3 +681,4 @@ export async function importSalesData(options: SalesImportOptions = {}): Promise
     channels: results,
   }
 }
+

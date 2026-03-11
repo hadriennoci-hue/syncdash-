@@ -52,7 +52,7 @@ interface EligibleProduct {
   ean:                     string | null
   vendor:                  string | null
   productType:             string | null
-  pushedWoocommerce:       string
+  pushedCoincart2:       string
   pushedShopifyKomputerzz: string
   pushedShopifyTiktok:     string
   pushedEbayIe:            string
@@ -89,7 +89,7 @@ function slugifyHandle(input: string): string {
 }
 
 function isPushable(p: EligibleProduct, platform: Platform): boolean {
-  if (platform === 'woocommerce')        return p.pushedWoocommerce === '2push'
+  if (platform === 'coincart2')        return p.pushedCoincart2 === '2push'
   if (platform === 'shopify_komputerzz') return p.pushedShopifyKomputerzz === '2push'
   if (platform === 'shopify_tiktok')     return p.pushedShopifyTiktok === '2push'
   if (platform === 'ebay_ie')            return p.pushedEbayIe === '2push'
@@ -99,7 +99,7 @@ function isPushable(p: EligibleProduct, platform: Platform): boolean {
 }
 
 function getPushUpdate(platform: Platform, value: string): Record<string, string> {
-  if (platform === 'woocommerce')        return { pushedWoocommerce: value }
+  if (platform === 'coincart2')        return { pushedCoincart2: value }
   if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: value }
   if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: value }
   if (platform === 'ebay_ie')            return { pushedEbayIe: value }
@@ -129,7 +129,7 @@ export async function syncChannelAvailability(
 ): Promise<ChannelSyncResult[]> {
   const raw = await db.query.products.findMany({
     where: or(
-      eq(products.pushedWoocommerce, '2push'),
+      eq(products.pushedCoincart2, '2push'),
       eq(products.pushedShopifyKomputerzz, '2push'),
       eq(products.pushedShopifyTiktok, '2push'),
       eq(products.pushedEbayIe, '2push'),
@@ -240,7 +240,7 @@ async function pushPlatform(
               sku: product.id,
               ean: product.ean?.trim() ? product.ean.trim() : undefined,
               collections: product.categories
-                .filter((pc) => pc.category.platform !== 'woocommerce')
+                .filter((pc) => pc.category.platform !== 'coincart2')
                 .map((pc) => ({
                   title: pc.category.name,
                   handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
@@ -269,7 +269,7 @@ async function pushPlatform(
       }
 
       const updateExisting = async (platformId: string): Promise<void> => {
-        if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+        if (platform === 'coincart2' && isWooSkuAware(connector)) {
           if (variantPayloads?.length) {
             await connector.updateProduct(platformId, payloadWithVariants)
             await connector.toggleStatus(platformId, 'active')
@@ -293,12 +293,12 @@ async function pushPlatform(
           .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
 
         const categoryIds = product.categories
-          .filter((pc) => platform === 'woocommerce'
-            ? pc.category.platform !== 'woocommerce'
+          .filter((pc) => platform === 'coincart2'
+            ? pc.category.platform !== 'coincart2'
             : pc.category.platform === platform)
           .map((pc) => pc.category.id)
         const collections = product.categories
-          .filter((pc) => pc.category.platform !== 'woocommerce')
+          .filter((pc) => pc.category.platform !== 'coincart2')
           .map((pc) => ({
             name: pc.category.name,
             handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
@@ -434,7 +434,7 @@ async function pushPlatform(
       .map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
 
     if (toZero.length > 0) {
-      if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+      if (platform === 'coincart2' && isWooSkuAware(connector)) {
         await connector.bulkSetStockForSkus(toZero)
       } else {
         await connector.bulkSetStock(toZero.map(({ platformId, quantity }) => ({ platformId, quantity })))
@@ -464,3 +464,4 @@ async function pushPlatform(
     incomplete: [],
   }
 }
+

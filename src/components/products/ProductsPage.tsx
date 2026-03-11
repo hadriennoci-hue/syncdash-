@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { apiFetch } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS } from '@/types/platform'
 
-const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie'] as const
+const PLATFORMS = ['coincart2', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie'] as const
 
 export function ProductsPage() {
   const [page, setPage]     = useState(1)
@@ -130,3 +130,4 @@ function StatusDot({ status }: { status?: string }) {
   const color = status === 'synced' ? 'bg-green-500' : status === 'differences' ? 'bg-amber-500' : 'bg-muted-foreground/40'
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} title={status} />
 }
+

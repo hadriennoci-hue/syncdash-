@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS } from '@/types/platform'
 
-const PLATFORMS = ['woocommerce', 'shopify_komputerzz', 'ebay_ie', 'libre_market', 'xmr_bazaar'] as const
+const PLATFORMS = ['coincart2', 'shopify_komputerzz', 'ebay_ie', 'libre_market', 'xmr_bazaar'] as const
 
 interface FillResult {
   sku:     string
@@ -269,3 +269,4 @@ function StockHealthDot({ product }: { product: any }) {
   const title = totalStock > 0 ? 'In stock' : (incomplete ? 'Incomplete' : 'Out of stock')
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} title={title} />
 }
+

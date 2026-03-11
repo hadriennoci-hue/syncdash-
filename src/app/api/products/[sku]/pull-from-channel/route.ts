@@ -86,11 +86,11 @@ export async function POST(
       imagesFetched = toInsert.length
     }
 
-  // Categories — upsert as WooCommerce category slugs into categories + product_categories
+  // Categories — upsert as collections into categories + product_categories
     let categoriesImported = 0
     if (fields.includes('categories') && raw.collections.length > 0) {
       for (const col of raw.collections) {
-        const catId = `woo_${col.platformId}`
+        const catId = `${platform}_${col.platformId}`
         await db.insert(categoriesTable)
           .values({ id: catId, platform, name: col.name, slug: col.slug ?? catId, collectionType: 'product' })
           .onConflictDoUpdate({ target: categoriesTable.id, set: { name: col.name } })
@@ -131,3 +131,4 @@ export async function POST(
     return apiError('INTERNAL_ERROR', err instanceof Error ? err.message : 'Unknown error', 500)
   }
 }
+

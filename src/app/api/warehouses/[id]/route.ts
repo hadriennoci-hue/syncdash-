@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: eq(warehouseStock.warehouseId, params.id),
     with: {
       product: {
-        columns: { id: true, title: true, status: true, pushedWoocommerce: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true, pushedEbayIe: true, pushedLibreMarket: true, pushedXmrBazaar: true },
+        columns: { id: true, title: true, status: true, pushedCoincart2: true, pushedShopifyKomputerzz: true, pushedShopifyTiktok: true, pushedEbayIe: true, pushedLibreMarket: true, pushedXmrBazaar: true },
         with: { categories: { with: { category: true } } },
       },
     },
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       productId:                s.productId,
       productTitle:             s.product?.title ?? null,
       productStatus:            s.product?.status ?? null,
-      pushedWoocommerce:        s.product?.pushedWoocommerce ?? 'N',
+      pushedCoincart2:        s.product?.pushedCoincart2 ?? 'N',
       pushedShopifyKomputerzz:  s.product?.pushedShopifyKomputerzz ?? 'N',
       pushedShopifyTiktok:      s.product?.pushedShopifyTiktok ?? 'N',
       pushedEbayIe:             s.product?.pushedEbayIe ?? 'N',
@@ -62,3 +62,4 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })),
   })
 }
+

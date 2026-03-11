@@ -6,8 +6,8 @@ import { apiFetch } from '@/lib/utils/api-fetch'
 
 export default function ValidatePage() {
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['validate-woo'],
-    queryFn:  () => apiFetch('/api/validate/woocommerce-readiness'),
+    queryKey: ['validate-coincart2'],
+    queryFn:  () => apiFetch('/api/validate/coincart2-readiness'),
   })
 
   const d = data?.data
@@ -62,3 +62,4 @@ export default function ValidatePage() {
     </div>
   )
 }
+

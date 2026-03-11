@@ -75,13 +75,13 @@ export async function GET(req: NextRequest) {
 
   const pushWhere = and(
     or(
-      eq(products.pushedWoocommerce, '2push'),
+      eq(products.pushedCoincart2, '2push'),
       eq(products.pushedShopifyKomputerzz, '2push'),
       eq(products.pushedShopifyTiktok, '2push'),
       eq(products.pushedEbayIe, '2push'),
       eq(products.pushedLibreMarket, '2push'),
       eq(products.pushedXmrBazaar, '2push'),
-      like(products.pushedWoocommerce, 'FAIL:%'),
+      like(products.pushedCoincart2, 'FAIL:%'),
       like(products.pushedShopifyKomputerzz, 'FAIL:%'),
       like(products.pushedShopifyTiktok, 'FAIL:%'),
       like(products.pushedEbayIe, 'FAIL:%'),
@@ -182,3 +182,4 @@ export async function GET(req: NextRequest) {
     },
   })
 }
+

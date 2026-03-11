@@ -80,10 +80,10 @@ function buildState(product: {
   metafields: Array<{ namespace: string; key: string; value: string | null }>
 }): ProductState {
   const tags = parseTags(product.tags)
-  const priceRow = product.prices.find((p) => p.platform === 'woocommerce')
+  const priceRow = product.prices.find((p) => p.platform === 'coincart2')
   const collections = product.categories
     .filter((pc): pc is { category: { name: string; slug: string | null; platform: string } } => Boolean(pc.category))
-    .filter((pc) => pc.category.platform !== 'woocommerce')
+    .filter((pc) => pc.category.platform !== 'coincart2')
     .map((pc) => ({ name: pc.category.name, slug: pc.category.slug ?? '' }))
 
   const hasCollection = collections.length > 0
@@ -215,7 +215,7 @@ async function backfillFromWarehouses(
   sources: string[]
 ): Promise<void> {
   const now = new Date().toISOString()
-  const currentPriceRow = product.prices.find((p) => p.platform === 'woocommerce') ?? null
+  const currentPriceRow = product.prices.find((p) => p.platform === 'coincart2') ?? null
   const isPriceMissing = currentPriceRow?.price == null
   const isPromoMissing = currentPriceRow?.compareAt == null
   const isDescriptionMissing = !product.description?.trim()
@@ -232,7 +232,7 @@ async function backfillFromWarehouses(
   if ((isPriceMissing || isPromoMissing) && (nextPrice != null || nextCompareAt != null)) {
     await db.insert(productPrices).values({
       productId: product.id,
-      platform: 'woocommerce',
+      platform: 'coincart2',
       price: nextPrice,
       compareAt: nextCompareAt,
       updatedAt: now,
@@ -331,3 +331,4 @@ export async function fillMissingFields(
   })
   return { sku, status: 'info', filled, missing, sources: [...new Set(sources)] }
 }
+

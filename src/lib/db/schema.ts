@@ -37,7 +37,7 @@ export const products = sqliteTable('products', {
   pendingReview:        integer('pending_review').notNull().default(0), // 1 = auto-created, needs user check
   supplierId:           text('supplier_id').references(() => suppliers.id),
   // Push status per channel: 'N' = don't push, '2push' = push on next run, 'done' = already pushed
-  pushedWoocommerce:        text('pushed_woocommerce').notNull().default('N'),
+  pushedCoincart2:          text('pushed_coincart2').notNull().default('N'),
   pushedShopifyKomputerzz:  text('pushed_shopify_komputerzz').notNull().default('N'),
   pushedShopifyTiktok:      text('pushed_shopify_tiktok').notNull().default('N'),
   pushedEbayIe:             text('pushed_ebay_ie').notNull().default('N'),
@@ -145,11 +145,6 @@ export const productCategories = sqliteTable('product_categories', {
   productId:  text('product_id').notNull().references(() => products.id),
   categoryId: text('category_id').notNull().references(() => categories.id),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.categoryId] }) }))
-
-export const categoryMappings = sqliteTable('category_mappings', {
-  shopifyCollectionId: text('shopify_collection_id').notNull().references(() => categories.id),
-  wooCategoryId:       text('woo_category_id').notNull().references(() => categories.id),
-}, (t) => ({ pk: primaryKey({ columns: [t.shopifyCollectionId, t.wooCategoryId] }) }))
 
 // ---------------------------------------------------------------------------
 // Warehouses

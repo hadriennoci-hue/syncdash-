@@ -15,7 +15,7 @@ function getPushCol(platform: Platform) {
   if (platform === 'ebay_ie')            return products.pushedEbayIe
   if (platform === 'xmr_bazaar')         return products.pushedXmrBazaar
   if (platform === 'libre_market')       return products.pushedLibreMarket
-  return products.pushedWoocommerce
+  return products.pushedCoincart2
 }
 
 function getPushValue(p: Record<string, unknown>, platform: Platform): string {
@@ -24,12 +24,12 @@ function getPushValue(p: Record<string, unknown>, platform: Platform): string {
   if (platform === 'ebay_ie')            return String(p.pushedEbayIe ?? 'N')
   if (platform === 'xmr_bazaar')         return String(p.pushedXmrBazaar ?? 'N')
   if (platform === 'libre_market')       return String(p.pushedLibreMarket ?? 'N')
-  return String(p.pushedWoocommerce ?? 'N')
+  return String(p.pushedCoincart2 ?? 'N')
 }
 
 // Platforms that have push columns in the products table (includes browser channels)
 const PUSH_PLATFORMS: Platform[] = [
-  'woocommerce', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie',
+  'coincart2', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie',
   'xmr_bazaar', 'libre_market',
 ]
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const auth = verifyBearer(req)
   if (auth) return auth
 
-  const platform = params.id as Platform
+  const platform = (params.id === 'woocommerce' ? 'coincart2' : params.id) as Platform
 
   // Validate against sales_channels table (source of truth for all channels)
   const channel = await db.query.salesChannels.findFirst({
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     pushedShopifyKomputerzz: string | null
     pushedShopifyTiktok: string | null
     pushedEbayIe: string | null
-    pushedWoocommerce: string | null
+    pushedCoincart2: string | null
     pushedXmrBazaar: string | null
     pushedLibreMarket: string | null
     prices: Array<{ productId: string; platform: string; price: number | null; compareAt: number | null }>
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const baseProducts = (baseRes.results ?? []).map((row) => ({
         id:                      String((row as any).id),
         title:                   String((row as any).title),
-        pushedWoocommerce:       String((row as any).pushed_woocommerce ?? 'N'),
+        pushedCoincart2:       String((row as any).pushed_coincart2 ?? 'N'),
         pushedShopifyKomputerzz: String((row as any).pushed_shopify_komputerzz ?? 'N'),
         pushedShopifyTiktok:     String((row as any).pushed_shopify_tiktok ?? 'N'),
         pushedEbayIe:            String((row as any).pushed_ebay_ie ?? 'N'),
@@ -215,3 +215,4 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
   return apiResponse(responseBody, 200)
 }
+

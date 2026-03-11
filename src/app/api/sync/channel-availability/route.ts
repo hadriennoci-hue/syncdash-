@@ -8,7 +8,7 @@ import type { Platform } from '@/types/platform'
 
 
 const schema = z.object({
-  platforms:   z.array(z.string()).min(1).default(['shopify_komputerzz', 'woocommerce', 'ebay_ie']),
+  platforms:   z.array(z.string()).min(1).default(['shopify_komputerzz', 'coincart2', 'ebay_ie']),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
   protectRecentChannelEditsHours: z.number().min(0).max(24 * 30).default(0.5),
 })
@@ -33,3 +33,4 @@ export async function POST(req: NextRequest) {
 
   return apiResponse(results)
 }
+

@@ -1,5 +1,5 @@
 export type Platform =
-  | 'woocommerce'
+  | 'coincart2'
   | 'shopify_komputerzz'
   | 'shopify_tiktok'
   | 'ebay_ie'
@@ -32,7 +32,7 @@ export type PricePerPlatform = Partial<Record<Platform, number>>
 export type PlatformStatus = 'synced' | 'differences' | 'missing' | 'error' | 'pending'
 
 export const PLATFORMS: Platform[] = [
-  'woocommerce',
+  'coincart2',
   'shopify_komputerzz',
   'shopify_tiktok',
   'ebay_ie',
@@ -41,7 +41,7 @@ export const PLATFORMS: Platform[] = [
 ]
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
-  woocommerce:        'Coincart2',
+  coincart2:          'Coincart2',
   shopify_komputerzz: 'KOMPUTERZZ.COM',
   shopify_tiktok:     'Tech Store (TikTok)',
   ebay_ie:            'eBay.ie',

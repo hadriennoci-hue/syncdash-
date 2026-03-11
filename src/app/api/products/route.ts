@@ -152,9 +152,7 @@ export async function GET(req: NextRequest) {
         purchasePrice:    stockMap.acer_store?.purchasePrice    ?? stockMap.ireland?.purchasePrice ?? null,
       },
       categories:     [],
-      collections:    p.categories
-        .filter((c) => c.categoryId && !String(c.categoryId).startsWith('woo_'))
-        .map((c) => c.categoryId),
+      collections:    p.categories.map((c) => c.categoryId),
       inconsistencies: 0,
       updatedAt:      p.updatedAt,
     }

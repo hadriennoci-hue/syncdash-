@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { and, asc, eq, gte, lte } from 'drizzle-orm'
+import { and, asc, eq, gte, lte, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
@@ -44,10 +44,12 @@ export async function GET(req: NextRequest) {
 
   const from = req.nextUrl.searchParams.get('from')
   const to = req.nextUrl.searchParams.get('to')
+  const excludeStatus = req.nextUrl.searchParams.get('excludeStatus')
 
   const postsWhere = [
     from ? gte(socialMediaPosts.scheduledFor, from) : undefined,
     to ? lte(socialMediaPosts.scheduledFor, to) : undefined,
+    excludeStatus ? ne(socialMediaPosts.status, excludeStatus) : undefined,
   ].filter(Boolean) as any[]
 
   const accounts = await db.query.socialMediaAccounts.findMany({

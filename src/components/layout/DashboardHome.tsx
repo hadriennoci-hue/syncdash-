@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -41,7 +41,7 @@ const WAREHOUSES = [
 ] as const
 
 const CHANNELS = [
-  { id: 'woocommerce', label: 'COINCART2', sub: 'coincart.store', href: '/channels/woocommerce' },
+  { id: 'coincart2', label: 'COINCART2', sub: 'coincart.store', href: '/channels/coincart2' },
   { id: 'shopify_komputerzz', label: 'KOMPUTERZZ', sub: 'komputerzz.com', href: '/channels/shopify_komputerzz' },
   { id: 'shopify_tiktok', label: 'TIKTOK TECH STORE', sub: 'shopify_tiktok', href: '/channels/shopify_tiktok' },
   { id: 'ebay_ie', label: 'EBAY IRELAND', sub: 'ebay.ie', href: '/channels/ebay_ie' },
@@ -258,7 +258,7 @@ export function DashboardHome() {
     setPushError(null)
     try {
       const res = await apiPost('/api/sync/channel-availability', {
-        platforms: ['shopify_komputerzz', 'woocommerce', 'ebay_ie'],
+        platforms: ['shopify_komputerzz', 'coincart2', 'ebay_ie'],
         triggeredBy: 'human',
       })
       setPushResult((res as { data: ChannelSyncResult[] }).data)
@@ -430,3 +430,4 @@ export function DashboardHome() {
     </div>
   )
 }
+

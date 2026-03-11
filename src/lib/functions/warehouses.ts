@@ -97,7 +97,7 @@ export async function syncWarehouse(
           // All ACER-sourced SKUs (Ireland + ACER Store): queue for Komputerzz + Coincart, skip TikTok
           ...(isAcerSource ? {
             pushedShopifyKomputerzz: '2push',
-            pushedWoocommerce:       '2push',
+            pushedCoincart2:       '2push',
             pushedEbayIe:            '2push',
             pushedShopifyTiktok:     'N',
           } : {}),
@@ -178,7 +178,7 @@ function isWooSkuAware(connector: unknown): connector is WooSkuAware {
 }
 
 function supportsBatchTouchFinalize(platform: Platform): boolean {
-  return platform === 'shopify_komputerzz' || platform === 'woocommerce'
+  return platform === 'shopify_komputerzz' || platform === 'coincart2'
 }
 
 export async function pushStockToChannels(
@@ -287,7 +287,7 @@ export async function pushStockToChannels(
 
         if (toZero.length > 0) {
           try {
-            if (platform === 'woocommerce' && isWooSkuAware(connector)) {
+            if (platform === 'coincart2' && isWooSkuAware(connector)) {
               await connector.bulkSetStockForSkus(toZero)
             } else {
               await connector.bulkSetStock(
@@ -439,3 +439,4 @@ export async function overrideWarehouseStock(
     triggeredBy,
   })
 }
+

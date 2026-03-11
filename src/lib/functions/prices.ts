@@ -6,7 +6,7 @@ import { logOperation } from './log'
 import type { Platform, SyncResult, TriggeredBy } from '@/types/platform'
 
 function getPushStatusUpdate(platform: Platform): Record<string, string> {
-  if (platform === 'woocommerce')        return { pushedWoocommerce: '2push' }
+  if (platform === 'coincart2')        return { pushedCoincart2: '2push' }
   if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: '2push' }
   if (platform === 'shopify_tiktok')     return { pushedShopifyTiktok: '2push' }
   if (platform === 'ebay_ie')            return { pushedEbayIe: '2push' }
@@ -61,3 +61,4 @@ export async function updateProductPrice(
 
   return results
 }
+

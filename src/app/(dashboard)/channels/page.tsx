@@ -214,7 +214,7 @@ export default function ChannelsPage() {
                       {p.title}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <ChannelPriceCell platform={p.platforms.woocommerce} product={p} />
+                      <ChannelPriceCell platform={p.platforms.coincart2} product={p} />
                     </td>
                     <td className="px-3 py-2 text-center">
                       <ChannelPriceCell platform={p.platforms.shopify_komputerzz} product={p} />
@@ -270,3 +270,4 @@ function ChannelPriceCell({ platform, product }: { platform?: PlatformData; prod
 
   return <span className={colorClass}>EUR {price.toFixed(2)}</span>
 }
+

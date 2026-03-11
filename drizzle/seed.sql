@@ -13,7 +13,7 @@ INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source
 
 -- Sales Channels
 INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, config, created_at) VALUES
-  ('woocommerce',        'CoInCart',            'https://coincart.store',   'woocommerce_api', 1, NULL,                                                                                                                    datetime('now')),
+  ('coincart2',        'CoInCart',            'https://coincart.store',   'woocommerce_api', 1, NULL,                                                                                                                    datetime('now')),
   ('shopify_komputerzz', 'Komputerzz',          'https://komputerzz.com',   'shopify_api',     1, '{"shopDomain":"ikw70s-fr.myshopify.com"}',                                                                              datetime('now')),
   ('shopify_tiktok',     'Tech Store (TikTok)', 'https://shop.tiktok.com',  'shopify_api',     1, '{"shopDomain":"qanjg5-0h.myshopify.com"}',                                                                              datetime('now')),
   ('ebay_ie',            'eBay Ireland',        'https://www.ebay.ie',      'ebay_api',        1, '{"marketplaceId":"EBAY_IE","format":"FIXED_PRICE"}',                                                                    datetime('now')),
@@ -25,15 +25,16 @@ INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, co
 -- No row = warehouse FORBIDDEN for that channel
 --
 -- Rules:
---   Coincart (woocommerce):       Ireland (1st) + Acer Store (2nd)
+--   Coincart (coincart2):       Ireland (1st) + Acer Store (2nd)
 --   Komputerzz (shopify_komputerzz): Ireland (1st) + Acer Store (2nd)
 --   TikTok (shopify_tiktok):      Ireland ONLY — Acer Store is FORBIDDEN (no row)
 INSERT OR IGNORE INTO warehouse_channel_rules (warehouse_id, platform, priority) VALUES
-  ('ireland',    'woocommerce',        1),
-  ('acer_store', 'woocommerce',        2),
+  ('ireland',    'coincart2',        1),
+  ('acer_store', 'coincart2',        2),
   ('ireland',    'shopify_komputerzz', 1),
   ('acer_store', 'shopify_komputerzz', 2),
   ('ireland',    'ebay_ie',            1),
   ('acer_store', 'ebay_ie',            2),
   ('ireland',    'shopify_tiktok',     1);
   -- acer_store + shopify_tiktok: intentionally omitted = FORBIDDEN
+

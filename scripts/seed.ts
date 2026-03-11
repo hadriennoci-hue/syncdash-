@@ -17,10 +17,10 @@ INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source
 
 -- Warehouse channel rules
 INSERT OR IGNORE INTO warehouse_channel_rules (warehouse_id, platform, push_stock, push_status) VALUES
-  ('ireland', 'woocommerce',        1, 0),
+  ('ireland', 'coincart2',        1, 0),
   ('ireland', 'shopify_komputerzz', 1, 0),
   ('ireland', 'shopify_tiktok',     0, 0),  -- TikTok auto-updates from warehouse
-  ('poland',  'woocommerce',        1, 0),
+  ('poland',  'coincart2',        1, 0),
   ('poland',  'shopify_komputerzz', 1, 0);
 `
 
@@ -29,3 +29,4 @@ console.log('npx wrangler d1 execute syncdash --local --command="' + SEED_SQL.re
 console.log()
 console.log('Or save to drizzle/seed.sql and run:')
 console.log('npx wrangler d1 execute syncdash --local --file=drizzle/seed.sql')
+

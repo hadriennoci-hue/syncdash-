@@ -3,7 +3,7 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { categories } from '@/lib/db/schema'
-import { and, eq, ne } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
   const auth = verifyBearer(req)
@@ -12,9 +12,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const platform = searchParams.get('platform')
 
-  const where = platform
-    ? and(eq(categories.platform, platform), ne(categories.platform, 'woocommerce'))
-    : ne(categories.platform, 'woocommerce')
+  const where = platform ? eq(categories.platform, platform) : undefined
 
   const rows = await db.select().from(categories).where(where)
 
@@ -26,3 +24,4 @@ export async function GET(req: NextRequest) {
     collectionType: c.collectionType,
   })))
 }
+
