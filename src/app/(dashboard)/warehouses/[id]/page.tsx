@@ -131,7 +131,7 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-sm font-semibold">{w.displayName}</h1>
-          <p className="text-xs text-muted-foreground">{w.address ?? '—'}</p>
+          <p className="text-xs text-muted-foreground">{w.address ?? 'â€”'}</p>
         </div>
         <div className="text-xs space-y-0.5 text-right">
           <div><span className="text-green-600">manual stock edit enabled</span></div>
@@ -167,7 +167,7 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
                       className="text-[11px] border border-border rounded px-1 py-0.5 bg-background disabled:opacity-50"
                       title={`Apply ${p.label} to all`}
                     >
-                      <option value="">all�</option>
+                      <option value="">all…</option>
                       <option value="N">N</option>
                       <option value="2push">2push</option>
                       <option value="done">done</option>
@@ -211,15 +211,15 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
                     <span
                       className="block overflow-hidden whitespace-normal break-words leading-4"
                       style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
-                      title={s.productTitle ?? '—'}
+                      title={s.productTitle ?? 'â€”'}
                     >
-                      {s.productTitle ?? '—'}
+                      {s.productTitle ?? 'â€”'}
                     </span>
                   </td>
                   <td className="py-1 pr-3 max-w-[160px]">
                     {s.categories.length > 0
                       ? <span className="text-muted-foreground">{s.categories.join(', ')}</span>
-                      : <span className="text-muted-foreground/50">—</span>}
+                      : <span className="text-muted-foreground/50">â€”</span>}
                   </td>
                   <td className="py-1 pr-3">
                     <span className={s.productStatus === 'active' ? 'text-green-600' : 'text-muted-foreground'}>{s.productStatus}</span>
@@ -237,7 +237,7 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
                         disabled:opacity-50 disabled:cursor-not-allowed`}
                     />
                   </td>
-                  <td className="py-1 pr-3">{s.quantityOrdered ?? '—'}</td>
+                  <td className="py-1 pr-3">{s.quantityOrdered ?? 'â€”'}</td>
                   {PUSH_PLATFORMS.map((p) => {
                     const fieldValue = s[p.field as keyof typeof s] as PushStatus
                     const current = rowDirty[p.key] ?? fieldValue
@@ -314,9 +314,9 @@ function PushSelect({ value, changed, disabled, onChange }: {
           className="text-xs border border-destructive/40 rounded px-1 py-0.5 bg-background cursor-pointer
             disabled:opacity-50 disabled:cursor-not-allowed text-muted-foreground"
         >
-          <option value="" disabled>reset…</option>
-          <option value="N">→ N</option>
-          <option value="2push">→ 2push</option>
+          <option value="" disabled>resetâ€¦</option>
+          <option value="N">â†’ N</option>
+          <option value="2push">â†’ 2push</option>
         </select>
       </div>
     )
