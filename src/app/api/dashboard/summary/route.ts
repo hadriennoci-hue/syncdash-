@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (auth) return auth
 
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const programmedStatuses = ['scheduled'] as const
+  const programmedStatuses = ['scheduled', 'approved'] as const
 
   const [stockRows, mappingRows, channels, productsToFillRows, campaignRows, sales24Rows, lastInvoiceRows] = await Promise.all([
     db.query.warehouseStock.findMany({ columns: { warehouseId: true, quantity: true } }).catch((err) => {
