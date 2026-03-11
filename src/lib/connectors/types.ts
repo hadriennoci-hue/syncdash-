@@ -111,6 +111,9 @@ export interface ProductPayload {
   variants?: VariantPayload[]
   categoryIds?: string[]
   collections?: Array<{ name: string; handle?: string | null }>
+  // Generic product attributes keyed by internal attribute key.
+  // Used by Coincart2 connector to push key/value lists on each product push.
+  attributeValues?: Record<string, string[]>
   replaceVariants?: boolean
 }
 
@@ -167,6 +170,17 @@ export interface PlatformConnector {
   bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void>
   toggleStatus(platformId: string, status: 'active' | 'archived'): Promise<void>
   assignCategories(platformId: string, categoryIds: string[]): Promise<void>
+  // Optional: merge product attribute values into a Shopify collection's metafields
+  // (namespace/key pairs on the collection object).
+  syncCollectionAttributeValues?(
+    collectionHandle: string,
+    attributes: Record<string, string[]>
+  ): Promise<void>
+  // Optional: write product-level attribute values into Shopify product metafields.
+  syncProductAttributeMetafields?(
+    productGid: string,
+    attributes: Record<string, string[]>
+  ): Promise<void>
   healthCheck(): Promise<HealthCheckResult>
 }
 

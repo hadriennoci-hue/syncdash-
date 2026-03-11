@@ -1,10 +1,11 @@
 import { db } from '@/lib/db/client'
-import { productPrices, products } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { categories, productCategories, productMetafields, productPrices, products } from '@/lib/db/schema'
+import { and, eq } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
+import { generateId } from '@/lib/utils/id'
 
 export interface FillResult {
   sku: string
@@ -15,6 +16,8 @@ export interface FillResult {
 }
 
 interface ProductState {
+  isLaptop: boolean
+  isDisplay: boolean
   hasName: boolean
   hasSku: boolean
   hasDescription: boolean
@@ -25,6 +28,24 @@ interface ProductState {
   hasLaptopAttributes: boolean
   hasLaptopOptions: boolean
   hasDisplayAttributes: boolean
+  missingLaptopAttributeKeys: string[]
+  missingDisplayAttributeKeys: string[]
+}
+
+const WIZHARD_COLLECTION_PLATFORM = 'shopify_komputerzz'
+
+function normalizeText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function inferCollectionSlugFromTitle(title: string): 'laptops' | 'displays' | null {
+  const t = normalizeText(title)
+  if (t.includes('ecran')) return 'displays'
+  if (t.includes('ordinateur portable') || t.includes('convertible')) return 'laptops'
+  return null
 }
 
 function parseTags(raw: string | null): string[] {
@@ -94,15 +115,22 @@ function buildState(product: {
   const laptopKeys = Object.keys(ATTRIBUTE_OPTIONS.laptops)
   const displayKeys = Object.keys(ATTRIBUTE_OPTIONS.monitor)
 
-  const hasLaptopAttributes = !isLaptop || laptopKeys.every((k) => {
-    const v = attrs.get(k)
-    return typeof v === 'string' && v.trim().length > 0
-  })
+  const missingLaptopAttributeKeys = !isLaptop
+    ? []
+    : laptopKeys.filter((k) => {
+      const v = attrs.get(k)
+      return !(typeof v === 'string' && v.trim().length > 0)
+    })
 
-  const hasDisplayAttributes = !isDisplay || displayKeys.every((k) => {
-    const v = attrs.get(k)
-    return typeof v === 'string' && v.trim().length > 0
-  })
+  const missingDisplayAttributeKeys = !isDisplay
+    ? []
+    : displayKeys.filter((k) => {
+      const v = attrs.get(k)
+      return !(typeof v === 'string' && v.trim().length > 0)
+    })
+
+  const hasLaptopAttributes = missingLaptopAttributeKeys.length === 0
+  const hasDisplayAttributes = missingDisplayAttributeKeys.length === 0
 
   const hasLaptopOptions = !isLaptop || laptopKeys.every((k) => {
     const allowed = ATTRIBUTE_OPTIONS.laptops[k]
@@ -117,6 +145,8 @@ function buildState(product: {
   })
 
   return {
+    isLaptop,
+    isDisplay,
     hasName: product.title.trim().length > 0 && product.title !== product.id,
     hasSku: product.id.trim().length > 0,
     hasDescription: Boolean(product.description?.trim()),
@@ -127,6 +157,8 @@ function buildState(product: {
     hasLaptopAttributes,
     hasLaptopOptions,
     hasDisplayAttributes,
+    missingLaptopAttributeKeys,
+    missingDisplayAttributeKeys,
   }
 }
 
@@ -199,6 +231,49 @@ async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string
   return description && description.length > 0 ? description : null
 }
 
+async function scrapeMissingAttributesFromSourceUrl(
+  sourceUrl: string,
+  missingKeys: string[]
+): Promise<Record<string, string>> {
+  const apiKey = process.env.FIRECRAWL_API_KEY
+  if (!apiKey || missingKeys.length === 0) return {}
+
+  const app = new FirecrawlApp({ apiKey })
+  const schemaProperties: Record<string, { type: string | string[] }> = {}
+  for (const key of missingKeys) {
+    schemaProperties[key] = { type: ['string', 'null'] }
+  }
+
+  const prompt =
+    `Extract only these product attributes from this page: ${missingKeys.join(', ')}. ` +
+    'Return values exactly as shown on the page when possible. ' +
+    'If an attribute is not visible, return null for that key.'
+
+  const result = await firecrawlSemaphore.run(() => app.scrapeUrl(sourceUrl, {
+    formats: ['extract'],
+    extract: {
+      prompt,
+      schema: {
+        type: 'object',
+        properties: schemaProperties,
+      } as any,
+    },
+  }))
+
+  if (!result.success) return {}
+
+  const extracted = (result as { extract?: Record<string, unknown> }).extract ?? {}
+  const out: Record<string, string> = {}
+  for (const key of missingKeys) {
+    const raw = extracted[key]
+    if (typeof raw !== 'string') continue
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    out[key] = trimmed
+  }
+  return out
+}
+
 async function backfillFromWarehouses(
   product: {
     id: string
@@ -262,6 +337,92 @@ async function backfillFromWarehouses(
   }
 }
 
+async function backfillMissingAttributes(
+  product: {
+    id: string
+    status: string
+    warehouseStock: Array<{
+      warehouseId: string
+      sourceUrl: string | null
+    }>
+  },
+  state: ProductState,
+  filled: string[],
+  sources: string[]
+): Promise<void> {
+  if (product.status === 'active') return
+
+  const missingKeys = state.isLaptop
+    ? state.missingLaptopAttributeKeys
+    : state.isDisplay
+      ? state.missingDisplayAttributeKeys
+      : []
+  if (missingKeys.length === 0) return
+
+  const sourceRow = product.warehouseStock.find((ws) => ws.sourceUrl && ws.sourceUrl.trim().length > 0)
+  if (!sourceRow?.sourceUrl) return
+
+  const extracted = await scrapeMissingAttributesFromSourceUrl(sourceRow.sourceUrl, missingKeys)
+  const keys = Object.keys(extracted)
+  if (keys.length === 0) return
+
+  for (const key of keys) {
+    const existing = await db.query.productMetafields.findFirst({
+      where: and(
+        eq(productMetafields.productId, product.id),
+        eq(productMetafields.namespace, 'attributes'),
+        eq(productMetafields.key, key)
+      ),
+      columns: { id: true },
+    })
+
+    if (existing) {
+      await db.update(productMetafields)
+        .set({ value: extracted[key] })
+        .where(eq(productMetafields.id, existing.id))
+      continue
+    }
+
+    await db.insert(productMetafields).values({
+      id: generateId(),
+      productId: product.id,
+      namespace: 'attributes',
+      key,
+      value: extracted[key],
+      type: null,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+  filled.push(`attributes(${keys.length})`)
+  sources.push(sourceRow.warehouseId)
+}
+
+async function assignInferredCollection(
+  productId: string,
+  slug: 'laptops' | 'displays'
+): Promise<void> {
+  const name = slug === 'laptops' ? 'Laptops' : 'Displays'
+  const categoryId = `wizhard_${slug}`
+
+  await db.insert(categories).values({
+    id: categoryId,
+    platform: WIZHARD_COLLECTION_PLATFORM,
+    name,
+    slug,
+    collectionType: 'product',
+    createdAt: new Date().toISOString(),
+  }).onConflictDoUpdate({
+    target: categories.id,
+    set: { name, slug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
+  })
+
+  await db.insert(productCategories).values({
+    productId,
+    categoryId,
+  }).onConflictDoNothing()
+}
+
 export async function fillMissingFields(
   sku: string,
   triggeredBy: 'human' | 'agent' = 'human'
@@ -299,7 +460,25 @@ export async function fillMissingFields(
 
   const filled: string[] = []
   const sources: string[] = []
-  await backfillFromWarehouses(initial, filled, sources)
+  let workingProduct = initial
+  let workingState = initialState
+
+  if (!workingState.hasCollection) {
+    const inferredSlug = inferCollectionSlugFromTitle(workingProduct.title)
+    if (inferredSlug) {
+      await assignInferredCollection(workingProduct.id, inferredSlug)
+      filled.push('collection')
+      sources.push('inferred:title')
+      const reloaded = await load()
+      if (reloaded) {
+        workingProduct = reloaded
+        workingState = buildState(reloaded)
+      }
+    }
+  }
+
+  await backfillMissingAttributes(workingProduct, workingState, filled, sources)
+  await backfillFromWarehouses(workingProduct, filled, sources)
 
   const finalProduct = await load()
   if (!finalProduct) throw new Error(`Product ${sku} not found after backfill`)

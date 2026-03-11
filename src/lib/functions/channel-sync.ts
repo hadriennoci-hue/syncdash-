@@ -4,6 +4,7 @@ import { eq, or, gt } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
+import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 
 export interface ChannelSyncResult {
   platform:           Platform
@@ -73,6 +74,7 @@ interface EligibleProduct {
     option3: string | null
   }>
   prices:                  PriceRow[]
+  metafields:              Array<{ namespace: string; key: string; value: string | null }>
   categories:              CatRow[]
   warehouseStock:          StockRow[]
   platformMappings:        MappingRow[]
@@ -86,6 +88,125 @@ function slugifyHandle(input: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+function splitAttributeValues(raw: string): string[] {
+  return raw
+    .split(/[|,;]+/)
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
+}
+
+function normalizeText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function collectProductAttributeValues(
+  product: EligibleProduct,
+  allowedKeys: Set<string>
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const mf of product.metafields) {
+    if (mf.namespace !== 'attributes') continue
+    const key = mf.key.trim().toLowerCase()
+    if (!allowedKeys.has(key)) continue
+    const raw = (mf.value ?? '').trim()
+    if (!raw) continue
+    const values = splitAttributeValues(raw)
+    if (!values.length) continue
+    out[key] = Array.from(new Set([...(out[key] ?? []), ...values]))
+  }
+  return out
+}
+
+function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
+  const targets: Array<{ handle: string; type: 'laptops' | 'monitor' }> = []
+  for (const pc of product.categories) {
+    if (!pc.category || pc.category.platform !== 'shopify_komputerzz') continue
+    const name = normalizeText(pc.category.name ?? '')
+    const slug = normalizeText(pc.category.slug ?? '')
+    const handle = (pc.category.slug ?? slugifyHandle(pc.category.name)).trim()
+    if (!handle) continue
+    if (name.includes('laptop') || slug.includes('laptop')) {
+      targets.push({ handle, type: 'laptops' })
+      continue
+    }
+    if (
+      name.includes('display')
+      || name.includes('monitor')
+      || name.includes('ecran')
+      || slug.includes('display')
+      || slug.includes('monitor')
+      || slug.includes('ecran')
+    ) {
+      targets.push({ handle, type: 'monitor' })
+    }
+  }
+  const dedup = new Map<string, { handle: string; type: 'laptops' | 'monitor' }>()
+  for (const t of targets) dedup.set(`${t.type}:${t.handle}`, t)
+  return Array.from(dedup.values())
+}
+
+function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; isDisplay: boolean } {
+  let isLaptop = false
+  let isDisplay = false
+  for (const pc of product.categories) {
+    if (!pc.category) continue
+    const name = normalizeText(pc.category.name ?? '')
+    const slug = normalizeText(pc.category.slug ?? '')
+    if (name.includes('laptop') || slug.includes('laptop')) isLaptop = true
+    if (
+      name.includes('display')
+      || name.includes('monitor')
+      || name.includes('ecran')
+      || slug.includes('display')
+      || slug.includes('monitor')
+      || slug.includes('ecran')
+    ) isDisplay = true
+  }
+  return { isLaptop, isDisplay }
+}
+
+function collectCoincartAttributeValues(product: EligibleProduct): Record<string, string[]> {
+  const { isLaptop, isDisplay } = detectCollectionTypes(product)
+  if (!isLaptop && !isDisplay) return {}
+
+  const allowedKeys = new Set<string>([
+    ...(isLaptop ? Object.keys(ATTRIBUTE_OPTIONS.laptops) : []),
+    ...(isDisplay ? Object.keys(ATTRIBUTE_OPTIONS.monitor) : []),
+  ])
+  return collectProductAttributeValues(product, allowedKeys)
+}
+
+const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
+  brand: 'brand',
+  processor: 'processor',
+  screen_size: 'screen_size',
+  resolution: 'resolution',
+  screen_resolution: 'max_resolution',
+  gpu: 'graphic_card',
+  ram: 'ram_memory',
+  storage: 'ssd_size',
+  category: 'usage',
+}
+
+function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const mf of product.metafields) {
+    if (mf.namespace !== 'attributes') continue
+    const sourceKey = mf.key.trim().toLowerCase()
+    const targetKey = SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP[sourceKey]
+    if (!targetKey) continue
+    const raw = (mf.value ?? '').trim()
+    if (!raw) continue
+    const values = splitAttributeValues(raw)
+    if (!values.length) continue
+    out[targetKey] = Array.from(new Set([...(out[targetKey] ?? []), ...values]))
+  }
+  return out
 }
 
 function isPushable(p: EligibleProduct, platform: Platform): boolean {
@@ -140,6 +261,7 @@ export async function syncChannelAvailability(
       images:           true,
       variants:         true,
       prices:           true,
+      metafields:       true,
       categories:       { with: { category: true } },
       warehouseStock:   true,
       platformMappings: true,
@@ -231,6 +353,9 @@ async function pushPlatform(
     if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
     const totalStock = product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
     const priceRow = product.prices.find((r) => r.platform === platform)
+    const coincartAttributeValues = platform === 'coincart2'
+      ? collectCoincartAttributeValues(product)
+      : {}
 
     try {
       const identityPatch = (
@@ -247,6 +372,9 @@ async function pushPlatform(
                 }))
                 .filter((c) => c.title.trim().length > 0)
                 .map((c) => ({ name: c.title, handle: c.handle })),
+              ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
+                ? { attributeValues: coincartAttributeValues }
+                : {}),
             }
       )
       const variantPayloads = buildVariantPayloads(product, priceRow?.price ?? null, priceRow?.compareAt ?? null)
@@ -320,6 +448,9 @@ async function pushPlatform(
           ...(platform.startsWith('shopify') ? { shopifyCategory: 'gid://shopify/TaxonomyCategory/el' } : {}),
           categoryIds,
           collections,
+          ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
+            ? { attributeValues: coincartAttributeValues }
+            : {}),
         })
 
         if (images.length > 0) await connector.setImages(platformId, images)
@@ -384,6 +515,27 @@ async function pushPlatform(
           .filter((c) => c.handle.length > 0)
         if (tikCats.length > 0 && typeof (connector as any).syncCollectionsToProduct === 'function') {
           await (connector as any).syncCollectionsToProduct(finalPlatformId!, tikCats)
+        }
+      }
+
+      if (platform === 'shopify_komputerzz' && typeof (connector as any).syncProductAttributeMetafields === 'function' && finalPlatformId) {
+        const productMetafields = collectShopifyProductMetafieldsFromAttributes(product)
+        if (Object.keys(productMetafields).length > 0) {
+          await (connector as any).syncProductAttributeMetafields(finalPlatformId, productMetafields)
+        }
+      }
+
+      if (platform === 'shopify_komputerzz' && typeof (connector as any).syncCollectionAttributeValues === 'function') {
+        const targets = detectKomputerzzCollectionTargets(product)
+        const laptopKeys = new Set(Object.keys(ATTRIBUTE_OPTIONS.laptops))
+        const displayKeys = new Set(Object.keys(ATTRIBUTE_OPTIONS.monitor))
+        for (const target of targets) {
+          const attrs = collectProductAttributeValues(
+            product,
+            target.type === 'laptops' ? laptopKeys : displayKeys
+          )
+          if (Object.keys(attrs).length === 0) continue
+          await (connector as any).syncCollectionAttributeValues(target.handle, attrs)
         }
       }
 

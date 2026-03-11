@@ -775,6 +775,14 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  private parsePipeSeparatedValues(raw: string | null | undefined): string[] {
+    if (!raw) return []
+    return raw
+      .split('|')
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0)
+  }
+
   async syncCollectionsToProduct(
     productGid: string,
     collections: Array<{ title: string; handle: string }>
@@ -795,6 +803,125 @@ export class ShopifyConnector implements PlatformConnector {
         await this.addProductToCollection(productGid, existing.id)
       } catch {
         // Ignore duplicate collect or smart collection constraints.
+      }
+    }
+  }
+
+  async syncCollectionAttributeValues(
+    collectionHandle: string,
+    attributes: Record<string, string[]>
+  ): Promise<void> {
+    const collection = await this.findCollectionByHandle(collectionHandle)
+    if (!collection) return
+
+    const query = `
+      query CollectionMetafields($id: ID!) {
+        collection(id: $id) {
+          id
+          metafields(first: 250) { nodes { namespace key value } }
+        }
+      }
+    `
+    const data = await this.graphql<{
+      collection: {
+        id: string
+        metafields: { nodes: Array<{ namespace: string; key: string; value: string | null }> }
+      } | null
+    }>(query, { id: collection.id })
+    if (!data.collection) return
+
+    const existing = new Map<string, string>()
+    for (const mf of data.collection.metafields.nodes) {
+      if (mf.namespace !== 'custom') continue
+      existing.set(mf.key.trim().toLowerCase(), mf.value ?? '')
+    }
+
+    const toWrite: Array<{
+      ownerId: string
+      namespace: string
+      key: string
+      type: string
+      value: string
+    }> = []
+
+    for (const [rawKey, rawValues] of Object.entries(attributes)) {
+      const key = rawKey.trim().toLowerCase()
+      if (!key) continue
+      const incoming = Array.from(new Set(
+        rawValues.map((v) => v.trim()).filter((v) => v.length > 0)
+      ))
+      if (incoming.length === 0) continue
+
+      const current = this.parsePipeSeparatedValues(existing.get(key))
+      const merged = Array.from(new Set([...current, ...incoming]))
+      const nextValue = merged.join(' | ')
+      if (nextValue === (existing.get(key) ?? '')) continue
+
+      toWrite.push({
+        ownerId: collection.id,
+        namespace: 'custom',
+        key,
+        type: 'single_line_text_field',
+        value: nextValue,
+      })
+    }
+
+    if (toWrite.length === 0) return
+
+    const mutation = `
+      mutation SetCollectionMetafields($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id }
+          userErrors { field message }
+        }
+      }
+    `
+
+    const batchSize = 25
+    for (let i = 0; i < toWrite.length; i += batchSize) {
+      const batch = toWrite.slice(i, i + batchSize)
+      const result = await this.graphql<{
+        metafieldsSet: { userErrors: Array<{ message: string }> }
+      }>(mutation, { metafields: batch })
+      if (result.metafieldsSet.userErrors.length > 0) {
+        throw new Error(result.metafieldsSet.userErrors.map((e) => e.message).join(', '))
+      }
+    }
+  }
+
+  async syncProductAttributeMetafields(
+    productGid: string,
+    attributes: Record<string, string[]>
+  ): Promise<void> {
+    const toWrite = Object.entries(attributes)
+      .map(([key, values]) => ({
+        ownerId: productGid,
+        namespace: 'custom',
+        key: key.trim().toLowerCase(),
+        type: 'single_line_text_field',
+        value: Array.from(new Set(values.map((v) => v.trim()).filter((v) => v.length > 0))).join(' | '),
+      }))
+      .filter((m) => m.key.length > 0 && m.value.length > 0)
+
+    if (toWrite.length === 0) return
+
+    // Write one-by-one so a constrained/invalid key does not block all other attributes.
+    const mutation = `
+      mutation SetProductMetafields($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id }
+          userErrors { field message }
+        }
+      }
+    `
+
+    for (const metafield of toWrite) {
+      const result = await this.graphql<{
+        metafieldsSet: { userErrors: Array<{ message: string }> }
+      }>(mutation, { metafields: [metafield] })
+      if (result.metafieldsSet.userErrors.length > 0) {
+        // Keep push resilient: skip keys rejected by store metafield constraints.
+        continue
       }
     }
   }

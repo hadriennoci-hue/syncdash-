@@ -79,6 +79,42 @@ export class WooCommerceConnector implements PlatformConnector {
     }
   }
 
+  private buildProductAttributesPayload(data: Partial<ProductPayload>): Array<{
+    name: string
+    visible: boolean
+    variation: boolean
+    options: string[]
+  }> {
+    const byName = new Map<string, { name: string; options: Set<string> }>()
+
+    const add = (name: string, values: Array<string | null | undefined>) => {
+      const normalizedName = name.trim()
+      if (!normalizedName) return
+      const key = normalizedName.toLowerCase()
+      const entry = byName.get(key) ?? { name: normalizedName, options: new Set<string>() }
+      for (const value of values) {
+        const trimmed = (value ?? '').trim()
+        if (!trimmed) continue
+        entry.options.add(trimmed)
+      }
+      byName.set(key, entry)
+    }
+
+    if (data.vendor?.trim()) add('brand', [data.vendor])
+    for (const [key, values] of Object.entries(data.attributeValues ?? {})) {
+      add(key, values)
+    }
+
+    return Array.from(byName.values())
+      .map((entry) => ({
+        name: entry.name,
+        visible: true,
+        variation: false,
+        options: Array.from(entry.options.values()),
+      }))
+      .filter((attr) => attr.options.length > 0)
+  }
+
   // -------------------------------------------------------------------------
   // REST helper
   //
@@ -330,9 +366,7 @@ export class WooCommerceConnector implements PlatformConnector {
   // -------------------------------------------------------------------------
 
   async createProduct(data: ProductPayload): Promise<string> {
-    const attributes = data.vendor
-      ? [{ name: 'Brand', visible: true, variation: false, options: [data.vendor] }]
-      : []
+    const attributes = this.buildProductAttributesPayload(data)
 
     const primaryCollection = this.extractPrimaryCollectionName(data)
     const body: Record<string, unknown> = {
@@ -372,6 +406,7 @@ export class WooCommerceConnector implements PlatformConnector {
     const primaryCollection = this.extractPrimaryCollectionName(data)
     if (primaryCollection)            body.category = primaryCollection
     if (data.ean)                     body.meta_data = [{ key: 'ean', value: data.ean }]
+    if (data.vendor || data.attributeValues) body.attributes = this.buildProductAttributesPayload(data)
     const variantPayload = this.buildVariantWritePayload(data)
     if (variantPayload.options)       body.options = variantPayload.options
     if (variantPayload.variants)      body.variants = variantPayload.variants

@@ -96,6 +96,21 @@ export const productMetafields = sqliteTable('product_metafields', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
+export const attributeAllowedValues = sqliteTable('attribute_allowed_values', {
+  id:              text('id').primaryKey(),
+  collection:      text('collection').notNull(), // laptops | monitor
+  key:             text('key').notNull(),
+  value:           text('value').notNull(),
+  valueNormalized: text('value_normalized').notNull(),
+  createdAt:       text('created_at').default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  uqCollectionKeyValue: uniqueIndex('uq_attribute_allowed_values_ckv').on(
+    t.collection,
+    t.key,
+    t.valueNormalized
+  ),
+}))
+
 export const platformMappings = sqliteTable('platform_mappings', {
   productId:  text('product_id').notNull().references(() => products.id),
   platform:   text('platform').notNull(),
