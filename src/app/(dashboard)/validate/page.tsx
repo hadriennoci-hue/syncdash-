@@ -15,7 +15,7 @@ export default function ValidatePage() {
   return (
     <div className="space-y-3 max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-sm font-semibold">WooCommerce Readiness</h1>
+        <h1 className="text-sm font-semibold">Coincart2 Readiness</h1>
         <button onClick={() => refetch()} className="text-xs border border-border px-2 py-1 rounded hover:bg-accent">Refresh</button>
       </div>
 

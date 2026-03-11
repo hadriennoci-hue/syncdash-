@@ -49,8 +49,11 @@ interface CreateProductInput {
     price?: number
     compareAt?: number
     stock?: number
+    optionName1?: string
     option1?: string
+    optionName2?: string
     option2?: string
+    optionName3?: string
     option3?: string
     weight?: number
   }>
@@ -103,8 +106,11 @@ export async function createProduct(
         price:          v.price ?? null,
         compareAtPrice: v.compareAt ?? null,
         stock:          v.stock ?? 0,
+        optionName1:    v.optionName1 ?? null,
         option1:        v.option1 ?? null,
+        optionName2:    v.optionName2 ?? null,
         option2:        v.option2 ?? null,
+        optionName3:    v.optionName3 ?? null,
         option3:        v.option3 ?? null,
         weight:         v.weight ?? null,
       })
@@ -160,8 +166,11 @@ export async function createProduct(
           price:     v.price ?? null,
           compareAt: v.compareAt ?? null,
           stock:     v.stock ?? 0,
+          optionName1: v.optionName1 ?? null,
           option1:   v.option1 ?? null,
+          optionName2: v.optionName2 ?? null,
           option2:   v.option2 ?? null,
+          optionName3: v.optionName3 ?? null,
           option3:   v.option3 ?? null,
         })),
         categoryIds: input.categoryIds,

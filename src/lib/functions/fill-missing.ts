@@ -1,10 +1,8 @@
 import { db } from '@/lib/db/client'
-import { products, productImages, categories as categoriesTable, productCategories, categoryMappings } from '@/lib/db/schema'
-import { eq, inArray, and, sql } from 'drizzle-orm'
-import { generateId } from '@/lib/utils/id'
+import { productPrices, products } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { logOperation } from './log'
-import { createConnector } from '@/lib/connectors/registry'
-import type { Platform } from '@/types/platform'
+import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 
@@ -16,385 +14,320 @@ export interface FillResult {
   sources: string[]
 }
 
-interface FetchedData {
-  title?: string
-  description?: string
-  images?: { url: string; alt: string | null }[]
-  categories?: { platformId: string; name: string; slug: string | null; platform: string }[]
+interface ProductState {
+  hasName: boolean
+  hasSku: boolean
+  hasDescription: boolean
+  hasImages: boolean
+  hasTags: boolean
+  hasPrice: boolean
+  hasCollection: boolean
+  hasLaptopAttributes: boolean
+  hasLaptopOptions: boolean
+  hasDisplayAttributes: boolean
 }
 
-function countStoredTags(raw: string | null): number {
-  if (!raw) return 0
+function parseTags(raw: string | null): string[] {
+  if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return 0
+    if (!Array.isArray(parsed)) return []
     return parsed
       .filter((v): v is string => typeof v === 'string')
       .map((v) => v.trim())
       .filter((v) => v.length > 0 && !/\s/.test(v))
-      .length
   } catch {
-    return 0
+    return []
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main function
-// ---------------------------------------------------------------------------
+function normalizeValue(value: string): string {
+  return value.trim().toLowerCase()
+}
 
-export async function fillMissingFields(sku: string, triggeredBy: 'human' | 'agent' = 'human'): Promise<FillResult> {
-  const product = await db.query.products.findFirst({
-    where: eq(products.id, sku),
-    with: { images: true, categories: true },
+function splitAttributeValues(value: string): string[] {
+  return value
+    .split(/[|,/;]+/)
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
+}
+
+function getAttributeMap(metafields: Array<{ namespace: string; key: string; value: string | null }>): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const mf of metafields) {
+    if (mf.namespace !== 'attributes') continue
+    const key = mf.key.trim().toLowerCase()
+    const value = (mf.value ?? '').trim()
+    if (!key || !value) continue
+    out.set(key, value)
+  }
+  return out
+}
+
+function includesAny(input: string, keywords: string[]): boolean {
+  const n = normalizeValue(input)
+  return keywords.some((k) => n.includes(k))
+}
+
+function buildState(product: {
+  id: string
+  title: string
+  description: string | null
+  tags: string | null
+  images: Array<unknown>
+  prices: Array<{ platform: string; price: number | null }>
+  categories: Array<{ category?: { name: string; slug: string | null; platform: string } }>
+  metafields: Array<{ namespace: string; key: string; value: string | null }>
+}): ProductState {
+  const tags = parseTags(product.tags)
+  const priceRow = product.prices.find((p) => p.platform === 'woocommerce')
+  const collections = product.categories
+    .filter((pc): pc is { category: { name: string; slug: string | null; platform: string } } => Boolean(pc.category))
+    .filter((pc) => pc.category.platform !== 'woocommerce')
+    .map((pc) => ({ name: pc.category.name, slug: pc.category.slug ?? '' }))
+
+  const hasCollection = collections.length > 0
+  const isLaptop = collections.some((c) => includesAny(`${c.name} ${c.slug}`, ['laptop']))
+  const isDisplay = collections.some((c) => includesAny(`${c.name} ${c.slug}`, ['display', 'monitor']))
+
+  const attrs = getAttributeMap(product.metafields)
+  const laptopKeys = Object.keys(ATTRIBUTE_OPTIONS.laptops)
+  const displayKeys = Object.keys(ATTRIBUTE_OPTIONS.monitor)
+
+  const hasLaptopAttributes = !isLaptop || laptopKeys.every((k) => {
+    const v = attrs.get(k)
+    return typeof v === 'string' && v.trim().length > 0
   })
-  if (!product) throw new Error(`Product ${sku} not found`)
 
-  // Keep Shopify/Woo category links in sync even when the product already has categories.
-  await syncBidirectionalCategoryLinksForProduct(sku)
-
-  const state = {
-    hasTitle: product.title !== sku && product.title.trim().length > 0,
-    hasImages: product.images.length >= 2,
-    hasDescription: !!product.description?.trim(),
-    hasCategories: product.categories.length > 0,
-    hasTags: countStoredTags(product.tags) >= 3,
-  }
-
-  if (isComplete(state)) {
-    if (product.status === 'info') {
-      await db.update(products)
-        .set({ status: 'active', updatedAt: new Date().toISOString() })
-        .where(eq(products.id, sku))
-      await logOperation({
-        productId: sku,
-        action: 'fill_missing',
-        status: 'success',
-        message: 'Already complete — status set to active',
-        triggeredBy,
-      })
-    }
-    return { sku, status: 'complete', filled: [], missing: [], sources: [] }
-  }
-
-  const filled: string[] = []
-  const sources: string[] = []
-
-  // Priority order: Komputerzz -> TikTok -> WooCommerce -> Acer (Firecrawl)
-  const fetchOrder: Array<() => Promise<FetchedData | null>> = [
-    () => fetchFromPlatformBySku(sku, 'shopify_komputerzz'),
-    () => fetchFromPlatformBySku(sku, 'shopify_tiktok'),
-    () => fetchFromPlatformBySku(sku, 'woocommerce'),
-    () => fetchFromFirecrawl(sku),
-  ]
-  const sourceNames = ['shopify_komputerzz', 'shopify_tiktok', 'woocommerce', 'acer_store']
-
-  for (const [i, fetchFn] of fetchOrder.entries()) {
-    if (isComplete(state)) break
-    try {
-      const data = await fetchFn()
-      if (!data) continue
-      sources.push(sourceNames[i])
-      await applyData(sku, data, state, filled)
-    } catch {
-      // source unavailable -> continue
-    }
-  }
-
-  const missing = getMissing(state)
-  if (missing.length > 0) {
-    await db.update(products)
-      .set({ status: 'info', updatedAt: new Date().toISOString() })
-      .where(eq(products.id, sku))
-    await logOperation({
-      productId: sku,
-      action: 'fill_missing',
-      status: 'error',
-      message: `Still missing: ${missing.join(', ')}`,
-      triggeredBy,
-    })
-    return { sku, status: 'info', filled, missing, sources }
-  }
-
-  await db.update(products)
-    .set({ status: product.status === 'info' ? 'active' : product.status, updatedAt: new Date().toISOString() })
-    .where(eq(products.id, sku))
-  await logOperation({
-    productId: sku,
-    action: 'fill_missing',
-    status: 'success',
-    message: `Filled: ${filled.join(', ')} from ${sources.join(', ')}`,
-    triggeredBy,
+  const hasDisplayAttributes = !isDisplay || displayKeys.every((k) => {
+    const v = attrs.get(k)
+    return typeof v === 'string' && v.trim().length > 0
   })
-  return { sku, status: 'filled', filled, missing: [], sources }
-}
 
-// ---------------------------------------------------------------------------
-// Apply fetched data to D1
-// ---------------------------------------------------------------------------
+  const hasLaptopOptions = !isLaptop || laptopKeys.every((k) => {
+    const allowed = ATTRIBUTE_OPTIONS.laptops[k]
+    const current = attrs.get(k)
+    if (!allowed || allowed.length === 0) return true
+    if (!current) return false
 
-async function applyData(
-  sku: string,
-  data: FetchedData,
-  state: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean },
-  filled: string[]
-) {
-  const update: Record<string, unknown> = {}
-
-  if (!state.hasTitle && data.title && data.title !== sku && data.title.trim().length > 0) {
-    update.title = data.title
-    state.hasTitle = true
-    filled.push('title')
-  }
-  if (!state.hasDescription && data.description?.trim()) {
-    update.description = data.description
-    state.hasDescription = true
-    filled.push('description')
-  }
-
-  if (Object.keys(update).length > 0) {
-    await db.update(products).set(update).where(eq(products.id, sku))
-  }
-
-  if (!state.hasImages && data.images && data.images.length >= 1) {
-    // Get current count first
-    const current = await db.query.productImages.findMany({ where: eq(productImages.productId, sku) })
-    const needed = 5 - current.length
-    const toAdd = data.images.slice(0, needed)
-    const startPos = current.length
-
-    for (const [i, img] of toAdd.entries()) {
-      await db.insert(productImages).values({
-        id: generateId(), productId: sku, url: img.url, alt: img.alt, position: startPos + i,
-      })
-    }
-    if (current.length + toAdd.length >= 2) {
-      state.hasImages = true
-      filled.push('images')
-    }
-  }
-
-  if (!state.hasCategories && data.categories && data.categories.length > 0) {
-    const shopifyCatIds: string[] = []
-    const wooCatIds: string[] = []
-    for (const cat of data.categories) {
-      const catId = `${cat.platformId}`
-      await db.insert(categoriesTable)
-        .values({ id: catId, name: cat.name, slug: cat.slug ?? catId, platform: cat.platform, collectionType: 'product' })
-        .onConflictDoUpdate({ target: categoriesTable.id, set: { name: cat.name } })
-      await db.insert(productCategories)
-        .values({ productId: sku, categoryId: catId })
-        .onConflictDoNothing()
-      if (cat.platform.startsWith('shopify')) shopifyCatIds.push(catId)
-      if (cat.platform === 'woocommerce') wooCatIds.push(catId)
-    }
-
-    // For Shopify collections: cross-populate WooCommerce equivalents
-    // Uses explicit category_mappings first, then falls back to case-insensitive name match.
-    // Name matches are auto-saved to category_mappings for future runs.
-    if (shopifyCatIds.length > 0) {
-      await linkWooCommerceCategories(sku, shopifyCatIds)
-    }
-    if (wooCatIds.length > 0) {
-      await linkShopifyCollections(sku, wooCatIds)
-    }
-
-    state.hasCategories = true
-    filled.push('categories')
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Cross-populate WooCommerce categories from Shopify collection IDs
-// ---------------------------------------------------------------------------
-
-async function linkWooCommerceCategories(sku: string, shopifyCatIds: string[]) {
-  // Step 1: explicit mappings in category_mappings table
-  const mapped = await db.select({
-    shopifyCollectionId: categoryMappings.shopifyCollectionId,
-    wooCategoryId: categoryMappings.wooCategoryId,
+    const allowedSet = new Set(allowed.map((v) => normalizeValue(v)))
+    const values = splitAttributeValues(current)
+    if (values.length === 0) return false
+    return values.every((v) => allowedSet.has(normalizeValue(v)))
   })
-    .from(categoryMappings)
-    .where(inArray(categoryMappings.shopifyCollectionId, shopifyCatIds))
 
-  for (const { wooCategoryId } of mapped) {
-    await db.insert(productCategories).values({ productId: sku, categoryId: wooCategoryId }).onConflictDoNothing()
-  }
-
-  // Step 2: for Shopify collections not yet in category_mappings, name-match WooCommerce categories
-  const alreadyMapped = new Set(mapped.map((m) => m.shopifyCollectionId))
-  const unmappedIds = shopifyCatIds.filter((id) => !alreadyMapped.has(id))
-  if (unmappedIds.length === 0) return
-
-  const shopifyCats = await db.select({ id: categoriesTable.id, name: categoriesTable.name })
-    .from(categoriesTable)
-    .where(inArray(categoriesTable.id, unmappedIds))
-
-  for (const shopifyCat of shopifyCats) {
-    const [wooMatch] = await db.select()
-      .from(categoriesTable)
-      .where(and(
-        eq(categoriesTable.platform, 'woocommerce'),
-        sql`lower(${categoriesTable.name}) = lower(${shopifyCat.name})`,
-      ))
-      .limit(1)
-
-    if (!wooMatch) continue
-
-    // Register mapping so future runs use the explicit table
-    await db.insert(categoryMappings)
-      .values({ shopifyCollectionId: shopifyCat.id, wooCategoryId: wooMatch.id })
-      .onConflictDoNothing()
-    await db.insert(productCategories)
-      .values({ productId: sku, categoryId: wooMatch.id })
-      .onConflictDoNothing()
-  }
-}
-
-async function linkShopifyCollections(sku: string, wooCatIds: string[]) {
-  // Step 1: explicit reverse mappings in category_mappings table
-  const mapped = await db.select({
-    shopifyCollectionId: categoryMappings.shopifyCollectionId,
-    wooCategoryId: categoryMappings.wooCategoryId,
-  })
-    .from(categoryMappings)
-    .where(inArray(categoryMappings.wooCategoryId, wooCatIds))
-
-  for (const { shopifyCollectionId } of mapped) {
-    await db.insert(productCategories)
-      .values({ productId: sku, categoryId: shopifyCollectionId })
-      .onConflictDoNothing()
-  }
-
-  // Step 2: for Woo categories not yet in category_mappings, name-match Shopify collections
-  const alreadyMapped = new Set(mapped.map((m) => m.wooCategoryId))
-  const unmappedIds = wooCatIds.filter((id) => !alreadyMapped.has(id))
-  if (unmappedIds.length === 0) return
-
-  const wooCats = await db.select({ id: categoriesTable.id, name: categoriesTable.name })
-    .from(categoriesTable)
-    .where(inArray(categoriesTable.id, unmappedIds))
-
-  for (const wooCat of wooCats) {
-    const [shopifyMatch] = await db.select()
-      .from(categoriesTable)
-      .where(and(
-        inArray(categoriesTable.platform, ['shopify_komputerzz', 'shopify_tiktok']),
-        sql`lower(${categoriesTable.name}) = lower(${wooCat.name})`,
-      ))
-      .limit(1)
-
-    if (!shopifyMatch) continue
-
-    await db.insert(categoryMappings)
-      .values({ shopifyCollectionId: shopifyMatch.id, wooCategoryId: wooCat.id })
-      .onConflictDoNothing()
-    await db.insert(productCategories)
-      .values({ productId: sku, categoryId: shopifyMatch.id })
-      .onConflictDoNothing()
-  }
-}
-
-async function syncBidirectionalCategoryLinksForProduct(sku: string) {
-  const linked = await db.select({
-    categoryId: categoriesTable.id,
-    platform: categoriesTable.platform,
-  })
-    .from(productCategories)
-    .innerJoin(categoriesTable, eq(productCategories.categoryId, categoriesTable.id))
-    .where(eq(productCategories.productId, sku))
-
-  if (linked.length === 0) return
-
-  const shopifyCatIds = linked
-    .filter((c) => c.platform.startsWith('shopify'))
-    .map((c) => c.categoryId)
-  const wooCatIds = linked
-    .filter((c) => c.platform === 'woocommerce')
-    .map((c) => c.categoryId)
-
-  if (shopifyCatIds.length > 0) await linkWooCommerceCategories(sku, shopifyCatIds)
-  if (wooCatIds.length > 0) await linkShopifyCollections(sku, wooCatIds)
-}
-
-// ---------------------------------------------------------------------------
-// Platform connectors (Shopify / WooCommerce)
-// ---------------------------------------------------------------------------
-
-async function fetchFromPlatformBySku(sku: string, platform: Platform): Promise<FetchedData | null> {
-  const connector = await createConnector(platform)
-  const platformId = await connector.findProductIdBySku?.(sku)
-  if (!platformId) return null
-
-  const raw = await connector.getProduct(platformId)
   return {
-    title: raw.title,
-    description: raw.description ?? undefined,
-    images: raw.images.map((img) => ({ url: img.url, alt: img.alt ?? null })),
-    categories: raw.collections.map((col) => ({
-      platformId: platform === 'woocommerce' ? `woo_${col.platformId}` : col.platformId,
-      name: col.name,
-      slug: col.slug ?? null,
-      platform,
-    })),
+    hasName: product.title.trim().length > 0 && product.title !== product.id,
+    hasSku: product.id.trim().length > 0,
+    hasDescription: Boolean(product.description?.trim()),
+    hasImages: product.images.length >= 2,
+    hasTags: tags.length > 0,
+    hasPrice: priceRow?.price != null,
+    hasCollection,
+    hasLaptopAttributes,
+    hasLaptopOptions,
+    hasDisplayAttributes,
   }
 }
 
-// ---------------------------------------------------------------------------
-// Firecrawl (ACER Store)
-// ---------------------------------------------------------------------------
+function isComplete(state: ProductState): boolean {
+  return state.hasName
+    && state.hasSku
+    && state.hasDescription
+    && state.hasImages
+    && state.hasTags
+    && state.hasPrice
+    && state.hasCollection
+    && state.hasLaptopAttributes
+    && state.hasLaptopOptions
+    && state.hasDisplayAttributes
+}
 
-async function fetchFromFirecrawl(sku: string): Promise<FetchedData | null> {
+function getMissing(state: ProductState): string[] {
+  const m: string[] = []
+  if (!state.hasName) m.push('name')
+  if (!state.hasSku) m.push('sku')
+  if (!state.hasDescription) m.push('description')
+  if (!state.hasImages) m.push('images (min 2)')
+  if (!state.hasTags) m.push('tags')
+  if (!state.hasPrice) m.push('price')
+  if (!state.hasCollection) m.push('collection')
+  if (!state.hasLaptopAttributes) m.push('laptop_attributes')
+  if (!state.hasLaptopOptions) m.push('laptop_options')
+  if (!state.hasDisplayAttributes) m.push('display_attributes')
+  return m
+}
+
+function pickWarehousePriceData(
+  rows: Array<{ warehouseId: string; importPrice: number | null; importPromoPrice: number | null }>
+): { importPrice: number | null; importPromoPrice: number | null; source: string | null } {
+  const priority = ['ireland', 'acer_store', 'poland']
+  for (const warehouseId of priority) {
+    const row = rows.find((r) => r.warehouseId === warehouseId)
+    if (!row) continue
+    if (row.importPrice != null || row.importPromoPrice != null) {
+      return { importPrice: row.importPrice ?? null, importPromoPrice: row.importPromoPrice ?? null, source: warehouseId }
+    }
+  }
+  for (const row of rows) {
+    if (row.importPrice != null || row.importPromoPrice != null) {
+      return { importPrice: row.importPrice ?? null, importPromoPrice: row.importPromoPrice ?? null, source: row.warehouseId }
+    }
+  }
+  return { importPrice: null, importPromoPrice: null, source: null }
+}
+
+async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string | null> {
   const apiKey = process.env.FIRECRAWL_API_KEY
   if (!apiKey) return null
-
-  // Get source_url from warehouse_stock
-  const { warehouseStock } = await import('@/lib/db/schema')
-  const row = await db.query.warehouseStock.findFirst({
-    where: (ws, { and, eq: weq, not, isNull }) =>
-      and(weq(ws.productId, sku), weq(ws.warehouseId, 'acer_store'), not(isNull(ws.sourceUrl))),
-  })
-  const sourceUrl = row?.sourceUrl
-  if (!sourceUrl || sourceUrl === 'null') return null
 
   const app = new FirecrawlApp({ apiKey })
   const result = await firecrawlSemaphore.run(() => app.scrapeUrl(sourceUrl, {
     formats: ['extract'],
     extract: {
-      prompt: 'Extract the product title, full description, and URLs of all product images. Return only high-resolution product images.',
+      prompt: 'Extract only the product description text for this page.',
       schema: {
         type: 'object',
-        properties: {
-          title: { type: 'string' },
-          description: { type: 'string' },
-          images: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, alt: { type: 'string' } }, required: ['url'] } },
-        },
+        properties: { description: { type: 'string' } },
       } as any,
     },
   }))
-  if (!result.success) return null
 
-  const data = (result as { extract?: { title?: string; description?: string; images?: Array<{ url: string; alt?: string }> } }).extract
-  return {
-    title: data?.title ?? undefined,
-    description: data?.description ?? undefined,
-    images: (data?.images ?? []).map((img) => ({ url: img.url, alt: img.alt ?? null })),
+  if (!result.success) return null
+  const extract = (result as { extract?: { description?: string } }).extract
+  const description = extract?.description?.trim()
+  return description && description.length > 0 ? description : null
+}
+
+async function backfillFromWarehouses(
+  product: {
+    id: string
+    description: string | null
+    prices: Array<{ platform: string; price: number | null; compareAt: number | null }>
+    warehouseStock: Array<{
+      warehouseId: string
+      importPrice: number | null
+      importPromoPrice: number | null
+      sourceUrl: string | null
+    }>
+  },
+  filled: string[],
+  sources: string[]
+): Promise<void> {
+  const now = new Date().toISOString()
+  const currentPriceRow = product.prices.find((p) => p.platform === 'woocommerce') ?? null
+  const isPriceMissing = currentPriceRow?.price == null
+  const isPromoMissing = currentPriceRow?.compareAt == null
+  const isDescriptionMissing = !product.description?.trim()
+
+  const { importPrice, importPromoPrice, source } = pickWarehousePriceData(product.warehouseStock)
+  const desiredPrice = importPromoPrice ?? importPrice
+  const desiredCompareAt = importPromoPrice != null && importPrice != null && importPromoPrice < importPrice
+    ? importPrice
+    : null
+
+  const nextPrice = isPriceMissing ? (desiredPrice ?? null) : (currentPriceRow?.price ?? null)
+  const nextCompareAt = isPromoMissing ? (desiredCompareAt ?? null) : (currentPriceRow?.compareAt ?? null)
+
+  if ((isPriceMissing || isPromoMissing) && (nextPrice != null || nextCompareAt != null)) {
+    await db.insert(productPrices).values({
+      productId: product.id,
+      platform: 'woocommerce',
+      price: nextPrice,
+      compareAt: nextCompareAt,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [productPrices.productId, productPrices.platform],
+      set: { price: nextPrice, compareAt: nextCompareAt, updatedAt: now },
+    })
+
+    if (isPriceMissing && nextPrice != null) filled.push('price')
+    if (isPromoMissing && nextCompareAt != null) filled.push('promo_price')
+    if (source) sources.push(source)
+  }
+
+  if (isDescriptionMissing) {
+    const sourceRow = product.warehouseStock
+      .find((ws) => ws.sourceUrl && ws.sourceUrl.trim().length > 0)
+    if (sourceRow?.sourceUrl) {
+      const description = await scrapeDescriptionFromSourceUrl(sourceRow.sourceUrl)
+      if (description) {
+        await db.update(products)
+          .set({ description, updatedAt: now })
+          .where(eq(products.id, product.id))
+        filled.push('description')
+        sources.push(sourceRow.warehouseId)
+      }
+    }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+export async function fillMissingFields(
+  sku: string,
+  triggeredBy: 'human' | 'agent' = 'human'
+): Promise<FillResult> {
+  const load = async () => db.query.products.findFirst({
+    where: eq(products.id, sku),
+    with: {
+      images: true,
+      prices: true,
+      metafields: true,
+      categories: { with: { category: true } },
+      warehouseStock: true,
+    },
+  })
 
-function isComplete(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean }) {
-  return s.hasTitle && s.hasImages && s.hasDescription && s.hasCategories && s.hasTags
-}
+  const initial = await load()
+  if (!initial) throw new Error(`Product ${sku} not found`)
 
-function getMissing(s: { hasTitle: boolean; hasImages: boolean; hasDescription: boolean; hasCategories: boolean; hasTags: boolean }) {
-  const m: string[] = []
-  if (!s.hasTitle) m.push('title')
-  if (!s.hasImages) m.push('images')
-  if (!s.hasDescription) m.push('description')
-  if (!s.hasCategories) m.push('categories')
-  if (!s.hasTags) m.push('tags (min 3)')
-  return m
+  const initialState = buildState(initial)
+  if (isComplete(initialState)) {
+    if (initial.status !== 'active') {
+      await db.update(products)
+        .set({ status: 'active', updatedAt: new Date().toISOString() })
+        .where(eq(products.id, sku))
+    }
+    await logOperation({
+      productId: sku,
+      action: 'fill_missing',
+      status: 'success',
+      message: 'Complete - status set to active',
+      triggeredBy,
+    })
+    return { sku, status: 'complete', filled: [], missing: [], sources: [] }
+  }
+
+  const filled: string[] = []
+  const sources: string[] = []
+  await backfillFromWarehouses(initial, filled, sources)
+
+  const finalProduct = await load()
+  if (!finalProduct) throw new Error(`Product ${sku} not found after backfill`)
+  const finalState = buildState(finalProduct)
+
+  if (isComplete(finalState)) {
+    if (finalProduct.status !== 'active') {
+      await db.update(products)
+        .set({ status: 'active', updatedAt: new Date().toISOString() })
+        .where(eq(products.id, sku))
+    }
+    await logOperation({
+      productId: sku,
+      action: 'fill_missing',
+      status: 'success',
+      message: `Complete after backfill: ${filled.join(', ') || 'no fields filled'}`,
+      triggeredBy,
+    })
+    return { sku, status: 'filled', filled, missing: [], sources: [...new Set(sources)] }
+  }
+
+  const missing = getMissing(finalState)
+  await logOperation({
+    productId: sku,
+    action: 'fill_missing',
+    status: 'error',
+    message: `Still incomplete: ${missing.join(', ')}`,
+    triggeredBy,
+  })
+  return { sku, status: 'info', filled, missing, sources: [...new Set(sources)] }
 }

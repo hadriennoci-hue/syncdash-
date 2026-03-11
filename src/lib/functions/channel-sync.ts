@@ -59,6 +59,19 @@ interface EligibleProduct {
   pushedXmrBazaar:         string
   pushedLibreMarket:       string
   images:                  ImageRow[]
+  variants:                Array<{
+    title: string | null
+    sku: string | null
+    price: number | null
+    compareAtPrice: number | null
+    stock: number | null
+    optionName1: string | null
+    option1: string | null
+    optionName2: string | null
+    option2: string | null
+    optionName3: string | null
+    option3: string | null
+  }>
   prices:                  PriceRow[]
   categories:              CatRow[]
   warehouseStock:          StockRow[]
@@ -125,6 +138,7 @@ export async function syncChannelAvailability(
     ),
     with: {
       images:           true,
+      variants:         true,
       prices:           true,
       categories:       { with: { category: true } },
       warehouseStock:   true,
@@ -195,6 +209,23 @@ async function pushPlatform(
   const touchedPlatformIds = new Set<string>()
   let statusUpdated = 0
 
+  const buildVariantPayloads = (product: EligibleProduct, fallbackPrice: number | null, fallbackCompareAt: number | null) => {
+    if (!product.variants.length) return undefined
+    return product.variants.map((v) => ({
+      title: v.title ?? null,
+      sku: v.sku ?? null,
+      price: v.price ?? fallbackPrice ?? null,
+      compareAt: v.compareAtPrice ?? fallbackCompareAt ?? null,
+      stock: Number.isFinite(v.stock as number) ? Number(v.stock) : 0,
+      optionName1: v.optionName1 ?? null,
+      option1: v.option1 ?? null,
+      optionName2: v.optionName2 ?? null,
+      option2: v.option2 ?? null,
+      optionName3: v.optionName3 ?? null,
+      option3: v.option3 ?? null,
+    }))
+  }
+
   for (const product of toPush) {
     const mapping = product.platformMappings.find((m) => m.platform === platform)
     if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
@@ -205,8 +236,24 @@ async function pushPlatform(
       const identityPatch = (
         platform.startsWith('shopify')
           ? { ean: product.ean?.trim() ? product.ean.trim() : undefined }
-          : { sku: product.id, ean: product.ean?.trim() ? product.ean.trim() : undefined }
+          : {
+              sku: product.id,
+              ean: product.ean?.trim() ? product.ean.trim() : undefined,
+              collections: product.categories
+                .filter((pc) => pc.category.platform !== 'woocommerce')
+                .map((pc) => ({
+                  title: pc.category.name,
+                  handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
+                }))
+                .filter((c) => c.title.trim().length > 0)
+                .map((c) => ({ name: c.title, handle: c.handle })),
+            }
       )
+      const variantPayloads = buildVariantPayloads(product, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+      const payloadWithVariants = {
+        ...identityPatch,
+        ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
+      }
 
       const upsertMapping = async (platformId: string): Promise<void> => {
         await db.insert(platformMappings).values({
@@ -223,12 +270,17 @@ async function pushPlatform(
 
       const updateExisting = async (platformId: string): Promise<void> => {
         if (platform === 'woocommerce' && isWooSkuAware(connector)) {
-          await connector.updateProductForSku(platformId, product.id, identityPatch)
-          await connector.updatePriceForSku(platformId, product.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-          await connector.updateStockForSku(platformId, product.id, totalStock)
-          await connector.toggleStatusForSku(platformId, product.id, 'active')
+          if (variantPayloads?.length) {
+            await connector.updateProduct(platformId, payloadWithVariants)
+            await connector.toggleStatus(platformId, 'active')
+          } else {
+            await connector.updateProductForSku(platformId, product.id, identityPatch)
+            await connector.updatePriceForSku(platformId, product.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+            await connector.updateStockForSku(platformId, product.id, totalStock)
+            await connector.toggleStatusForSku(platformId, product.id, 'active')
+          }
         } else {
-          await connector.updateProduct(platformId, identityPatch)
+          await connector.updateProduct(platformId, payloadWithVariants)
           await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
           await connector.updateStock(platformId, totalStock)
           await connector.toggleStatus(platformId, 'active')
@@ -242,9 +294,16 @@ async function pushPlatform(
 
         const categoryIds = product.categories
           .filter((pc) => platform === 'woocommerce'
-            ? pc.category.platform === 'woocommerce'
+            ? pc.category.platform !== 'woocommerce'
             : pc.category.platform === platform)
           .map((pc) => pc.category.id)
+        const collections = product.categories
+          .filter((pc) => pc.category.platform !== 'woocommerce')
+          .map((pc) => ({
+            name: pc.category.name,
+            handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
+          }))
+          .filter((c) => c.name.trim().length > 0)
 
         const platformId = await connector.createProduct({
           sku: product.id,
@@ -257,8 +316,10 @@ async function pushPlatform(
           taxCode: null,
           price: priceRow?.price ?? null,
           compareAt: priceRow?.compareAt ?? null,
+          ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
           ...(platform.startsWith('shopify') ? { shopifyCategory: 'gid://shopify/TaxonomyCategory/el' } : {}),
           categoryIds,
+          collections,
         })
 
         if (images.length > 0) await connector.setImages(platformId, images)

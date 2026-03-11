@@ -16,8 +16,11 @@ export interface ProductVariant {
   stock: number
   available: boolean
   position: number
+  optionName1: string | null
   option1: string | null
+  optionName2: string | null
   option2: string | null
+  optionName3: string | null
   option3: string | null
   weight: number | null
 }

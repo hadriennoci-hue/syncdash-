@@ -61,6 +61,7 @@ const patchSchema = z.object({
     status:               z.enum(['active', 'archived']).optional(),
     isFeatured:           z.boolean().optional(),
     categoryIds:          z.array(z.string()).optional(),
+    collections:          z.array(z.string()).optional(),
     ean:                  z.string().length(13).optional(),
     commodityCode:        z.string().optional(),
     customsDescription:   z.string().optional(),
@@ -118,8 +119,14 @@ export async function GET(
       quantity:        ws.quantity,
       quantityOrdered: ws.quantityOrdered ?? 0,
       purchasePrice:   ws.purchasePrice,
+      sourceUrl:       ws.sourceUrl ?? null,
+      sourceName:      ws.sourceName ?? null,
     }])
   )
+  const acerSource = stockMap.acer_store ?? null
+  const categoryItems = product.categories
+    .filter((c) => c.category)
+    .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType, platform: c.category!.platform }))
 
   return apiResponse({
     id:                   product.id,
@@ -144,10 +151,10 @@ export async function GET(
     prices:               priceMap,
     platforms:            mappingMap,
     stock:                stockMap,
+    acerStoreSourceUrl:   acerSource?.sourceUrl ?? null,
+    acerStoreSourceName:  acerSource?.sourceName ?? null,
     localization,
-    categories: product.categories
-      .filter((c) => c.category)
-      .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType, platform: c.category!.platform })),
+    collections: categoryItems.filter((c) => c.platform !== 'woocommerce'),
     pushStatus: {
       woocommerce:        product.pushedWoocommerce,
       shopify_komputerzz: product.pushedShopifyKomputerzz,
@@ -173,7 +180,10 @@ export async function PATCH(
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
   const results = await updateProduct(params.sku, {
-    fields:      parsed.data.fields,
+    fields: {
+      ...parsed.data.fields,
+      categoryIds: parsed.data.fields.categoryIds ?? parsed.data.fields.collections,
+    },
     platforms:   (parsed.data.platforms ?? []) as Platform[],
     triggeredBy: parsed.data.triggeredBy,
   })

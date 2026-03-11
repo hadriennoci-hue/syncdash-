@@ -33,8 +33,11 @@ const createSchema = z.object({
     price:     z.number().optional(),
     compareAt: z.number().optional(),
     stock:     z.number().optional(),
+    optionName1: z.string().optional(),
     option1:   z.string().optional(),
+    optionName2: z.string().optional(),
     option2:   z.string().optional(),
+    optionName3: z.string().optional(),
     option3:   z.string().optional(),
   })).optional(),
   images:        z.array(z.discriminatedUnion('type', [
@@ -44,6 +47,7 @@ const createSchema = z.object({
   prices:        z.record(z.number()).optional(),
   compareAtPrices: z.record(z.number()).optional(),
   categoryIds:   z.array(z.string()).optional(),
+  collections:   z.array(z.string()).optional(),
   platforms:     z.array(z.string()).min(1),
   triggeredBy:   z.enum(['human', 'agent']).default('human'),
 })
@@ -147,8 +151,10 @@ export async function GET(req: NextRequest) {
         importPromoPrice: stockMap.ireland?.importPromoPrice ?? stockMap.acer_store?.importPromoPrice ?? null,
         purchasePrice:    stockMap.acer_store?.purchasePrice    ?? stockMap.ireland?.purchasePrice ?? null,
       },
-      categories:     p.categories.map((c) => c.categoryId),
-      collections:    [],
+      categories:     [],
+      collections:    p.categories
+        .filter((c) => c.categoryId && !String(c.categoryId).startsWith('woo_'))
+        .map((c) => c.categoryId),
       inconsistencies: 0,
       updatedAt:      p.updatedAt,
     }
@@ -181,7 +187,7 @@ export async function POST(req: NextRequest) {
     images:       data.images as never,
     prices:       data.prices as Partial<Record<Platform, number>>,
     compareAtPrices: data.compareAtPrices as Partial<Record<Platform, number>>,
-    categoryIds:  data.categoryIds,
+    categoryIds:  data.categoryIds ?? data.collections,
     platforms:    data.platforms as Platform[],
     triggeredBy:  data.triggeredBy,
   })

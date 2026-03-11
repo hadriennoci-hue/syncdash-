@@ -8,7 +8,7 @@ import { apiFetch, apiPatch } from '@/lib/utils/api-fetch'
 type PushStatus = string   // 'N' | '2push' | 'done' | 'FAIL: <reason>'
 
 const PUSH_PLATFORMS = [
-  { key: 'woocommerce',        field: 'pushedWoocommerce',       label: 'Woo' },
+  { key: 'woocommerce',        field: 'pushedWoocommerce',       label: 'Coincart2' },
   { key: 'shopify_komputerzz', field: 'pushedShopifyKomputerzz', label: 'Komp.' },
   { key: 'shopify_tiktok',     field: 'pushedShopifyTiktok',     label: 'TikTok' },
   { key: 'ebay_ie',            field: 'pushedEbayIe',            label: 'eBay' },

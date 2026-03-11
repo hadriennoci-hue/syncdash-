@@ -112,8 +112,11 @@ export async function importFromPlatform(
             stock:          v.stock,
             available:      v.stock > 0 ? 1 : 0,
             position:       v.position ?? i,
+            optionName1:    v.optionName1,
             option1:        v.option1,
+            optionName2:    v.optionName2,
             option2:        v.option2,
+            optionName3:    v.optionName3,
             option3:        v.option3,
             weight:         v.weight,
           }))

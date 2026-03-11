@@ -29,7 +29,7 @@ export default function SettingsPage() {
       <div className="border border-border rounded p-3 text-xs space-y-2">
         <h2 className="font-medium">Environment</h2>
         <div className="text-muted-foreground space-y-1">
-          <div>WooCommerce: {process.env.NEXT_PUBLIC_COINCART_URL ?? 'configured'}</div>
+          <div>Coincart2: {process.env.NEXT_PUBLIC_COINCART_URL ?? 'configured'}</div>
           <div>Shopify Komputerzz: configured</div>
           <div>Shopify TikTok: configured</div>
           <div>eBay Ireland: configured</div>

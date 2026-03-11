@@ -68,6 +68,52 @@ export class ShopifyConnector implements PlatformConnector {
     return n
   }
 
+  private normalizeVariantOptionName(name: string | null | undefined, fallbackIndex: number): string {
+    const trimmed = (name ?? '').trim()
+    return trimmed || `Option ${fallbackIndex}`
+  }
+
+  private buildRestVariantCreatePayload(data: ProductPayload): {
+    options: Array<{ name: string; values: string[] }>
+    variants: Array<Record<string, unknown>>
+  } {
+    const optionBuckets = new Map<string, Set<string>>()
+    const variants = (data.variants ?? []).map((v) => {
+      const opt1Name = this.normalizeVariantOptionName(v.optionName1, 1)
+      const opt2Name = this.normalizeVariantOptionName(v.optionName2, 2)
+      const opt3Name = this.normalizeVariantOptionName(v.optionName3, 3)
+      const optPairs = [
+        { name: opt1Name, value: v.option1?.trim() || null },
+        { name: opt2Name, value: v.option2?.trim() || null },
+        { name: opt3Name, value: v.option3?.trim() || null },
+      ]
+      for (const pair of optPairs) {
+        if (!pair.value) continue
+        const set = optionBuckets.get(pair.name) ?? new Set<string>()
+        set.add(pair.value)
+        optionBuckets.set(pair.name, set)
+      }
+      const hasPromo = v.compareAt != null && v.compareAt > 0
+      const basePrice = v.price
+      const promoPrice = hasPromo ? v.compareAt : null
+      return {
+        ...(v.title ? { title: v.title } : {}),
+        ...(v.sku ? { sku: v.sku } : {}),
+        ...(v.option1 ? { option1: v.option1 } : {}),
+        ...(v.option2 ? { option2: v.option2 } : {}),
+        ...(v.option3 ? { option3: v.option3 } : {}),
+        ...(promoPrice != null ? { price: promoPrice.toString() } : (basePrice != null ? { price: basePrice.toString() } : {})),
+        ...(promoPrice != null ? { compare_at_price: (basePrice ?? promoPrice).toString() } : {}),
+        inventory_management: 'shopify',
+        inventory_quantity: v.stock ?? 0,
+      }
+    })
+    const options = Array.from(optionBuckets.entries())
+      .map(([name, values]) => ({ name, values: Array.from(values.values()) }))
+      .filter((o) => o.values.length > 0)
+    return { options, variants }
+  }
+
   // -------------------------------------------------------------------------
   // Import (paginated)
   // -------------------------------------------------------------------------
@@ -135,8 +181,11 @@ export class ShopifyConnector implements PlatformConnector {
             compareAtPrice: promoPrice ?? null,
             stock:        (vn.inventoryQuantity as number) ?? 0,
             position:     (vn.position as number) ?? 0,
+            optionName1:  opts[0]?.name ?? null,
             option1:      opts[0]?.value ?? null,
+            optionName2:  opts[1]?.name ?? null,
             option2:      opts[1]?.value ?? null,
+            optionName3:  opts[2]?.name ?? null,
             option3:      opts[2]?.value ?? null,
             weight:       (vn.weight as number) ?? null,
           }
@@ -275,6 +324,21 @@ export class ShopifyConnector implements PlatformConnector {
   }
 
   async createProduct(data: ProductPayload): Promise<string> {
+    if ((data.variants?.length ?? 0) > 1) {
+      const variantModel = this.buildRestVariantCreatePayload(data)
+      const body: Record<string, unknown> = {
+        title: data.title,
+        body_html: data.description ?? '',
+        status: data.status === 'active' ? 'active' : 'draft',
+        ...(data.vendor ? { vendor: data.vendor } : {}),
+        ...(data.productType ? { product_type: data.productType } : {}),
+        options: variantModel.options,
+        variants: variantModel.variants,
+      }
+      const created = await this.rest<{ product: { id: number } }>('POST', '/products.json', { product: body })
+      return `gid://shopify/Product/${created.product.id}`
+    }
+
     // Shopify 2024-04+ new product API: ProductCreateInput
     // - no variants field (Shopify auto-creates a default variant)
     // - category is the taxonomy node GID directly (not ProductCategoryInput wrapper)

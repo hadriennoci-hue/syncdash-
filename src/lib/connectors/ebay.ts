@@ -232,8 +232,11 @@ export class EbayConnector implements PlatformConnector {
       compareAtPrice: null,
       stock: qty,
       position: 0,
+      optionName1: null,
       option1: null,
+      optionName2: null,
       option2: null,
+      optionName3: null,
       option3: null,
       weight: null,
     }

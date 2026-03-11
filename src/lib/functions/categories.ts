@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
-import { productCategories, platformMappings } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { categories, productCategories, platformMappings } from '@/lib/db/schema'
+import { eq, and, inArray } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, SyncResult, TriggeredBy } from '@/types/platform'
@@ -20,6 +20,13 @@ export async function assignCategories(
   }
 
   const results: SyncResult[] = []
+  const collectionNameById = new Map<string, string>()
+  if (categoryIds.length > 0) {
+    const rows = await db.select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(inArray(categories.id, categoryIds))
+    for (const row of rows) collectionNameById.set(row.id, row.name)
+  }
 
   for (const platform of platforms) {
     try {
@@ -31,7 +38,13 @@ export async function assignCategories(
         continue
       }
       const connector = await createConnector(platform)
-      await connector.assignCategories(mapping.platformId, categoryIds)
+      const payloadIds = platform === 'woocommerce'
+        ? categoryIds
+          .map((id) => collectionNameById.get(id))
+          .filter((name): name is string => Boolean(name && name.trim()))
+          .map((name) => `name:${name}`)
+        : categoryIds
+      await connector.assignCategories(mapping.platformId, payloadIds)
       await logOperation({ productId: sku, platform, action: 'assign_categories', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {

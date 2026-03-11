@@ -41,7 +41,7 @@ export const PLATFORMS: Platform[] = [
 ]
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
-  woocommerce:        'COINCART.STORE',
+  woocommerce:        'Coincart2',
   shopify_komputerzz: 'KOMPUTERZZ.COM',
   shopify_tiktok:     'Tech Store (TikTok)',
   ebay_ie:            'eBay.ie',

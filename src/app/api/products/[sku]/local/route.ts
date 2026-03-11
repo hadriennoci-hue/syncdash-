@@ -14,6 +14,7 @@ const patchSchema = z.object({
     status:      z.enum(['active', 'archived']).optional(),
     isFeatured:  z.boolean().optional(),
     categoryIds: z.array(z.string()).optional(),
+    collections: z.array(z.string()).optional(),
   }),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
@@ -31,7 +32,10 @@ export async function PATCH(
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
   await updateProductLocal(params.sku, {
-    fields:      parsed.data.fields,
+    fields:      {
+      ...parsed.data.fields,
+      categoryIds: parsed.data.fields.categoryIds ?? parsed.data.fields.collections,
+    },
     triggeredBy: parsed.data.triggeredBy,
   })
 

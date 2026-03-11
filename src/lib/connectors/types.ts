@@ -30,8 +30,11 @@ export interface RawVariant {
   compareAtPrice: number | null
   stock: number
   position: number
+  optionName1: string | null
   option1: string | null
+  optionName2: string | null
   option2: string | null
+  optionName3: string | null
   option3: string | null
   weight: number | null
 }
@@ -107,6 +110,8 @@ export interface ProductPayload {
   shopifyCategory?: string
   variants?: VariantPayload[]
   categoryIds?: string[]
+  collections?: Array<{ name: string; handle?: string | null }>
+  replaceVariants?: boolean
 }
 
 export interface VariantPayload {
@@ -115,8 +120,11 @@ export interface VariantPayload {
   price: number | null
   compareAt: number | null
   stock: number
+  optionName1: string | null
   option1: string | null
+  optionName2: string | null
   option2: string | null
+  optionName3: string | null
   option3: string | null
 }
 

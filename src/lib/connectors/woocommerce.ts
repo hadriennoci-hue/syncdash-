@@ -13,7 +13,70 @@ export class WooCommerceConnector implements PlatformConnector {
     private readonly consumerKey: string,
     private readonly consumerSecret: string
   ) {
-    this.baseUrl = `${siteUrl}/wp-json/wc/v3`
+    this.baseUrl = `${siteUrl}/v1/connector`
+  }
+
+  private extractPrimaryCollectionName(data: Partial<ProductPayload>): string | null {
+    const fromCollections = data.collections?.find((c) => c.name?.trim())?.name?.trim() ?? null
+    if (fromCollections) return fromCollections
+
+    // Backward-compatible fallback: allow assignCategories() to pass names as "name:<collection>"
+    const fromCategoryIds = data.categoryIds?.find((id) => id.startsWith('name:'))?.slice(5).trim() ?? null
+    if (fromCategoryIds) return fromCategoryIds
+
+    return null
+  }
+
+  private normalizeVariantOptionName(name: string | null | undefined, fallbackIndex: number): string {
+    const trimmed = (name ?? '').trim()
+    return trimmed || `Option ${fallbackIndex}`
+  }
+
+  private buildVariantWritePayload(data: Partial<ProductPayload>): {
+    options?: Array<{ name: string; values: string[] }>
+    variants?: Array<Record<string, unknown>>
+  } {
+    const variants = data.variants ?? []
+    if (!variants.length) return {}
+
+    const optionBuckets = new Map<string, Set<string>>()
+    const mappedVariants = variants.map((v) => {
+      const attrs: Array<{ name: string; option: string }> = []
+      const optionPairs = [
+        { name: this.normalizeVariantOptionName(v.optionName1, 1), value: v.option1 },
+        { name: this.normalizeVariantOptionName(v.optionName2, 2), value: v.option2 },
+        { name: this.normalizeVariantOptionName(v.optionName3, 3), value: v.option3 },
+      ]
+      for (const pair of optionPairs) {
+        const value = pair.value?.trim()
+        if (!value) continue
+        attrs.push({ name: pair.name, option: value })
+        const set = optionBuckets.get(pair.name) ?? new Set<string>()
+        set.add(value)
+        optionBuckets.set(pair.name, set)
+      }
+
+      const hasPromo = v.compareAt != null && v.compareAt > 0
+      const basePrice = v.price ?? null
+      const promoPrice = hasPromo ? v.compareAt : null
+
+      return {
+        ...(v.sku ? { sku: v.sku } : {}),
+        ...(promoPrice != null ? { regular_price: promoPrice.toString() } : (basePrice != null ? { regular_price: basePrice.toString() } : {})),
+        ...(promoPrice != null && basePrice != null ? { sale_price: basePrice.toString() } : {}),
+        stock_quantity: v.stock ?? 0,
+        ...(attrs.length ? { attributes: attrs } : {}),
+      }
+    })
+
+    const options = Array.from(optionBuckets.entries())
+      .map(([name, values]) => ({ name, values: Array.from(values.values()) }))
+      .filter((opt) => opt.values.length > 0)
+
+    return {
+      ...(options.length ? { options } : {}),
+      variants: mappedVariants,
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -77,10 +140,16 @@ export class WooCommerceConnector implements PlatformConnector {
   private async findVariationIdBySku(parentId: string, sku: string): Promise<string | null> {
     let page = 1
     while (true) {
-      const vars = await this.request<Array<{ id: number; sku?: string | null }>>(
-        'GET',
-        `/products/${parentId}/variations?per_page=100&page=${page}`
-      )
+      let vars: Array<{ id: number; sku?: string | null }> = []
+      try {
+        vars = await this.request<Array<{ id: number; sku?: string | null }>>(
+          'GET',
+          `/products/${parentId}/variations?per_page=100&page=${page}`
+        )
+      } catch {
+        // Coincart v1 connector may not expose Woo variations endpoints.
+        return null
+      }
       for (const v of vars) {
         if ((v.sku ?? '').trim() === sku) return String(v.id)
       }
@@ -144,8 +213,11 @@ export class WooCommerceConnector implements PlatformConnector {
             : null,
           stock:         (p.stock_quantity as number) ?? 0,
           position:      0,
+          optionName1:   null,
           option1:       null,
+          optionName2:   null,
           option2:       null,
+          optionName3:   null,
           option3:       null,
           weight:        p.weight ? parseFloat(p.weight as string) : null,
         })
@@ -160,8 +232,11 @@ export class WooCommerceConnector implements PlatformConnector {
             : null,
           stock:         (p.stock_quantity as number) ?? 0,
           position:      0,
+          optionName1:   null,
           option1:       null,
+          optionName2:   null,
           option2:       null,
+          optionName3:   null,
           option3:       null,
           weight:        p.weight ? parseFloat(p.weight as string) : null,
         })
@@ -259,6 +334,7 @@ export class WooCommerceConnector implements PlatformConnector {
       ? [{ name: 'Brand', visible: true, variation: false, options: [data.vendor] }]
       : []
 
+    const primaryCollection = this.extractPrimaryCollectionName(data)
     const body: Record<string, unknown> = {
       name:          data.title,
       description:   data.description ?? '',
@@ -267,12 +343,15 @@ export class WooCommerceConnector implements PlatformConnector {
       sku:           data.sku ?? '',
       regular_price: data.compareAt ? data.compareAt.toString() : (data.price?.toString() ?? ''),
       sale_price:    data.compareAt && data.price ? data.price.toString() : '',
-      categories:    data.categoryIds?.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) })) ?? [],
+      ...(primaryCollection ? { category: primaryCollection } : {}),
       // Stock: mark as 'instock' at creation — no specific quantity.
       // Actual warehouse quantities (Ireland, Poland) are synced later by the cron via updateStock().
       stock_status:  'instock',
       attributes,
     }
+    const variantPayload = this.buildVariantWritePayload(data)
+    if (variantPayload.options) body.options = variantPayload.options
+    if (variantPayload.variants) body.variants = variantPayload.variants
     if (data.ean) {
       body.meta_data = [{ key: 'ean', value: data.ean }]
     }
@@ -290,8 +369,13 @@ export class WooCommerceConnector implements PlatformConnector {
     if (data.description !== undefined) body.description = data.description ?? ''
     if (data.status)                  body.status = data.status === 'active' ? 'publish' : 'private'
     if (data.sku)                     body.sku = data.sku
-    if (data.categoryIds)             body.categories = data.categoryIds.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) }))
+    const primaryCollection = this.extractPrimaryCollectionName(data)
+    if (primaryCollection)            body.category = primaryCollection
     if (data.ean)                     body.meta_data = [{ key: 'ean', value: data.ean }]
+    const variantPayload = this.buildVariantWritePayload(data)
+    if (variantPayload.options)       body.options = variantPayload.options
+    if (variantPayload.variants)      body.variants = variantPayload.variants
+    if (data.replaceVariants !== undefined) body.replace_variants = !!data.replaceVariants
     await this.request('PUT', `/products/${platformId}`, body)
   }
 
@@ -462,8 +546,10 @@ export class WooCommerceConnector implements PlatformConnector {
   // -------------------------------------------------------------------------
 
   async assignCategories(platformId: string, categoryIds: string[]): Promise<void> {
+    const primaryCollection = categoryIds.find((id) => id.startsWith('name:'))?.slice(5).trim()
+    if (!primaryCollection) return
     await this.request('PUT', `/products/${platformId}`, {
-      categories: categoryIds.map((id) => ({ id: parseInt(id.replace(/^woo_/, '')) })),
+      category: primaryCollection,
     })
   }
 

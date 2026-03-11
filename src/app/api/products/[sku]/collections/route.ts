@@ -5,25 +5,12 @@ import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { assignCategories } from '@/lib/functions/categories'
 import type { Platform } from '@/types/platform'
 
-
 const putSchema = z.object({
-  categoryIds: z.array(z.string()).optional(),
-  collections: z.array(z.string()).optional(),
-  platforms:   z.array(z.string()).min(1),
+  collections: z.array(z.string()),
+  platforms: z.array(z.string()).min(1),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
-}).superRefine((value, ctx) => {
-  const hasCategoryIds = Array.isArray(value.categoryIds)
-  const hasCollections = Array.isArray(value.collections)
-  if (!hasCategoryIds && !hasCollections) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Either categoryIds or collections is required',
-      path: ['categoryIds'],
-    })
-  }
 })
 
-// PUT — replace all categories for a product
 export async function PUT(req: NextRequest, { params }: { params: { sku: string } }) {
   const auth = verifyBearer(req)
   if (auth) return auth
@@ -32,10 +19,9 @@ export async function PUT(req: NextRequest, { params }: { params: { sku: string 
   const parsed = putSchema.safeParse(body)
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
-  const ids = parsed.data.categoryIds ?? parsed.data.collections ?? []
   const results = await assignCategories(
     params.sku,
-    ids,
+    parsed.data.collections,
     parsed.data.platforms as Platform[],
     parsed.data.triggeredBy
   )

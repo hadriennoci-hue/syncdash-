@@ -7,6 +7,12 @@ import { apiFetch, apiPatch, apiDelete } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
+interface AttributeRow {
+  id: string
+  name: string
+  value: string
+}
+
 
 export function ProductDetailPage({ sku }: { sku: string }) {
   const qc = useQueryClient()
@@ -15,9 +21,9 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     queryFn:  () => apiFetch(`/api/products/${sku}`),
   })
 
-  const { data: categoryData } = useQuery({
-    queryKey: ['categories'],
-    queryFn:  () => apiFetch('/api/categories'),
+  const { data: collectionData } = useQuery({
+    queryKey: ['collections'],
+    queryFn:  () => apiFetch('/api/collections'),
   })
 
   const [description, setDescription] = useState('')
@@ -25,9 +31,9 @@ export function ProductDetailPage({ sku }: { sku: string }) {
   const [tagsInput, setTagsInput] = useState('')
   const [savingTags, setSavingTags] = useState(false)
   const [tagsError, setTagsError] = useState('')
-  const [savingCats, setSavingCats] = useState(false)
-  const [selectedCats, setSelectedCats] = useState<string[]>([])
-  const [catFilter, setCatFilter] = useState('')
+  const [savingCollections, setSavingCollections] = useState(false)
+  const [selectedCollections, setSelectedCollections] = useState<string[]>([])
+  const [collectionFilter, setCollectionFilter] = useState('')
 
   async function setPushStatus(platform: Platform, status: 'N' | '2push' | 'done') {
     await apiPatch(`/api/products/${sku}/push-status`, { platform, status })
@@ -73,36 +79,52 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     }
   }
 
-  async function saveCategories() {
-    setSavingCats(true)
+  async function saveCollections() {
+    setSavingCollections(true)
     try {
       await apiPatch(`/api/products/${sku}/local`, {
-        fields: { categoryIds: selectedCats },
+        fields: { collections: selectedCollections },
         triggeredBy: 'human',
       })
       qc.invalidateQueries({ queryKey: ['product', sku] })
     } finally {
-      setSavingCats(false)
+      setSavingCollections(false)
     }
   }
 
   const p = data?.data
-  const categories = (categoryData?.data ?? []) as Array<{ id: string; name: string; platform: string }>
+  const collections = (collectionData?.data ?? []) as Array<{ id: string; name: string; platform: string }>
 
   useEffect(() => {
     if (!p) return
     setDescription(p.description ?? '')
     setTagsInput((p.tags ?? []).join(', '))
-    setSelectedCats(p.categories?.map((c: any) => c.id) ?? [])
-  }, [p?.description, p?.categories, p])
+    setSelectedCollections((p.collections ?? []).map((c: any) => c.id))
+  }, [p?.description, p?.collections, p])
 
-  const filteredCategories = useMemo(() => {
-    const q = catFilter.trim().toLowerCase()
-    if (!q) return categories
-    return categories.filter((c) =>
+  const filteredCollections = useMemo(() => {
+    const q = collectionFilter.trim().toLowerCase()
+    if (!q) return collections
+    return collections.filter((c) =>
       c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
     )
-  }, [categories, catFilter])
+  }, [collections, collectionFilter])
+
+  const attributeRows = useMemo<AttributeRow[]>(() => {
+    const metafields = Array.isArray(p?.metafields) ? p.metafields : []
+    if (!metafields.length) return []
+
+    const attributesOnly = metafields.filter((m: any) => m?.namespace === 'attributes')
+    const source = attributesOnly.length > 0 ? attributesOnly : metafields
+
+    return source
+      .filter((m: any) => typeof m?.key === 'string')
+      .map((m: any): AttributeRow => ({
+        id: String(m.id),
+        name: humanizeAttributeName(String(m.namespace ?? 'attributes'), String(m.key)),
+        value: m.value == null || String(m.value).trim() === '' ? '-' : String(m.value),
+      }))
+  }, [p?.metafields])
 
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading...</p>
   if (error || !p) return <p className="text-xs text-destructive">Product not found</p>
@@ -226,36 +248,61 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         <p className="text-[10px] text-muted-foreground">One word per tag, separated by commas.</p>
         {tagsError && <p className="text-[10px] text-destructive">{tagsError}</p>}
       </section>
-      {/* Row 3 — Categories & Collections */}
+      <section className="border border-border rounded p-3 text-xs space-y-1.5">
+        <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
+          Attributes (name / value)
+        </h2>
+        {attributeRows.length === 0 ? (
+          <p className="text-muted-foreground italic">No attributes</p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="text-left font-medium py-0.5 pr-2">Attribute name</th>
+                <th className="text-left font-medium py-0.5">Attribute value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attributeRows.map((attr) => (
+                <tr key={attr.id} className="border-t border-border">
+                  <td className="py-1 pr-2">{attr.name}</td>
+                  <td className="py-1">{attr.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+      {/* Row 3 - Collections */}
       <section className="border border-border rounded p-3 text-xs space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Categories &amp; Collections</h2>
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Collections</h2>
           <button
-            onClick={saveCategories}
-            disabled={savingCats}
+            onClick={saveCollections}
+            disabled={savingCollections}
             className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
           >
-            {savingCats ? 'Saving...' : 'Save'}
+            {savingCollections ? 'Saving...' : 'Save'}
           </button>
         </div>
         <input
           type="text"
-          placeholder="Filter categories..."
-          value={catFilter}
-          onChange={(e) => setCatFilter(e.target.value)}
+          placeholder="Filter collections..."
+          value={collectionFilter}
+          onChange={(e) => setCollectionFilter(e.target.value)}
           className="text-[11px] border border-border rounded px-2 py-1 bg-background w-full"
         />
-        {filteredCategories.length > 0 ? (
+        {filteredCollections.length > 0 ? (
           <div className="max-h-48 overflow-y-auto space-y-1">
-            {filteredCategories.map((c) => {
-              const checked = selectedCats.includes(c.id)
+            {filteredCollections.map((c) => {
+              const checked = selectedCollections.includes(c.id)
               return (
                 <label key={c.id} className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={(e) => {
-                      setSelectedCats((prev) =>
+                      setSelectedCollections((prev) =>
                         e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id)
                       )
                     }}
@@ -267,7 +314,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
             })}
           </div>
         ) : (
-          <p className="text-muted-foreground italic">No categories</p>
+          <p className="text-muted-foreground italic">No collections</p>
         )}
       </section>
 
@@ -399,57 +446,19 @@ export function ProductDetailPage({ sku }: { sku: string }) {
                   <td className="py-1 pr-2">{v.title ?? '—'}</td>
                   <td className="py-1 pr-2">{v.price != null ? `€${v.price}` : '—'}</td>
                   <td className="py-1 pr-2">{v.stock ?? '—'}</td>
-                  <td className="py-1">{[v.option1, v.option2, v.option3].filter(Boolean).join(' / ') || '—'}</td>
+                  <td className="py-1">
+                    {[
+                      v.option1 ? `${v.optionName1 ?? 'Option 1'}: ${v.option1}` : null,
+                      v.option2 ? `${v.optionName2 ?? 'Option 2'}: ${v.option2}` : null,
+                      v.option3 ? `${v.optionName3 ?? 'Option 3'}: ${v.option3}` : null,
+                    ].filter(Boolean).join(' / ') || '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
       )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-
-const PLATFORM_GROUP_LABELS: Record<string, string> = {
-  shopify_komputerzz: 'Komputerzz collections',
-  shopify_tiktok:     'TikTok collections',
-  woocommerce:        'WooCommerce categories',
-}
-
-const PLATFORM_GROUP_STYLES: Record<string, string> = {
-  shopify_komputerzz: 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300',
-  shopify_tiktok:     'border-pink-300 bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-300',
-  woocommerce:        'border-purple-300 bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300',
-}
-
-function CategoryGroups({ categories }: { categories: Array<{ id: string; name: string; platform: string; type: string }> }) {
-  const groups = categories.reduce<Record<string, typeof categories>>((acc, c) => {
-    const key = c.platform || 'unknown'
-    ;(acc[key] = acc[key] ?? []).push(c)
-    return acc
-  }, {})
-
-  return (
-    <div className="space-y-2">
-      {Object.entries(groups).map(([platform, cats]) => (
-        <div key={platform}>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
-            {PLATFORM_GROUP_LABELS[platform] ?? platform}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {cats.map((c) => (
-              <span key={c.id}
-                className={`px-2 py-0.5 rounded text-xs border ${PLATFORM_GROUP_STYLES[platform] ?? 'border-border bg-muted/40 text-foreground'}`}
-                title={c.id}
-              >
-                {c.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -480,5 +489,20 @@ function parseTagsInput(value: string): string[] {
 
   return tags
 }
+
+function humanizeAttributeName(namespace: string, key: string): string {
+  const label = key.replace(/[._-]+/g, ' ').trim().toLowerCase()
+  if (namespace === 'attributes' || namespace.trim() === '') {
+    return capitalizeWords(label)
+  }
+  return `${capitalizeWords(namespace.replace(/[._-]+/g, ' ').trim())} / ${capitalizeWords(label)}`
+}
+
+function capitalizeWords(value: string): string {
+  return value.replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+
+
 
 

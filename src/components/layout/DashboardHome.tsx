@@ -41,7 +41,7 @@ const WAREHOUSES = [
 ] as const
 
 const CHANNELS = [
-  { id: 'woocommerce', label: 'COINCART', sub: 'coincart.store', href: '/channels/woocommerce' },
+  { id: 'woocommerce', label: 'COINCART2', sub: 'coincart.store', href: '/channels/woocommerce' },
   { id: 'shopify_komputerzz', label: 'KOMPUTERZZ', sub: 'komputerzz.com', href: '/channels/shopify_komputerzz' },
   { id: 'shopify_tiktok', label: 'TIKTOK TECH STORE', sub: 'shopify_tiktok', href: '/channels/shopify_tiktok' },
   { id: 'ebay_ie', label: 'EBAY IRELAND', sub: 'ebay.ie', href: '/channels/ebay_ie' },
