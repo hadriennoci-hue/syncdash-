@@ -74,6 +74,22 @@ When SKU exists in stock but not D1, auto-create product with:
 - `pendingReview = 1`
 Never set this on manual product creation.
 
+### 3.9 Variant SKU rule
+For variable products on any channel:
+- parent SKU must be distinct from every child variant SKU
+- every variant SKU must be distinct from every other variant SKU
+- never reuse the parent SKU on a variant
+
+### 3.10 Description format rule
+All descriptions pushed to sales channels must be plain text with line breaks.
+- Never push HTML descriptions to sales channels
+- Never treat an HTML description as valid just because it is non-empty
+- If a description contains HTML markers, treat it as missing/invalid and replace it with plain text
+
+For Firecrawl / ACER Store extraction prompts:
+- explicitly request plain-text descriptions with line breaks
+- explicitly forbid HTML, tags, markdown, and rich text formatting
+
 ## 4) Channel Runtime Notes
 
 ### API channels

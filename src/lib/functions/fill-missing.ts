@@ -6,6 +6,7 @@ import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 import { generateId } from '@/lib/utils/id'
+import { isUsablePlainTextDescription } from '@/lib/utils/description'
 
 export interface FillResult {
   sku: string
@@ -149,7 +150,7 @@ function buildState(product: {
     isDisplay,
     hasName: product.title.trim().length > 0 && product.title !== product.id,
     hasSku: product.id.trim().length > 0,
-    hasDescription: Boolean(product.description?.trim()),
+    hasDescription: isUsablePlainTextDescription(product.description),
     hasImages: product.images.length >= 2,
     hasTags: tags.length > 0,
     hasPrice: priceRow?.price != null,
@@ -217,7 +218,7 @@ async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string
   const result = await firecrawlSemaphore.run(() => app.scrapeUrl(sourceUrl, {
     formats: ['extract'],
     extract: {
-      prompt: 'Extract only the product description text for this page.',
+      prompt: 'Extract only the product description as plain text with line breaks. Do not return HTML, tags, markdown, or rich text. Preserve paragraph breaks with newline characters.',
       schema: {
         type: 'object',
         properties: { description: { type: 'string' } },
@@ -228,7 +229,7 @@ async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string
   if (!result.success) return null
   const extract = (result as { extract?: { description?: string } }).extract
   const description = extract?.description?.trim()
-  return description && description.length > 0 ? description : null
+  return isUsablePlainTextDescription(description) ? description : null
 }
 
 async function scrapeMissingAttributesFromSourceUrl(
@@ -293,7 +294,7 @@ async function backfillFromWarehouses(
   const currentPriceRow = product.prices.find((p) => p.platform === 'coincart2') ?? null
   const isPriceMissing = currentPriceRow?.price == null
   const isPromoMissing = currentPriceRow?.compareAt == null
-  const isDescriptionMissing = !product.description?.trim()
+  const isDescriptionMissing = !isUsablePlainTextDescription(product.description)
 
   const { importPrice, importPromoPrice, source } = pickWarehousePriceData(product.warehouseStock)
   const desiredPrice = importPromoPrice ?? importPrice

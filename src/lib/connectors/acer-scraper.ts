@@ -60,7 +60,7 @@ export type ProductDetail = z.infer<typeof ProductDetailSchema>
 
 const DETAIL_PROMPT =
   'Extract from this product page: ' +
-  '1) the full product description translated to English, ' +
+  '1) the full product description translated to English as plain text with line breaks only (never HTML, never markdown, never rich text tags), ' +
   '2) the main product category (e.g. "Monitor", "Keyboard", "Headset"), ' +
   '3) up to 5 product image URLs (main product photos only, not UI icons or thumbnails), ' +
   '4) the regular price as a number, ' +

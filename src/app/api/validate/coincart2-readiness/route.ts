@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
+import { isUsablePlainTextDescription } from '@/lib/utils/description'
 
 interface ReadinessIssue {
   sku: string
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   for (const p of allProducts) {
     const reasons: string[] = []
 
-    if (!p.description?.trim()) reasons.push('missing_description')
+    if (!isUsablePlainTextDescription(p.description)) reasons.push('missing_description')
     if (p.images.length < 5) reasons.push('missing_images')
     if (p.categories.length === 0) reasons.push('missing_collections')
 
