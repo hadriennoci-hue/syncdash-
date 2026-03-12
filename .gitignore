@@ -27,6 +27,7 @@ out/
 dist/
 build/
 .open-next/
+tsconfig.tsbuildinfo
 
 # Logs
 *.log
