@@ -11,9 +11,18 @@ export class WooCommerceConnector implements PlatformConnector {
   constructor(
     private readonly siteUrl: string,
     private readonly consumerKey: string,
-    private readonly consumerSecret: string
+    private readonly consumerSecret: string,
+    apiBaseUrl?: string
   ) {
-    this.baseUrl = `${siteUrl}/v1/connector`
+    const trimmedApiBase = apiBaseUrl?.replace(/\/+$/, '')
+    if (trimmedApiBase) {
+      this.baseUrl = trimmedApiBase.endsWith('/v1/connector')
+        ? trimmedApiBase
+        : `${trimmedApiBase}/v1/connector`
+      return
+    }
+
+    this.baseUrl = `${siteUrl.replace(/\/+$/, '')}/v1/connector`
   }
 
   private extractPrimaryCollectionName(data: Partial<ProductPayload>): string | null {

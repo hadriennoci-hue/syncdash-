@@ -33,6 +33,7 @@ bucket_name = "syncdash-images"
 [vars]
 NEXT_PUBLIC_APP_URL                = "https://wizhard.store"
 COINCART_URL                       = "https://coincart.store"
+COINCART_API_URL                   = "https://coincart-api.hadrien-noci.workers.dev"
 SHOPIFY_KOMPUTERZZ_SHOP            = "ikw70s-fr.myshopify.com"
 SHOPIFY_TIKTOK_SHOP                = "qanjg5-0h.myshopify.com"
 SHOPIFY_TIKTOK_IRELAND_LOCATION_ID = "gid://shopify/Location/77845233826"

@@ -17,7 +17,8 @@ export function getConnector(platform: Platform, tokenOverride?: string): Platfo
       return new WooCommerceConnector(
         process.env.COINCART_URL!,
         process.env.COINCART_KEY!,
-        process.env.COINCART_SECRET!
+        process.env.COINCART_SECRET!,
+        process.env.COINCART_API_URL
       )
 
     case 'shopify_komputerzz':
