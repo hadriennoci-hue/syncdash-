@@ -113,21 +113,147 @@ async function uploadImages(
 }
 
 // ---------------------------------------------------------------------------
+// Category detection
+// ---------------------------------------------------------------------------
+
+type ProductCategory = 'monitor' | 'laptops' | null
+
+function detectCategory(sourceName: string, sourceUrl: string): ProductCategory {
+  const n = sourceName.toLowerCase()
+  const u = sourceUrl.toLowerCase()
+  if (n.includes('écran') || n.includes('ecran') || u.includes('ecran')) return 'monitor'
+  if (n.includes('ordinateur') || n.includes('portable') || u.includes('ordinateur-portable')) return 'laptops'
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Attribute label → key mapping (French labels from Acer Store FR)
+// ---------------------------------------------------------------------------
+
+const MONITOR_LABEL_MAP: Record<string, string> = {
+  "taille de l'écran":         'screen_size',
+  "taille d'écran":            'screen_size',
+  'diagonale':                 'screen_size',
+  'résolution':                'resolution',
+  'résolution native':         'resolution',
+  'type de panneau':           'panel_type',
+  'technologie de panneau':    'panel_type',
+  'fréquence de rafraîchissement': 'refresh_rate',
+  'taux de rafraîchissement':  'refresh_rate',
+  'temps de réponse':          'response_time',
+  "format d'image":            'aspect_ratio',
+  'rapport hauteur/largeur':   'aspect_ratio',
+  'courbure':                  'curved',
+  'luminosité':                'brightness',
+  'luminosité (typ.)':         'brightness',
+  'hdr':                       'hdr',
+  'compatible g-sync':         'gsync_freesync',
+  'compatible freesync':       'gsync_freesync',
+  'freesync':                  'gsync_freesync',
+  'gamme de couleurs':         'color_gamut',
+  'espace colorimétrique':     'color_gamut',
+  'vesa':                      'vesa_mount',
+  'couleur':                   'color',
+  'connectivité':              'ports',
+  'ports':                     'ports',
+}
+
+const LAPTOP_LABEL_MAP: Record<string, string> = {
+  "taille de l'écran":         'screen_size',
+  "taille d'écran":            'screen_size',
+  'résolution':                'resolution',
+  'résolution native':         'resolution',
+  'processeur':                'processor_model',
+  'modèle de processeur':      'processor_model',
+  'marque du processeur':      'processor_brand',
+  'génération du processeur':  'processor_generation',
+  'nombre de coeurs':          'processor_cores',
+  'type de panneau':           'screen_type',
+  "type d'écran":              'screen_type',
+  'fréquence de rafraîchissement': 'refresh_rate',
+  'écran tactile':             'touchscreen',
+  'mémoire ram':               'ram',
+  'ram':                       'ram',
+  'type de ram':               'ram_type',
+  'ram maximale':              'ram_max',
+  'stockage':                  'storage',
+  'capacité de stockage':      'storage',
+  'type de stockage':          'storage_type',
+}
+
+function normalizeSpecValue(key: string, raw: string): string {
+  const v = raw.trim()
+  // screen_size: extract number e.g. "27"" → "27", '27 pouces' → '27'
+  if (key === 'screen_size') {
+    const m = v.match(/(\d+(?:\.\d+)?)/)
+    return m ? m[1] : v
+  }
+  // resolution: normalise spaces e.g. "1920 x 1080" → "1920x1080"
+  if (key === 'resolution' || key === 'screen_resolution') {
+    return v.replace(/\s*[x×]\s*/gi, 'x')
+  }
+  // refresh_rate: extract number e.g. "144 Hz" → "144"
+  if (key === 'refresh_rate') {
+    const m = v.match(/(\d+)/)
+    return m ? m[1] : v
+  }
+  // response_time: extract number e.g. "1 ms" → "1"
+  if (key === 'response_time') {
+    const m = v.match(/(\d+(?:\.\d+)?)/)
+    return m ? m[1] : v
+  }
+  // brightness: extract number e.g. "300 cd/m²" → "300"
+  if (key === 'brightness') {
+    const m = v.match(/(\d+)/)
+    return m ? m[1] : v
+  }
+  return v
+}
+
+function mapSpecs(
+  rawSpecs: Record<string, string>,
+  labelMap: Record<string, string>,
+): Array<{ key: string; value: string }> {
+  const out: Array<{ key: string; value: string }> = []
+  const seen = new Set<string>()
+  for (const [rawLabel, rawValue] of Object.entries(rawSpecs)) {
+    const label = rawLabel.toLowerCase().trim()
+    const attrKey = labelMap[label]
+    if (!attrKey || seen.has(attrKey)) continue
+    const value = normalizeSpecValue(attrKey, rawValue)
+    if (!value) continue
+    seen.add(attrKey)
+    out.push({ key: attrKey, value })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Acer Store DOM scraper
 // ---------------------------------------------------------------------------
 
-/** Extract all product image CDN URLs from the current page (strips query params) */
-async function extractImageUrls(
+interface ProductPageData {
+  images: Array<{ url: string; alt: string }>
+  specs:  Record<string, string>
+}
+
+/** Extract images and spec table from the product page in a single visit */
+async function extractProductData(
   context: BrowserContext,
   productUrl: string,
-): Promise<Array<{ url: string; alt: string }>> {
+): Promise<ProductPageData> {
   const page = await context.newPage()
   try {
     await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
     await page.waitForTimeout(1_200)
 
+    // Click the "Caractéristiques" / "Specifications" tab if present
+    const specTab = await page.$('[data-role="content"] [data-role="trigger"], .data.switch[aria-controls*="additional"], #tab-label-additional')
+    if (specTab) { try { await specTab.click(); await page.waitForTimeout(400) } catch {} }
+
     return await page.evaluate(() => {
-      return Array.from(document.querySelectorAll<HTMLElement>('[data-src],[src]'))
+      // Images
+      const images = Array.from(document.querySelectorAll<HTMLElement>('[data-src],[src]'))
         .map(el => ({
           rawUrl: el.getAttribute('data-src') || (el as HTMLImageElement).src || '',
           alt:    (el as HTMLImageElement).alt || '',
@@ -142,10 +268,52 @@ async function extractImageUrls(
         })
         .filter((i): i is { url: string; alt: string } => i !== null)
         .filter((v, idx, arr) => arr.findIndex(x => x.url === v.url) === idx)
+
+      // Specs — try multiple table/dl patterns
+      const specs: Record<string, string> = {}
+
+      // Pattern 1: <table> with <th> label + <td> value
+      document.querySelectorAll('.additional-attributes tr, table.data.table tr').forEach(row => {
+        const label = row.querySelector('th, .label')?.textContent?.trim()
+        const value = row.querySelector('td, .data')?.textContent?.trim()
+        if (label && value) specs[label] = value
+      })
+
+      // Pattern 2: <dl><dt>label</dt><dd>value</dd></dl>
+      if (Object.keys(specs).length === 0) {
+        document.querySelectorAll('.product-specs dt, .specifications dt, .spec-list dt').forEach(dt => {
+          const dd = dt.nextElementSibling
+          if (dd?.tagName === 'DD') {
+            const label = dt.textContent?.trim()
+            const value = dd.textContent?.trim()
+            if (label && value) specs[label] = value
+          }
+        })
+      }
+
+      // Pattern 3: .product.attribute rows
+      if (Object.keys(specs).length === 0) {
+        document.querySelectorAll('.product.attribute').forEach(el => {
+          const label = el.querySelector('.type')?.textContent?.trim()
+          const value = el.querySelector('.value')?.textContent?.trim()
+          if (label && value) specs[label] = value
+        })
+      }
+
+      return { images, specs }
     })
   } finally {
     await page.close()
   }
+}
+
+/** @deprecated kept for callers — wraps extractProductData */
+async function extractImageUrls(
+  context: BrowserContext,
+  productUrl: string,
+): Promise<Array<{ url: string; alt: string }>> {
+  const data = await extractProductData(context, productUrl)
+  return data.images
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +334,24 @@ async function downloadImage(url: string): Promise<{ buffer: Buffer; mimeType: s
 }
 
 // ---------------------------------------------------------------------------
+// Attributes upload
+// ---------------------------------------------------------------------------
+
+async function uploadAttributes(sku: string, attributes: Array<{ key: string; value: string }>): Promise<void> {
+  if (attributes.length === 0) return
+  const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}/attributes`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${TOKEN}`,
+      ...getAccessHeaders(),
+    },
+    body: JSON.stringify({ mode: 'merge', attributes, triggeredBy: 'agent' }),
+  })
+  if (!res.ok) throw new Error(`Attributes API ${res.status}: ${await res.text()}`)
+}
+
+// ---------------------------------------------------------------------------
 // Process one product
 // ---------------------------------------------------------------------------
 
@@ -173,17 +359,35 @@ async function processProduct(
   context: BrowserContext,
   sku: string,
   sourceUrl: string,
+  sourceName: string,
   index: number,
   total: number,
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
-  const imageRefs = await extractImageUrls(context, sourceUrl)
+  const { images: imageRefs, specs: rawSpecs } = await extractProductData(context, sourceUrl)
   if (imageRefs.length === 0) {
     log(`  ⚠️  No images found`)
     return { ok: 0, skipped: 0, errors: ['No images found on page'] }
   }
-  log(`  Found ${imageRefs.length} image(s)`)
+  log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
+
+  // Detect category and map attributes
+  const category = detectCategory(sourceName, sourceUrl)
+  if (category) {
+    const labelMap = category === 'monitor' ? MONITOR_LABEL_MAP : LAPTOP_LABEL_MAP
+    const attributes = mapSpecs(rawSpecs, labelMap)
+    if (attributes.length > 0) {
+      try {
+        await uploadAttributes(sku, attributes)
+        log(`  📋 ${attributes.length} attributes saved (${category})`)
+      } catch (err) {
+        log(`  ⚠️  Attributes failed: ${err instanceof Error ? err.message : err}`)
+      }
+    } else {
+      log(`  ℹ️  No mappable attributes found (${category})`)
+    }
+  }
 
   // Download all images in parallel
   const downloads = await Promise.all(
@@ -294,7 +498,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   const tasks = rows.map(row => async () => {
     const idx = ++i
     try {
-      const result = await processProduct(context, row.productId, row.sourceUrl!, idx, rows.length)
+      const result = await processProduct(context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, rows.length)
       totalOk += result.ok
       totalErrors += result.errors.length
     } catch (err) {
