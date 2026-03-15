@@ -29,7 +29,7 @@ function readDevVars(): Record<string, string> {
     const candidate = path.join(dir, '.dev.vars')
     if (fs.existsSync(candidate)) {
       const vars: Record<string, string> = {}
-      for (const line of fs.readFileSync(candidate, 'utf-8').split('\n')) {
+      for (const line of fs.readFileSync(candidate, 'utf-8').split(/\r?\n/)) {
         const m = line.match(/^([A-Z0-9_]+)=(.+)$/)
         if (m) vars[m[1]] = m[2].trim()
       }
@@ -52,7 +52,7 @@ const CONCURRENCY = 2  // simultaneous product pages — keep low to avoid rate 
 const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'
   : (DEV_VARS['WIZHARD_URL'] ?? 'https://wizhard.store')
-const TOKEN = DEV_VARS['AGENT_BEARER_TOKEN'] ?? ''
+const TOKEN = process.env.AGENT_BEARER_TOKEN ?? DEV_VARS['AGENT_BEARER_TOKEN'] ?? ''
 
 function getAccessHeaders(): Record<string, string> {
   const id     = DEV_VARS['CF_ACCESS_CLIENT_ID'] ?? DEV_VARS['CLOUDFLARE_ACCESS_CLIENT_ID'] ?? ''
