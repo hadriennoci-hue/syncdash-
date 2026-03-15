@@ -94,7 +94,7 @@ async function uploadImages(
   form.append('triggeredBy', 'agent')
 
   for (const [i, f] of files.entries()) {
-    form.append('files', new Blob([f.buffer], { type: f.mimeType }), f.filename)
+    form.append('files', new Blob([new Uint8Array(f.buffer)], { type: f.mimeType }), f.filename)
     form.append(`alt_${i}`, f.alt)
   }
 
