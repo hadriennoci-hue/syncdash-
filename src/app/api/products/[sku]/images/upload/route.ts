@@ -6,7 +6,7 @@ import { uploadProductImages } from '@/lib/functions/images'
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
-const MAX_FILES = 5
+const MAX_FILES = 20
 
 export async function POST(
   req: NextRequest,

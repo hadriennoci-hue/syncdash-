@@ -3,7 +3,28 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { overrideWarehouseStock } from '@/lib/functions/warehouses'
+import { db } from '@/lib/db/client'
+import { warehouseStock } from '@/lib/db/schema'
+import { eq, isNotNull } from 'drizzle-orm'
 
+// GET — list all stock entries for a warehouse (includes sourceUrl)
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = verifyBearer(req)
+  if (auth) return auth
+
+  const rows = await db.query.warehouseStock.findMany({
+    where: eq(warehouseStock.warehouseId, params.id),
+    columns: {
+      productId:    true,
+      quantity:     true,
+      sourceUrl:    true,
+      sourceName:   true,
+      updatedAt:    true,
+    },
+  })
+
+  return apiResponse({ warehouseId: params.id, count: rows.length, stock: rows })
+}
 
 const patchSchema = z.object({
   productId:       z.string().min(1),
