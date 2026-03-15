@@ -43,6 +43,8 @@
     "db:migrate28": "wrangler d1 execute syncdash-db --local --file=./drizzle/0028_platform_mappings_stock_batch.sql",
     "db:migrate29": "wrangler d1 execute syncdash-db --local --file=./drizzle/0029_sync_jobs_observability.sql",
     "db:migrate30": "wrangler d1 execute syncdash-db --local --file=./drizzle/0030_all_warehouses_read_only.sql",
+    "db:migrate35": "wrangler d1 execute syncdash-db --local --file=./drizzle/0035_metafields_created_at.sql",
+    "db:migrate35:remote": "wrangler d1 execute syncdash-db --remote --file=./drizzle/0035_metafields_created_at.sql",
     "db:bootstrap": "node ./scripts/db-bootstrap.mjs",
     "db:query:inventory": "node ./query-inventory.mjs --local",
     "db:studio": "drizzle-kit studio",
