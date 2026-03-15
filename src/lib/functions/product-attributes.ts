@@ -87,7 +87,7 @@ export async function setProductAttributes(
         await db.update(productMetafields)
           .set({
             value: attr.value,
-            type: attr.type ?? null,
+            type: attr.type ?? 'single_line_text_field',
           })
           .where(eq(productMetafields.id, found.id))
         writes++
@@ -100,7 +100,7 @@ export async function setProductAttributes(
         namespace,
         key,
         value: attr.value,
-        type: attr.type ?? null,
+        type: attr.type ?? 'single_line_text_field',
         createdAt: new Date().toISOString(),
       })
       writes++
