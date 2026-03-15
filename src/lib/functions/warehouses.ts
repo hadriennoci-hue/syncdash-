@@ -72,7 +72,7 @@ export async function applyWarehouseSnapshots(
         .values({
           id: snap.sku,
           title: snap.sourceName ?? snap.sku,
-          status: 'active',
+          status: 'info',
           pendingReview: 1,
           ...(isAcerSource ? { supplierId: 'acer' } : {}),
           ...(isAcerSource ? {
