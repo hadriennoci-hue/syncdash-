@@ -191,6 +191,9 @@ export function DashboardHome() {
   const [pushResult, setPushResult] = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
 
+  const [acerStock, setAcerStock] = useState<'idle' | 'sent'>('idle')
+  const [acerFill,  setAcerFill]  = useState<'idle' | 'sent'>('idle')
+
   const [lastScan, setLastScan] = useState<string | null>(null)
   const [lastPush, setLastPush] = useState<string | null>(null)
 
@@ -271,6 +274,15 @@ export function DashboardHome() {
     } finally {
       setPushing(false)
     }
+  }
+
+  async function wakeAcerRunner(runner: 'acer-stock' | 'acer-fill', reason: string) {
+    const set = runner === 'acer-stock' ? setAcerStock : setAcerFill
+    set('sent')
+    try {
+      await apiPost('/api/runner/wake', { runner, reason })
+    } catch { /* ignore */ }
+    setTimeout(() => set('idle'), 4000)
   }
 
   const maxStock = useMemo(() => Math.max(...warehouseData.map((w) => w.refsInStock), 0), [warehouseData])
@@ -382,6 +394,29 @@ export function DashboardHome() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="h-px bg-[#1E2A44]" />
+
+              <div>
+                <p className="mb-2 font-mono text-[9px] font-semibold uppercase tracking-widest text-[#8FA0C7]">Acer Store Runner</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => wakeAcerRunner('acer-stock', 'manual')}
+                    disabled={acerStock === 'sent'}
+                    className="flex-1 rounded-[10px] border border-[#F2A135] bg-[#0D1830] px-3 py-2.5 text-[12px] font-semibold text-[#F2A135] transition duration-200 hover:-translate-y-px hover:shadow-[0_0_16px_rgba(242,161,53,0.3)] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none"
+                  >
+                    {acerStock === 'sent' ? 'Signal sent ✓' : 'Scan Stock'}
+                  </button>
+                  <button
+                    onClick={() => wakeAcerRunner('acer-fill', 'manual')}
+                    disabled={acerFill === 'sent'}
+                    className="flex-1 rounded-[10px] border border-[#F2A135] bg-[#0D1830] px-3 py-2.5 text-[12px] font-semibold text-[#F2A135] transition duration-200 hover:-translate-y-px hover:shadow-[0_0_16px_rgba(242,161,53,0.3)] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none"
+                  >
+                    {acerFill === 'sent' ? 'Signal sent ✓' : 'Fill Images'}
+                  </button>
+                </div>
+                <p className="mt-1.5 font-mono text-[9px] text-[#8FA0C7]">Requires <span className="text-[#E6ECFF]">npm run runner:acer</span> running locally</p>
               </div>
 
               <div className="h-px bg-[#1E2A44]" />

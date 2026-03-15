@@ -5,11 +5,11 @@ import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { getRunnerSignal, requestRunnerWake } from '@/lib/functions/runner-signal'
 
 const runnerSchema = z.object({
-  runner: z.enum(['browser']).default('browser'),
+  runner: z.enum(['browser', 'acer-stock', 'acer-fill']).default('browser'),
 })
 
 const wakeSchema = z.object({
-  runner: z.enum(['browser']).default('browser'),
+  runner: z.enum(['browser', 'acer-stock', 'acer-fill']).default('browser'),
   reason: z.string().min(1).max(200).default('manual'),
 })
 

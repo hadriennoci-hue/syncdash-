@@ -2,7 +2,7 @@ import { db } from '@/lib/db/client'
 import { runnerSignals } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 
-export type RunnerName = 'browser'
+export type RunnerName = 'browser' | 'acer-stock' | 'acer-fill'
 
 export async function requestRunnerWake(runner: RunnerName, reason: string): Promise<void> {
   const now = new Date().toISOString()
