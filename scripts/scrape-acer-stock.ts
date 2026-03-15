@@ -103,9 +103,10 @@ function extractProductsFromPage(): AcerProduct[] {
 
     if (!nameEl || !skuEl) continue
 
-    // SKU: "Réf.\n            \n                HP.EXPBG.019" → strip prefix
+    // SKU: "Réf.\n            \n                HP.EXPBG.019" → extract pattern
     const skuRaw = skuEl.textContent ?? ''
-    const sku = skuRaw.replace(/^R[eé]f\.?\s*/i, '').trim()
+    const skuMatch = skuRaw.match(/([A-Z]{2}\.[A-Z0-9]+\.[A-Z0-9]+)/)
+    const sku = skuMatch ? skuMatch[1] : ''
     if (!sku) continue
 
     const name = nameEl.textContent?.trim() ?? ''
