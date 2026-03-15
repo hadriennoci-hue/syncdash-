@@ -39,7 +39,7 @@ function readDevVars(): Record<string, string> {
     const candidate = path.join(dir, '.dev.vars')
     if (fs.existsSync(candidate)) {
       const vars: Record<string, string> = {}
-      for (const line of fs.readFileSync(candidate, 'utf-8').split('\n')) {
+      for (const line of fs.readFileSync(candidate, 'utf-8').split(/\r?\n/)) {
         const m = line.match(/^([A-Z0-9_]+)=(.+)$/)
         if (m) vars[m[1]] = m[2].trim()
       }
