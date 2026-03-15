@@ -233,8 +233,10 @@ function mapSpecs(
 // ---------------------------------------------------------------------------
 
 interface ProductPageData {
-  images: Array<{ url: string; alt: string }>
-  specs:  Record<string, string>
+  images:     Array<{ url: string; alt: string }>
+  specs:      Record<string, string>
+  price:      number | null
+  promoPrice: number | null
 }
 
 /** Extract images and spec table from the product page in a single visit */
@@ -300,7 +302,33 @@ async function extractProductData(
         })
       }
 
-      return { images, specs }
+      // Prices (Magento 2 price box)
+      function parsePrice(text: string | null | undefined): number | null {
+        if (!text) return null
+        // Remove currency symbols, spaces, non-breaking spaces; normalise decimal separator
+        const cleaned = text.replace(/[^0-9,.\u00a0]/g, '').replace(/\u00a0/g, '').replace(',', '.')
+        const n = parseFloat(cleaned)
+        return isNaN(n) ? null : n
+      }
+
+      // When on sale: .old-price = original, .special-price = promo/final
+      // When not on sale: .price-box .price = regular
+      const oldPriceEl   = document.querySelector('.old-price .price, [data-price-type="oldPrice"] .price')
+      const salePriceEl  = document.querySelector('.special-price .price, [data-price-type="specialPrice"] .price')
+      const finalPriceEl = document.querySelector('[data-price-type="finalPrice"] .price, .price-box .price-final_price .price')
+
+      let price:      number | null = null
+      let promoPrice: number | null = null
+
+      if (oldPriceEl && salePriceEl) {
+        // On sale: old = regular, sale = promo
+        price      = parsePrice(oldPriceEl.textContent)
+        promoPrice = parsePrice(salePriceEl.textContent)
+      } else if (finalPriceEl) {
+        price = parsePrice(finalPriceEl.textContent)
+      }
+
+      return { images, specs, price, promoPrice }
     })
   } finally {
     await page.close()
@@ -352,6 +380,41 @@ async function uploadAttributes(sku: string, attributes: Array<{ key: string; va
 }
 
 // ---------------------------------------------------------------------------
+// Price upload — sends a minimal ingest to update import prices in D1
+// ---------------------------------------------------------------------------
+
+async function uploadPrices(
+  sku: string,
+  quantity: number,
+  sourceUrl: string,
+  sourceName: string,
+  price: number | null,
+  promoPrice: number | null,
+): Promise<void> {
+  if (price === null && promoPrice === null) return
+  const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${TOKEN}`,
+      ...getAccessHeaders(),
+    },
+    body: JSON.stringify({
+      snapshots: [{
+        sku,
+        quantity,
+        sourceUrl,
+        sourceName,
+        importPrice:      price      ?? undefined,
+        importPromoPrice: promoPrice ?? undefined,
+      }],
+      triggeredBy: 'agent',
+    }),
+  })
+  if (!res.ok) throw new Error(`Prices ingest ${res.status}: ${await res.text()}`)
+}
+
+// ---------------------------------------------------------------------------
 // Process one product
 // ---------------------------------------------------------------------------
 
@@ -360,12 +423,13 @@ async function processProduct(
   sku: string,
   sourceUrl: string,
   sourceName: string,
+  quantity: number,
   index: number,
   total: number,
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
-  const { images: imageRefs, specs: rawSpecs } = await extractProductData(context, sourceUrl)
+  const { images: imageRefs, specs: rawSpecs, price, promoPrice } = await extractProductData(context, sourceUrl)
   if (imageRefs.length === 0) {
     log(`  ⚠️  No images found`)
     return { ok: 0, skipped: 0, errors: ['No images found on page'] }
@@ -386,6 +450,18 @@ async function processProduct(
       }
     } else {
       log(`  ℹ️  No mappable attributes found (${category})`)
+    }
+  }
+
+  // Upload prices if found
+  if (price !== null || promoPrice !== null) {
+    try {
+      await uploadPrices(sku, quantity, sourceUrl, sourceName, price, promoPrice)
+      const priceStr = price != null ? `${price}€` : '—'
+      const promoStr = promoPrice != null ? ` → promo ${promoPrice}€` : ''
+      log(`  💶 Price updated: ${priceStr}${promoStr}`)
+    } catch (err) {
+      log(`  ⚠️  Price update failed: ${err instanceof Error ? err.message : err}`)
     }
   }
 
@@ -498,7 +574,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   const tasks = rows.map(row => async () => {
     const idx = ++i
     try {
-      const result = await processProduct(context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, rows.length)
+      const result = await processProduct(context, row.productId, row.sourceUrl!, row.sourceName ?? '', row.quantity ?? 0, idx, rows.length)
       totalOk += result.ok
       totalErrors += result.errors.length
     } catch (err) {
