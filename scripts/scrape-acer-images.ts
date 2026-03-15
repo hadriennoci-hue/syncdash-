@@ -108,7 +108,8 @@ async function uploadImages(
     const text = await res.text()
     throw new Error(`Upload API error ${res.status}: ${text}`)
   }
-  return res.json() as Promise<{ urls: string[]; errors: string[] }>
+  const json = await res.json() as { data: { urls: string[]; errors: string[] } }
+  return json.data
 }
 
 // ---------------------------------------------------------------------------
