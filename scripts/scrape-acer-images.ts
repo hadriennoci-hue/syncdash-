@@ -80,8 +80,8 @@ async function getAcerStockRows(): Promise<StockRow[]> {
     headers: { Authorization: `Bearer ${TOKEN}`, ...getAccessHeaders() },
   })
   if (!res.ok) throw new Error(`Failed to fetch acer_store stock: ${res.status} ${await res.text()}`)
-  const json = await res.json() as { stock: StockRow[] }
-  return json.stock ?? []
+  const json = await res.json() as { data: { stock: StockRow[] } }
+  return json.data?.stock ?? []
 }
 
 async function uploadImages(
