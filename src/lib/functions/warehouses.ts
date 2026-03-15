@@ -11,7 +11,7 @@ import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
 import { eq, and, inArray, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
-import type { WarehouseStockProgress } from '@/lib/connectors/types'
+import type { WarehouseStockProgress, WarehouseStockSnapshot } from '@/lib/connectors/types'
 import { logOperation } from './log'
 import type { Platform, TriggeredBy } from '@/types/platform'
 import { PLATFORMS } from '@/types/platform'
@@ -29,30 +29,16 @@ interface SyncWarehouseOptions {
 }
 
 // ---------------------------------------------------------------------------
-// syncWarehouse — reads stock from source and updates D1
+// applyWarehouseSnapshots — write a set of snapshots to D1 (shared logic)
+// Called by syncWarehouse (connector path) and ingestWarehouseSnapshots (script path).
 // ---------------------------------------------------------------------------
 
-export async function syncWarehouse(
+export async function applyWarehouseSnapshots(
   warehouseId: string,
+  snapshots: WarehouseStockSnapshot[],
   triggeredBy: TriggeredBy = 'system',
-  options: SyncWarehouseOptions = {}
 ): Promise<SyncResult> {
-  const warehouse = await db.query.warehouses.findFirst({
-    where: eq(warehouses.id, warehouseId),
-  })
-  if (!warehouse) throw new Error(`Warehouse not found: ${warehouseId}`)
-
-  const connector = await createWarehouseConnector(warehouseId)
-  const snapshots = await connector.getStock({
-    onProgress: (event) => options.onProgress?.({
-      ...event,
-      warehouseId: event.warehouseId ?? warehouseId,
-    }),
-  })
-
-  // For warehouses that return only in-stock items, zero existing stock first,
-  // then upsert the returned SKUs. This avoids NOT IN with too many variables.
-  // This only runs after a fully successful getStock() — if it throws, we never reach here.
+  // For warehouses that return only in-stock items, zero existing stock first.
   if (warehouseId === 'acer_store' || warehouseId === 'ireland') {
     await db.update(warehouseStock)
       .set({ quantity: 0, updatedAt: new Date().toISOString() })
@@ -62,7 +48,6 @@ export async function syncWarehouse(
   const errors: string[] = []
   let productsUpdated = 0
 
-  // Ireland and ACER Store products are always supplied by ACER — ensure supplier row exists
   const isAcerSource = warehouseId === 'ireland' || warehouseId === 'acer_store'
   if (isAcerSource) {
     await db.insert(suppliers)
@@ -73,8 +58,6 @@ export async function syncWarehouse(
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
     if (snap.quantity <= 0) {
-      // Zero out existing warehouse_stock if this product is already tracked,
-      // but never auto-create a product record for zero-stock items.
       await db.update(warehouseStock)
         .set({ quantity: 0, updatedAt: new Date().toISOString() })
         .where(and(
@@ -85,8 +68,6 @@ export async function syncWarehouse(
     }
 
     try {
-      // Auto-create a minimal product record if it doesn't exist yet.
-      // This prevents FK violations for new ACER SKUs not yet in D1.
       await db.insert(products)
         .values({
           id: snap.sku,
@@ -94,7 +75,6 @@ export async function syncWarehouse(
           status: 'active',
           pendingReview: 1,
           ...(isAcerSource ? { supplierId: 'acer' } : {}),
-          // All ACER-sourced SKUs (Ireland + ACER Store): queue for Komputerzz + Coincart, skip TikTok
           ...(isAcerSource ? {
             pushedShopifyKomputerzz: '2push',
             pushedCoincart2:       '2push',
@@ -104,7 +84,6 @@ export async function syncWarehouse(
         })
         .onConflictDoNothing()
 
-      // Set supplier to ACER on existing products if not already assigned
       if (isAcerSource) {
         await db.update(products)
           .set({ supplierId: 'acer' })
@@ -137,8 +116,6 @@ export async function syncWarehouse(
     }
   }
 
-  // Post-scan zeroing is no longer needed for Ireland/ACER because we zeroed up front.
-
   const syncedAt = new Date().toISOString()
   await db.update(warehouses)
     .set({ lastSynced: syncedAt })
@@ -152,6 +129,31 @@ export async function syncWarehouse(
   })
 
   return { warehouseId, productsUpdated, errors, syncedAt }
+}
+
+// ---------------------------------------------------------------------------
+// syncWarehouse — reads stock from source connector and writes to D1
+// ---------------------------------------------------------------------------
+
+export async function syncWarehouse(
+  warehouseId: string,
+  triggeredBy: TriggeredBy = 'system',
+  options: SyncWarehouseOptions = {}
+): Promise<SyncResult> {
+  const warehouse = await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, warehouseId),
+  })
+  if (!warehouse) throw new Error(`Warehouse not found: ${warehouseId}`)
+
+  const connector = await createWarehouseConnector(warehouseId)
+  const snapshots = await connector.getStock({
+    onProgress: (event) => options.onProgress?.({
+      ...event,
+      warehouseId: event.warehouseId ?? warehouseId,
+    }),
+  })
+
+  return applyWarehouseSnapshots(warehouseId, snapshots, triggeredBy)
 }
 
 // ---------------------------------------------------------------------------
