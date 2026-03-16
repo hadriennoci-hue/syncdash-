@@ -380,6 +380,42 @@ function detectLocale(sourceUrl: string): string | null {
   return m ? m[1] : null
 }
 
+function detectFullLocale(sourceUrl: string): string | null {
+  const m = sourceUrl.match(/store\.acer\.com\/([a-z]{2}-[a-z]{2})\//)
+  return m ? m[1] : null
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard layout detection — laptops only
+// Derived from the stored source URL locale (which reflects the store where
+// the product was found, i.e. its keyboard variant).
+//
+// Research (2026-03): confirmed by pairwise SKU comparison across 13 stores.
+//   • fr-be and nl-be share 100% of SKUs → same Belgian AZERTY keyboard
+//   • sv-se, fi-fi and no-no share 100% of SKUs → same Nordic keyboard
+//   • Acer uses "ED" SKU suffix for Nordic products (multi-country variant)
+// ---------------------------------------------------------------------------
+const KEYBOARD_LAYOUT_BY_LOCALE: Record<string, string> = {
+  'en-ie': 'uk_qwerty',
+  'fr-fr': 'fr_azerty',
+  'fr-be': 'be_azerty',
+  'nl-be': 'be_azerty',   // same products as fr-be
+  'de-de': 'de_qwertz',
+  'es-es': 'es_qwerty',
+  'it-it': 'it_qwerty',
+  'pl-pl': 'pl_qwerty',
+  'nl-nl': 'nl_qwerty',
+  'sv-se': 'nordic',       // sv-se = fi-fi = no-no (confirmed 100% SKU overlap)
+  'fi-fi': 'nordic',
+  'no-no': 'nordic',
+  'da-dk': 'nordic',       // assumed same Nordic variant (AJAX-rendered, unverifiable by scraping)
+}
+
+function detectKeyboardLayout(sourceUrl: string): string | null {
+  const locale = detectFullLocale(sourceUrl)
+  return locale ? (KEYBOARD_LAYOUT_BY_LOCALE[locale] ?? null) : null
+}
+
 // ---------------------------------------------------------------------------
 // Attribute label → key maps  (one block per language, same attribute keys)
 // To add a new language: copy a block, change the labels, add the locale key.
@@ -1236,6 +1272,16 @@ async function processProduct(
       log(`  ⚠️  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${fetchLocale ?? '?'}):`)
       for (const u of unmappedLabels) log(`       ${u}`)
       log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${fetchLocale ?? '?'}] if needed.`)
+    }
+    // For laptops: append keyboard_layout derived from source URL locale
+    if (category === 'laptops') {
+      const layout = detectKeyboardLayout(sourceUrl)
+      if (layout) {
+        attributes.push({ key: 'keyboard_layout', value: layout })
+        log(`  ⌨️  keyboard_layout = ${layout} (from ${detectFullLocale(sourceUrl) ?? sourceUrl})`)
+      } else {
+        log(`  ⚠️  keyboard_layout: no mapping for locale ${detectFullLocale(sourceUrl) ?? 'unknown'}`)
+      }
     }
     if (attributes.length > 0) {
       try {
