@@ -78,6 +78,7 @@ interface StockRow {
   hasDescription: boolean
   imageCount:     number
   attributeCount: number
+  categoryCount:  number
 }
 
 async function getAcerStockRows(): Promise<StockRow[]> {
@@ -89,20 +90,80 @@ async function getAcerStockRows(): Promise<StockRow[]> {
   return json.data?.stock ?? []
 }
 
-/**
- * A product needs filling if it was auto-created (pendingReview=1) AND
- * at least one of the following is missing:
- *   - images
- *   - description
- *   - attributes (only for monitor/laptop categories)
- */
-function needsFilling(row: StockRow): boolean {
+// ---------------------------------------------------------------------------
+// Shopify TikTok collection map  (fetched once at startup)
+// Maps our internal category key → Wizhard category ID.
+// Auto-matched by collection name/slug — monitor and laptops keywords.
+// ---------------------------------------------------------------------------
+
+type InternalCategory = 'monitor' | 'laptops'
+
+let tiktokCollectionMap = new Map<InternalCategory, string>()
+
+async function fetchTiktokCollectionMap(): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/categories?platform=shopify_tiktok`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, ...getAccessHeaders() },
+    })
+    if (!res.ok) { log(`⚠️  Could not fetch shopify_tiktok collections: ${res.status}`); return }
+    const json = await res.json() as { data: Array<{ id: string; name: string; slug: string | null }> }
+    const cols  = json.data ?? []
+
+    for (const col of cols) {
+      const key = ((col.slug ?? col.name) ?? '').toLowerCase()
+      if (!tiktokCollectionMap.has('monitor') &&
+          (key.includes('monitor') || key.includes('display') || key.includes('screen') || key.includes('écran'))) {
+        tiktokCollectionMap.set('monitor', col.id)
+        log(`  🏷️  monitor → collection "${col.name}" (${col.id})`)
+      }
+      if (!tiktokCollectionMap.has('laptops') &&
+          (key.includes('laptop') || key.includes('notebook') || key.includes('portable') || key.includes('ordinateur'))) {
+        tiktokCollectionMap.set('laptops', col.id)
+        log(`  🏷️  laptops → collection "${col.name}" (${col.id})`)
+      }
+    }
+
+    if (tiktokCollectionMap.size === 0) log(`  ⚠️  No shopify_tiktok collections matched — products will need manual collection assignment`)
+  } catch (err) {
+    log(`⚠️  fetchTiktokCollectionMap failed: ${err instanceof Error ? err.message : err}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fill eligibility helpers
+// ---------------------------------------------------------------------------
+
+/** Needs a browser page visit to get description / images / attributes. */
+function needsBrowserFill(row: StockRow): boolean {
   if (!row.pendingReview) return false
   if (row.imageCount === 0) return true
   if (!row.hasDescription) return true
   const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
   if (cat !== null && row.attributeCount === 0) return true
   return false
+}
+
+/** Has all browser data but still missing a shopify_tiktok collection. No page visit needed. */
+function needsCollectionOnly(row: StockRow): boolean {
+  if (!row.pendingReview) return false
+  if (needsBrowserFill(row)) return false // will get collection assigned during browser fill
+  const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
+  return cat !== null && row.categoryCount === 0
+}
+
+function needsFilling(row: StockRow): boolean {
+  return needsBrowserFill(row) || needsCollectionOnly(row)
+}
+
+/** Assign a shopify_tiktok collection to a product (D1 only, no platform push). */
+async function assignCollection(sku: string, category: InternalCategory): Promise<void> {
+  const collectionId = tiktokCollectionMap.get(category)
+  if (!collectionId) {
+    log(`  ⚠️  [no-collection] "${category}" has no mapped shopify_tiktok collection — assign manually`)
+    return
+  }
+  await uploadProductInfo(sku, { categoryIds: [collectionId] })
+  log(`  🏷️  Collection assigned: ${category}`)
 }
 
 async function uploadImages(
@@ -817,8 +878,10 @@ async function uploadAttributes(sku: string, attributes: Array<{ key: string; va
 
 async function uploadProductInfo(
   sku: string,
-  fields: { description?: string; status?: 'active' | 'archived' },
+  fields: { description?: string; status?: 'active' | 'archived'; categoryIds?: string[] },
 ): Promise<void> {
+  // Note: omit `platforms` entirely (not []) — Zod schema requires min(1) if present.
+  // Omitting means D1-only update, no platform push.
   const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}`, {
     method: 'PATCH',
     headers: {
@@ -826,7 +889,7 @@ async function uploadProductInfo(
       Authorization: `Bearer ${TOKEN}`,
       ...getAccessHeaders(),
     },
-    body: JSON.stringify({ fields, platforms: [], triggeredBy: 'agent' }),
+    body: JSON.stringify({ fields, triggeredBy: 'agent' }),
   })
   if (!res.ok) throw new Error(`Product PATCH ${res.status}: ${await res.text()}`)
 }
@@ -842,7 +905,7 @@ async function processProduct(
   sourceName: string,
   index: number,
   total: number,
-  existing: { hasImages: boolean; hasDescription: boolean; hasAttributes: boolean },
+  existing: { hasImages: boolean; hasDescription: boolean; hasAttributes: boolean; hasCategory: boolean },
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
@@ -961,7 +1024,20 @@ async function processProduct(
   }
 
   // ------------------------------------------------------------------
-  // Step 5: Download + upload images to R2 (skip if already present)
+  // Step 5: Assign shopify_tiktok collection (skip if already assigned)
+  // ------------------------------------------------------------------
+  if (category && !existing.hasCategory) {
+    try {
+      await assignCollection(sku, category)
+    } catch (err) {
+      log(`  ⚠️  Collection assignment failed: ${err instanceof Error ? err.message : err}`)
+    }
+  } else if (category && existing.hasCategory) {
+    log(`  ℹ️  Collection already assigned — skipping`)
+  }
+
+  // ------------------------------------------------------------------
+  // Step 6: Download + upload images to R2 (skip if already present)
   // ------------------------------------------------------------------
   if (existing.hasImages) {
     log(`  ℹ️  Images already present — skipping`)
@@ -1043,9 +1119,9 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
 
   log(`Target: ${BASE_URL}  mode: ${MODE}${ONLY_SKU ? `  sku: ${ONLY_SKU}` : ''}`)
 
-  // Step 1 — fetch acer_store stock to get all sourceUrls
-  log('Fetching acer_store stock list...')
-  const allRows = await getAcerStockRows()
+  // Step 1 — fetch acer_store stock + shopify_tiktok collection map
+  log('Fetching acer_store stock list and shopify_tiktok collections...')
+  const [allRows] = await Promise.all([getAcerStockRows(), fetchTiktokCollectionMap()])
   const withUrl = allRows.filter(r => r.sourceUrl && r.sourceUrl !== 'null')
 
   // When targeting a single SKU, skip the status filter (allow re-fill of any product)
@@ -1054,25 +1130,50 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
     .filter(r => ONLY_SKU || needsFilling(r))
 
   if (rows.length === 0) {
-    const totalWithUrl = withUrl.length
-    log(`No products need filling (${totalWithUrl} have Acer URLs — all complete or not pendingReview).`)
+    log(`No products need filling (${withUrl.length} have Acer URLs — all complete or not pendingReview).`)
     process.exit(0)
   }
-  log(`Found ${rows.length} product(s) to fill (pendingReview=1, missing images/description/attributes)`)
 
   if (IS_DRY_RUN) {
+    log(`Found ${rows.length} product(s) to fill:`)
     rows.forEach(r => {
+      const cat  = detectCategory(r.sourceName ?? '', r.sourceUrl ?? '')
       const missing = [
-        r.imageCount === 0      && 'no images',
-        !r.hasDescription       && 'no description',
-        (() => { const cat = detectCategory(r.sourceName ?? '', r.sourceUrl ?? ''); return cat !== null && r.attributeCount === 0 && 'no attributes' })(),
+        r.imageCount === 0             && 'no images',
+        !r.hasDescription              && 'no description',
+        cat !== null && r.attributeCount === 0 && 'no attributes',
+        cat !== null && r.categoryCount === 0   && 'no collection',
       ].filter(Boolean).join(', ')
       log(`  ${r.productId}  [${missing}]  →  ${r.sourceUrl}`)
     })
     process.exit(0)
   }
 
-  // Step 2 — launch real Chrome (avoids Acer bot detection)
+  // Step 2 — Phase A: assign collections to products that only need that (no browser visit needed)
+  const collectionOnlyRows = rows.filter(r => needsCollectionOnly(r))
+  if (collectionOnlyRows.length > 0) {
+    log(`\nPhase A — assigning collections (${collectionOnlyRows.length} product(s), no browser needed)`)
+    for (const row of collectionOnlyRows) {
+      const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '') as InternalCategory
+      log(`  ${row.productId} → ${cat}`)
+      try {
+        await assignCollection(row.productId, cat)
+      } catch (err) {
+        log(`  ❌ ${row.productId}: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
+  // Step 3 — Phase B: browser fill for products needing images / description / attributes
+  const browserRows = rows.filter(r => needsBrowserFill(r))
+  if (browserRows.length === 0) {
+    log(`\n✅ Done — all products already had images/description/attributes. Collections assigned above.`)
+    process.exit(0)
+  }
+
+  log(`\nPhase B — browser fill (${browserRows.length} product(s))`)
+
+  // Step 4 — launch real Chrome (avoids Acer bot detection)
   const browser: Browser = await chromium.launch({
     channel: 'chrome',
     headless: !IS_HEADED,
@@ -1080,20 +1181,25 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   })
   const context: BrowserContext = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    locale: 'fr-FR',
+    locale: 'en-IE',
   })
 
-  // Step 3 — process each product
+  // Step 5 — process each product
   let totalOk = 0
   let totalErrors = 0
   let i = 0
 
-  const tasks = rows.map(row => async () => {
+  const tasks = browserRows.map(row => async () => {
     const idx = ++i
     try {
       const result = await processProduct(
-        context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, rows.length,
-        { hasImages: row.imageCount > 0, hasDescription: row.hasDescription, hasAttributes: row.attributeCount > 0 },
+        context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, browserRows.length,
+        {
+          hasImages:     row.imageCount > 0,
+          hasDescription: row.hasDescription,
+          hasAttributes:  row.attributeCount > 0,
+          hasCategory:    row.categoryCount > 0,
+        },
       )
       totalOk += result.ok
       totalErrors += result.errors.length

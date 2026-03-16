@@ -25,6 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           with: {
             images:     { columns: { id: true } },
             metafields: { columns: { id: true } },
+            categories: { columns: { categoryId: true } },
           },
         },
       },
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       hasDescription: !!(r.product?.description && r.product.description.trim().length > 0),
       imageCount:     r.product?.images.length ?? 0,
       attributeCount: r.product?.metafields.length ?? 0,
+      categoryCount:  r.product?.categories.length ?? 0,
     }))
 
     return apiResponse({ warehouseId: params.id, count: stock.length, stock })
