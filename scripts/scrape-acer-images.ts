@@ -96,9 +96,22 @@ async function getAcerStockRows(): Promise<StockRow[]> {
 // Auto-matched by collection name/slug — monitor and laptops keywords.
 // ---------------------------------------------------------------------------
 
-type InternalCategory = 'monitor' | 'laptops'
+type InternalCategory = ProductCategory
 
 let tiktokCollectionMap = new Map<InternalCategory, string>()
+
+// Keywords to auto-match each internal category to a Shopify TikTok collection name/slug
+const COLLECTION_MATCH_RULES: Array<{ cat: InternalCategory; keywords: string[] }> = [
+  { cat: 'monitor',      keywords: ['monitor', 'display', 'screen', 'écran', 'scherm', 'bildschirm'] },
+  { cat: 'laptops',      keywords: ['laptop', 'notebook', 'portable', 'ordinateur'] },
+  { cat: 'tablets',      keywords: ['tablet', 'tablette'] },
+  { cat: 'desktops',     keywords: ['desktop', 'bureau', 'torre', 'veriton'] },
+  { cat: 'audio',        keywords: ['audio', 'headset', 'headphone', 'casque', 'speaker'] },
+  { cat: 'gpu',          keywords: ['gpu', 'graphic', 'carte graphique'] },
+  { cat: 'input-device', keywords: ['input', 'mouse', 'keyboard', 'souris', 'clavier'] },
+  { cat: 'cases',        keywords: ['case', 'bag', 'sleeve', 'housse', 'tasche'] },
+  { cat: 'lifestyle',    keywords: ['lifestyle'] },
+]
 
 async function fetchTiktokCollectionMap(): Promise<void> {
   try {
@@ -111,15 +124,12 @@ async function fetchTiktokCollectionMap(): Promise<void> {
 
     for (const col of cols) {
       const key = ((col.slug ?? col.name) ?? '').toLowerCase()
-      if (!tiktokCollectionMap.has('monitor') &&
-          (key.includes('monitor') || key.includes('display') || key.includes('screen') || key.includes('écran'))) {
-        tiktokCollectionMap.set('monitor', col.id)
-        log(`  🏷️  monitor → collection "${col.name}" (${col.id})`)
-      }
-      if (!tiktokCollectionMap.has('laptops') &&
-          (key.includes('laptop') || key.includes('notebook') || key.includes('portable') || key.includes('ordinateur'))) {
-        tiktokCollectionMap.set('laptops', col.id)
-        log(`  🏷️  laptops → collection "${col.name}" (${col.id})`)
+      for (const { cat, keywords } of COLLECTION_MATCH_RULES) {
+        if (!tiktokCollectionMap.has(cat) && keywords.some(kw => key.includes(kw))) {
+          tiktokCollectionMap.set(cat, col.id)
+          log(`  🏷️  ${cat} → collection "${col.name}" (${col.id})`)
+          break
+        }
       }
     }
 
@@ -138,8 +148,9 @@ function needsBrowserFill(row: StockRow): boolean {
   if (!row.pendingReview) return false
   if (row.imageCount === 0) return true
   if (!row.hasDescription) return true
+  // Only scan attributes for categories that have label maps
   const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
-  if (cat !== null && row.attributeCount === 0) return true
+  if (ATTRIBUTE_SCAN_CATEGORIES.has(cat) && row.attributeCount === 0) return true
   return false
 }
 
@@ -147,8 +158,7 @@ function needsBrowserFill(row: StockRow): boolean {
 function needsCollectionOnly(row: StockRow): boolean {
   if (!row.pendingReview) return false
   if (needsBrowserFill(row)) return false // will get collection assigned during browser fill
-  const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
-  return cat !== null && row.categoryCount === 0
+  return row.categoryCount === 0 // detectCategory always returns something now (lifestyle as default)
 }
 
 function needsFilling(row: StockRow): boolean {
@@ -264,44 +274,99 @@ function tryConstructEnglishUrl(sourceUrl: string): string | null {
 // Category detection
 // ---------------------------------------------------------------------------
 
-type ProductCategory = 'monitor' | 'laptops' | null
+type ProductCategory = 'monitor' | 'laptops' | 'tablets' | 'desktops' | 'audio' | 'gpu' | 'input-device' | 'cases' | 'lifestyle'
+
+/** Categories for which we have attribute label maps and should scan spec tables. */
+const ATTRIBUTE_SCAN_CATEGORIES = new Set<ProductCategory>(['monitor', 'laptops'])
 
 function detectCategory(sourceName: string, sourceUrl: string): ProductCategory {
   const n = sourceName.toLowerCase()
   const u = sourceUrl.toLowerCase()
 
-  // --- Monitor: URL slug first (most reliable) ---
+  // --- Monitor ---
   if (u.includes('ecran')         // FR: /ecrans
    || u.includes('monitore')      // DE: /monitore, NL: /monitoren, ES: /monitores, PL: /monitory
    || u.includes('monitor')       // EN: /monitors, IT: /monitor, DA/SV/NO: /monitorer
    || u.includes('skærm')         // DA: /skærme
-   || u.includes('sk%c3%a6rm')    // DA URL-encoded ærm
+   || u.includes('sk%c3%a6rm')    // DA URL-encoded
    || u.includes('skärm')         // SV: /skärmar
-   || u.includes('sk%c3%a4rm')    // SV URL-encoded ärm
+   || u.includes('sk%c3%a4rm')    // SV URL-encoded
    || u.includes('skjerm')        // NO: /skjermer
    || u.includes('schermi')       // IT: /schermi
-   || u.includes('n%c3%a4yt')     // FI URL-encoded näyt
+   || u.includes('n%c3%a4yt')     // FI URL-encoded
    || u.includes('näyt')          // FI: /näytöt
   ) return 'monitor'
-  // Name-based fallback
   if (n.includes('écran') || n.includes('ecran') || n.includes('monitor')
    || n.includes('scherm') || n.includes('skærm') || n.includes('skärm')
    || n.includes('skjerm') || n.includes('schermo') || n.includes('näyttö')
   ) return 'monitor'
 
-  // --- Laptop: URL slug ---
+  // --- Laptop ---
   if (u.includes('laptop') || u.includes('notebook') || u.includes('ordinateur-portable')
    || u.includes('portables') || u.includes('ordenadores-portatiles')
    || u.includes('barbar')        // SV: bärbara / DA: bærbare
    || u.includes('b%c3%a4rbar') || u.includes('b%c3%a6rbar')
    || u.includes('kannettav')     // FI: kannettavat
   ) return 'laptops'
-  // Name-based fallback
   if (n.includes('ordinateur') || n.includes('portable') || n.includes('laptop')
    || n.includes('notebook') || n.includes('portátil') || n.includes('kannettava')
   ) return 'laptops'
 
-  return null
+  // --- Tablet ---
+  if (u.includes('tablet') || u.includes('tablette') || u.includes('tabletas')
+   || u.includes('tabletti')      // FI
+  ) return 'tablets'
+  if (n.includes('tablet') || n.includes('tablette') || n.includes('tableta')
+   || n.includes(' tab ')         // "Acer Tab X ..."
+  ) return 'tablets'
+
+  // --- Desktop ---
+  if (u.includes('desktop') || u.includes('ordinateur-de-bureau')
+   || u.includes('ordenadores-sobremesa') || u.includes('desktop-computer')
+  ) return 'desktops'
+  if (n.includes('desktop') || n.includes('all-in-one') || n.includes('allinone')
+   || n.includes('veriton') || n.includes('aspire tc') || n.includes('aspire xc')
+   || n.includes('bureau') || n.includes('torre')
+  ) return 'desktops'
+
+  // --- Audio ---
+  if (u.includes('/audio') || u.includes('/casques') || u.includes('/kopfhoer')
+   || u.includes('/headset') || u.includes('/headphone')
+  ) return 'audio'
+  if (n.includes('headset') || n.includes('headphone') || n.includes('earphone')
+   || n.includes('speaker') || n.includes('casque') || n.includes('kopfhörer')
+   || n.includes('écouteur') || n.includes('enceinte')
+  ) return 'audio'
+
+  // --- GPU ---
+  if (u.includes('/gpu') || u.includes('/graphics') || u.includes('/carte-graphique')
+   || u.includes('/grafik')
+  ) return 'gpu'
+  if (n.includes(' gpu') || n.includes('graphics card') || n.includes('carte graphique')
+   || n.includes('grafikkarte')
+  ) return 'gpu'
+
+  // --- Input device ---
+  if (u.includes('/mice') || u.includes('/keyboards') || u.includes('/souris')
+   || u.includes('/claviers') || u.includes('/maus') || u.includes('/tastatur')
+   || u.includes('/muizen') || u.includes('/toetsenbord')
+  ) return 'input-device'
+  if (n.includes('mouse') || n.includes('mice') || n.includes('keyboard')
+   || n.includes('souris') || n.includes('clavier') || n.includes('maus')
+   || n.includes('tastatur') || n.includes('muis') || n.includes('toetsenbord')
+  ) return 'input-device'
+
+  // --- Cases / bags ---
+  if (u.includes('/cases') || u.includes('/bags') || u.includes('/housse')
+   || u.includes('/tasche') || u.includes('/sac')
+  ) return 'cases'
+  if (n.includes('case') || n.includes('sleeve') || n.includes('backpack')
+   || n.includes('bag') || n.includes('housse') || n.includes('sacoche')
+   || n.includes('tasche') || n.includes('rucksack')
+  ) return 'cases'
+
+  // --- Default: lifestyle ---
+  return 'lifestyle'
 }
 
 // ---------------------------------------------------------------------------
