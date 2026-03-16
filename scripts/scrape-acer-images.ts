@@ -217,8 +217,8 @@ const TO_EN_IE_CAT: Record<string, string> = {
   'monitores': 'monitors', 'monitory': 'monitors', 'skaerme': 'monitors',
   'bildskarmar': 'monitors', 'skjermer': 'monitors', 'naytot': 'monitors',
   // laptops
-  'laptops': 'laptops', 'laptop': 'laptops',
-  'ordinateurs-portables': 'laptops', 'ordenadores-portatiles': 'laptops',
+  'laptops': 'laptops', 'laptop': 'laptops', 'notebook': 'laptops',
+  'ordinateurs-portables': 'laptops', 'ordenadores-portatiles': 'laptops', 'portatiles': 'laptops',
   'laptopy': 'laptops', 'baerbare-computere': 'laptops',
   'barbara-datorer': 'laptops', 'baerbar-pc': 'laptops', 'kannettavat': 'laptops',
   // desktops / peripherals / accessories / gaming (for future categories)
@@ -308,6 +308,8 @@ function detectCategory(sourceName: string, sourceUrl: string): ProductCategory 
    || u.includes('baerbar')       // NO/DK: bærbar-pc / bærbare-computere
    || u.includes('b%c3%a4rbar') || u.includes('b%c3%a6rbar')
    || u.includes('kannettav')     // FI: kannettavat
+   || u.includes('/portatil')     // ES: /portatiles
+   || u.includes('/notebook')     // IT: /notebook
   ) return 'laptops'
   if (n.includes('ordinateur') || n.includes('portable') || n.includes('laptop')
    || n.includes('notebook') || n.includes('portátil') || n.includes('kannettava')
