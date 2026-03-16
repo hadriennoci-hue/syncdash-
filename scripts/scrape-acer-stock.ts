@@ -77,12 +77,12 @@ const IS_HEADED   = args.includes('--headed')
 // --category=ecrans  (matches any part of the URL slug)
 const ONLY_CAT    = args.find(a => a.startsWith('--category='))?.split('=')[1] ?? null
 
-// URLs from .dev.vars override the defaults — easy to extend without touching code
-const envUrls = (DEV_VARS['ACER_STORE_SCRAPE_URLS'] ?? process.env['ACER_STORE_SCRAPE_URLS'] ?? '')
-  .split(',')
-  .map(u => u.trim())
-  .filter(u => u.startsWith('http'))
-const CATEGORY_URLS = envUrls.length > 0 ? envUrls : DEFAULT_CATEGORY_URLS
+// URLs from .dev.vars — monitor URLs + laptop URLs combined, then filtered by --category if set
+const parseUrls = (val: string) => val.split(',').map(u => u.trim()).filter(u => u.startsWith('http'))
+const monitorUrls = parseUrls(DEV_VARS['ACER_STORE_SCRAPE_URLS'] ?? process.env['ACER_STORE_SCRAPE_URLS'] ?? '')
+const laptopUrls  = parseUrls(DEV_VARS['ACER_LAPTOP_SCRAPE_URLS'] ?? process.env['ACER_LAPTOP_SCRAPE_URLS'] ?? '')
+const allEnvUrls  = [...monitorUrls, ...laptopUrls]
+const CATEGORY_URLS = allEnvUrls.length > 0 ? allEnvUrls : DEFAULT_CATEGORY_URLS
 
 const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'
