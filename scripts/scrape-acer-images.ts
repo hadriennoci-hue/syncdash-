@@ -877,29 +877,6 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'model karty graficznej':        'graphics',  // actual label
     'kolor':                         'color',
   },
-  da: { // da-dk — updated to match Magento 2 pattern (best-guess based on es/it/fr)
-    'skærmstørrelse':                'screen_size',
-    'maksimal opløsning':            'resolution',
-    'skærmteknologi':                'panel_type',
-    'panelteknologi':                'panel_type',
-    'opdateringshastighed':          'refresh_rate',
-    // "Processor" row has brand only — use specific fields
-    'processortype':                 'processor_model',
-    'processorproducent':            'processor_brand',
-    'operativsystem':                'operating_system',
-    'touchskærm':                    'touchscreen',
-    'multi-touch-skærm':             'touchscreen',
-    'standardhukommelse':            'ram',
-    'hukommelse':                    'ram',
-    'ram':                           'ram',
-    'samlet ssd-kapacitet':          'storage',
-    'lagerkapacitet':                'storage',
-    'lagertype':                     'storage_type',
-    'grafikkortmodel':               'graphics',
-    'grafikkort':                    'graphics',
-    'grafik':                        'graphics',
-    'farve':                         'color',
-  },
   sv: { // [✓] sv-se — verified from store.acer.com/sv-se (NX.J3JED.002)
     'skärmstorlek':                  'screen_size',
     'bildskärmsupplösning':          'resolution',   // actual label
@@ -965,16 +942,29 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
   da: { // [✓] da-dk — Danish (verified from store.acer.com/da-dk NH.QXAED.008)
     'skærmstørrelse':                'screen_size',
     'skærmopløsning':                'resolution',
+    'maksimal opløsning':            'resolution',
     'skærmteknologi':                'panel_type',
+    'panelteknologi':                'panel_type',
     'opdateringshastighed':          'refresh_rate',
     'processortype':                 'processor_model',
-    'processorfabrikant':            'processor_brand',
-    'styresystem':                   'operating_system',
+    'processorfabrikant':            'processor_brand',  // verified
+    'processorproducent':            'processor_brand',  // alternative
+    'styresystem':                   'operating_system', // verified
+    'operativsystem':                'operating_system', // alternative
     'touchskærm':                    'touchscreen',
     'multi-touch-skærm':             'touchscreen',
-    'standard hukommelse':           'ram',
-    'samlet ssd kapacitet':          'storage',
-    'grafikkort model':              'graphics',      // actual label (with space)
+    'standard hukommelse':           'ram',              // verified (with space)
+    'standardhukommelse':            'ram',
+    'hukommelse':                    'ram',
+    'ram':                           'ram',
+    'samlet ssd kapacitet':          'storage',          // verified (no hyphen)
+    'samlet ssd-kapacitet':          'storage',
+    'lagerkapacitet':                'storage',
+    'lagertype':                     'storage_type',
+    'grafikkort model':              'graphics',         // verified (with space)
+    'grafikkortmodel':               'graphics',
+    'grafikkort':                    'graphics',
+    'grafik':                        'graphics',
     'farve':                         'color',
   },
 }
