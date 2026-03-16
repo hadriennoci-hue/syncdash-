@@ -110,14 +110,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     )
   }, [collections, collectionFilter])
 
-  const isLaptopProduct = useMemo(() => {
-    const productCollections = Array.isArray(p?.collections) ? p.collections : []
-    return productCollections.some((c: any) => {
-      const text = `${String(c?.name ?? '')} ${String(c?.slug ?? '')}`.toLowerCase()
-      return /\blaptops?\b/.test(text)
-    })
-  }, [p?.collections])
-
   const attributeRows = useMemo<AttributeRow[]>(() => {
     const metafields = Array.isArray(p?.metafields) ? p.metafields : []
     if (!metafields.length) return []
@@ -260,9 +252,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
           Attributes (name / value)
         </h2>
-        {!isLaptopProduct ? (
-          <p className="text-muted-foreground italic">Visible only for laptops</p>
-        ) : attributeRows.length === 0 ? (
+        {attributeRows.length === 0 ? (
           <p className="text-muted-foreground italic">No attributes</p>
         ) : (
           <table className="w-full">

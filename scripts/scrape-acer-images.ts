@@ -226,14 +226,38 @@ const TO_EN_IE_CAT: Record<string, string> = {
   'gaming': 'gaming', 'pelaaminen': 'gaming',
 }
 
+// Locale-specific color/suffix words to strip when constructing en-ie slug from 2-segment URLs
+const LOCALE_SLUG_SUFFIXES = ['-zwart', '-schwarz', '-noir', '-negro', '-czarny', '-sort', '-svart', '-musta']
+
 /** Rewrite any Acer store product URL to its en-ie equivalent, or return null. */
 function tryConstructEnglishUrl(sourceUrl: string): string | null {
-  const m = sourceUrl.match(/^(https:\/\/store\.acer\.com\/)([a-z]{2}-[a-z]{2})\/([^/?#]+)\/(.+)$/)
-  if (!m) return null
-  if (m[2] === 'en-ie') return sourceUrl // already English
-  const enCat = TO_EN_IE_CAT[m[3]]
-  if (!enCat) return null
-  return `${m[1]}en-ie/${enCat}/${m[4]}`
+  // 3-segment URL: store.acer.com/locale/category/product-slug
+  const m3 = sourceUrl.match(/^(https:\/\/store\.acer\.com\/)([a-z]{2}-[a-z]{2})\/([^/?#]+)\/(.+)$/)
+  if (m3) {
+    if (m3[2] === 'en-ie') return sourceUrl // already English
+    const enCat = TO_EN_IE_CAT[m3[3]]
+    if (!enCat) return null
+    return `${m3[1]}en-ie/${enCat}/${m3[4]}`
+  }
+
+  // 2-segment URL: store.acer.com/locale/product-slug (e.g. nl-be store)
+  const m2 = sourceUrl.match(/^(https:\/\/store\.acer\.com\/)([a-z]{2}-[a-z]{2})\/([^/?#]+)$/)
+  if (m2) {
+    if (m2[2] === 'en-ie') return sourceUrl
+    let slug = m2[3]
+    // Strip locale-specific color suffixes so the slug matches en-ie
+    for (const suffix of LOCALE_SLUG_SUFFIXES) {
+      if (slug.endsWith(suffix)) { slug = slug.slice(0, -suffix.length); break }
+    }
+    // Infer en-ie category from keywords in the slug
+    let enCat: string | null = null
+    if (/laptop|notebook/.test(slug))               enCat = 'laptops'
+    else if (/monitor|display|screen/.test(slug))   enCat = 'monitors'
+    if (!enCat) return null
+    return `${m2[1]}en-ie/${enCat}/${slug}`
+  }
+
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -694,6 +718,45 @@ function normalizeSpecValue(key: string, raw: string): string {
   return v
 }
 
+// Keywords that signal a label is related to one of our tracked attributes.
+// Only unmapped labels containing one of these words trigger a warning.
+const MONITOR_SPEC_KEYWORDS = [
+  'screen', 'display', 'diagonal', 'diagonale', 'bildschirm', 'beeldscherm', 'skärm', 'scherm',
+  'resolution', 'résolution', 'auflösung', 'resolutie', 'resolución', 'rozdzielczość', 'upplösning',
+  'panel', 'panneau',
+  'refresh', 'rafraîchissement', 'bildwiederholung', 'verversing', 'actualización', 'opdateringsfrekvens',
+  'response', 'réponse', 'reaktionszeit', 'reactietijd', 'respuesta',
+  'aspect', 'rapport', 'seitenverhältnis', 'beeldverhouding',
+  'brightness', 'luminosité', 'helligkeit', 'helderheid', 'brillo', 'luminosidad',
+  'contrast', 'contraste', 'kontrast',
+  'hdr',
+  'gamut', 'colorimétrique', 'kleurruimte', 'färgomfång',
+  'vesa',
+  'hdmi', 'displayport', 'thunderbolt',
+]
+const LAPTOP_SPEC_KEYWORDS = [
+  'screen', 'display', 'diagonal', 'diagonale', 'bildschirm',
+  'resolution', 'résolution', 'auflösung', 'resolutie',
+  'panel', 'panneau',
+  'refresh', 'rafraîchissement',
+  'processor', 'cpu', 'prozessor', 'processeur',
+  'memory', 'ram', 'mémoire', 'speicher', 'geheugen',
+  'storage', 'ssd', 'hdd', 'stockage', 'speicher',
+  'battery', 'batterie', 'akku',
+  'gpu', 'graphics', 'graphique', 'grafik',
+  'weight', 'gewicht', 'poids',
+  'keyboard', 'clavier', 'tastatur',
+  'webcam', 'camera',
+  'thunderbolt', 'hdmi', 'usb',
+  'bluetooth', 'wifi', 'wi-fi',
+  'os', 'operating system', 'système d\'exploitation',
+]
+
+function isSpecRelatedLabel(label: string, category: ProductCategory): boolean {
+  const keywords = category === 'monitor' ? MONITOR_SPEC_KEYWORDS : LAPTOP_SPEC_KEYWORDS
+  return keywords.some(kw => label.includes(kw))
+}
+
 function mapSpecs(
   rawSpecs: Record<string, string>,
   category: ProductCategory,
@@ -718,8 +781,9 @@ function mapSpecs(
       if (attrKey) break
     }
     if (!attrKey) {
-      // Warn about any non-trivial unmapped label so the user can extend the maps
-      if (label.length >= 3 && warnUnmapped) warnUnmapped(rawLabel, rawValue)
+      // Only warn if the label looks like it belongs to one of our tracked attributes
+      // (i.e. it might be a new synonym we should add to the map)
+      if (warnUnmapped && isSpecRelatedLabel(label, category)) warnUnmapped(rawLabel, rawValue)
       continue
     }
     if (seen.has(attrKey)) continue
@@ -804,21 +868,28 @@ async function extractProductData(
         })
       }
 
-      // Description — extract as plain text (rule: no HTML to sales channels)
-      // Acer Store (Magento 2): short description is in .product.attribute.description .value
-      const descEl = document.querySelector<HTMLElement>(
-        '.product.attribute.description .value, .product-attribute-description .value, .overview .value'
-      )
+      // Description — extract as plain text (rule 3.10: no HTML to sales channels)
+      // Acer Store (Magento 2): short description lives under .product.attribute.description
+      // but may also contain Magento Page Builder CSS blocks — skip those.
       let description: string | null = null
-      if (descEl) {
-        // Replace block-level elements with newlines before reading textContent
+      const descCandidates = Array.from(document.querySelectorAll<HTMLElement>(
+        '.product.attribute.description .value p, .product.attribute.description .value, .product-attribute-description .value, .overview .value'
+      ))
+      for (const descEl of descCandidates) {
+        // Remove style/script children before reading text
         const clone = descEl.cloneNode(true) as HTMLElement
+        clone.querySelectorAll('style, script').forEach(s => s.remove())
         clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
         clone.querySelectorAll('p, li, div, h1, h2, h3, h4').forEach(el => {
           el.textContent = (el.textContent ?? '') + '\n'
         })
         const raw = (clone.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
-        if (raw.length > 10) description = raw
+        // Reject CSS blocks (page builder injects CSS as text nodes)
+        if (raw.length < 10) continue
+        if (/^\s*#[a-zA-Z0-9_-]+\s*\{/.test(raw)) continue   // starts with a CSS rule
+        if ((raw.match(/\{/g) ?? []).length > 3) continue     // too many braces → CSS
+        description = raw
+        break
       }
 
       return { images, specs, description }

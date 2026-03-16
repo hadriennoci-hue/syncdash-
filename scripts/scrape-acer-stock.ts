@@ -110,15 +110,17 @@ interface AcerProduct {
   price:            number | null
   promoPrice:       number | null   // final discounted price (price minus discount), or null
   inStock:          boolean
+  description:      string | null   // plain-text short description from listing page (en-ie wins)
+  descLocale:       string | null   // locale the description came from
 }
 
 // ---------------------------------------------------------------------------
 // DOM extraction — runs inside the browser page
 // ---------------------------------------------------------------------------
 
-function extractProductsFromPage(): AcerProduct[] {
+function extractProductsFromPage(): Omit<AcerProduct, 'descLocale'>[] {
   const items = Array.from(document.querySelectorAll<HTMLElement>('li.item.product.product-item'))
-  const results: AcerProduct[] = []
+  const results: Omit<AcerProduct, 'descLocale'>[] = []
 
   for (const el of items) {
     const nameEl  = el.querySelector<HTMLAnchorElement>('.product-item-name a')
@@ -156,7 +158,20 @@ function extractProductsFromPage(): AcerProduct[] {
       || stockEl.classList.contains('available')
       || (!stockEl.classList.contains('unavailable') && !stockEl.classList.contains('out-of-stock'))
 
-    results.push({ sku, name, url, price: importPrice, promoPrice, inStock })
+    // Short description — Acer Magento 2 renders listing-page bullets in ul.clearfix
+    let description: string | null = null
+    const descEl = el.querySelector<HTMLElement>('ul.clearfix')
+    if (descEl) {
+      const bullets = Array.from(descEl.querySelectorAll('li'))
+        .map(li => li.textContent?.trim() ?? '')
+        .filter(t => t.length > 0)
+      if (bullets.length > 0) {
+        const text = bullets.join('\n')
+        if (text.length > 10) description = text
+      }
+    }
+
+    results.push({ sku, name, url, price: importPrice, promoPrice, inStock, description })
   }
 
   return results
@@ -283,7 +298,7 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
         if (BLOCKED_NAME_TOKENS.some(t => nameLower.includes(t))) continue
         const existing = productMap.get(p.sku)
         if (!existing) {
-          productMap.set(p.sku, { ...p })
+          productMap.set(p.sku, { ...p, descLocale: p.description ? catLocale : null })
         } else {
           // URL: top-4 locales always overwrite; others only set if new SKU (handled above)
           if (isTop4) existing.url = p.url
@@ -295,6 +310,15 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
             existing.promoPrice = existing.promoPrice === null
               ? p.promoPrice
               : Math.min(existing.promoPrice, p.promoPrice)
+          }
+          // Description: en-ie wins — only overwrite if we now have an English description
+          // and didn't have one before (or the previous one was non-English)
+          if (p.description) {
+            const hadEnglish = existing.descLocale === 'en-ie'
+            if (!hadEnglish) {
+              existing.description = p.description
+              existing.descLocale  = catLocale
+            }
           }
         }
       }
@@ -311,9 +335,10 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   log(`\n📦 Total unique products scraped: ${allProducts.length}`)
 
   if (IS_DRY) {
-    allProducts.slice(0, 10).forEach(p =>
+    allProducts.slice(0, 10).forEach(p => {
       log(`  ${p.sku}  |  ${p.name}  |  ${p.price}€${p.promoPrice ? ` → ${p.promoPrice}€` : ''}  |  ${p.inStock ? 'inStock' : 'OUT'}  |  ${p.url}`)
-    )
+      if (p.description) log(`     desc [${p.descLocale}]: ${p.description.slice(0, 100).replace(/\n/g, ' / ')}`)
+    })
     if (allProducts.length > 10) log(`  ... and ${allProducts.length - 10} more`)
     process.exit(0)
   }
@@ -330,6 +355,44 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
 
   log(`\n📤 Ingesting ${snapshots.length} snapshots into ${BASE_URL}...`)
   await ingestSnapshots(snapshots)
+
+  // Save descriptions — only for products that have one from this scan
+  // en-ie descriptions are stored as-is; foreign descriptions are stored but product gets archived
+  const withDesc = allProducts.filter(p => p.description)
+  if (withDesc.length > 0) {
+    log(`\n📝 Saving descriptions for ${withDesc.length} products...`)
+    let saved = 0, skipped = 0, foreign = 0
+    for (const p of withDesc) {
+      const isEnglish = p.descLocale === 'en-ie'
+      const body: Record<string, unknown> = {
+        fields: {
+          description: p.description,
+          ...(!isEnglish ? { status: 'archived' } : {}),
+        },
+        triggeredBy: 'agent',
+      }
+      const res = await fetch(`${BASE_URL}/api/products/${p.sku}/local`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+          ...getAccessHeaders(),
+        },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        saved++
+        if (!isEnglish) {
+          foreign++
+          log(`  ⚠️  [needs-translation] ${p.sku}: ${p.descLocale} description saved — archived until translated`)
+        }
+      } else {
+        skipped++
+        log(`  ⚠️  Failed to save description for ${p.sku}: ${res.status}`)
+      }
+    }
+    log(`  ✅ ${saved} descriptions saved (${saved - foreign} English, ${foreign} foreign/archived), ${skipped} failed`)
+  }
 
   log('\n✅ Done')
 })()
