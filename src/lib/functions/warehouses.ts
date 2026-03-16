@@ -29,6 +29,23 @@ interface SyncWarehouseOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Source URL priority — higher number = higher priority.
+// For acer_store: top-4 locales always overwrite existing URL in D1.
+// Others: only set URL if currently NULL.
+// ---------------------------------------------------------------------------
+
+const TOP4_ACER_LOCALES = ['/en-ie/', '/fr-fr/', '/fr-be/', '/de-de/', '/nl-nl/', '/nl-be/']
+
+function isTop4AcerLocale(sourceUrl: string | null): boolean {
+  if (!sourceUrl) return false
+  return TOP4_ACER_LOCALES.some(l => sourceUrl.includes(l))
+}
+
+function isEnglishAcerSource(sourceUrl: string | null): boolean {
+  return !!sourceUrl?.includes('/en-ie/')
+}
+
+// ---------------------------------------------------------------------------
 // applyWarehouseSnapshots — write a set of snapshots to D1 (shared logic)
 // Called by syncWarehouse (connector path) and ingestWarehouseSnapshots (script path).
 // ---------------------------------------------------------------------------
@@ -53,6 +70,17 @@ export async function applyWarehouseSnapshots(
     await db.insert(suppliers)
       .values({ id: 'acer', name: 'ACER' })
       .onConflictDoNothing()
+  }
+
+  // Pre-fetch all existing stock rows for this warehouse so we can apply
+  // URL priority logic without N extra DB reads in the loop.
+  const skusInBatch = snapshots.map(s => s.sku).filter(Boolean)
+  const existingStockMap = new Map<string, { sourceUrl: string | null }>()
+  if (isAcerSource && skusInBatch.length > 0) {
+    const rows = await db.select({ productId: warehouseStock.productId, sourceUrl: warehouseStock.sourceUrl })
+      .from(warehouseStock)
+      .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, skusInBatch)))
+    for (const row of rows) existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
   }
 
   for (const snap of snapshots) {
@@ -88,13 +116,27 @@ export async function applyWarehouseSnapshots(
         await db.update(products)
           .set({ supplierId: 'acer' })
           .where(and(eq(products.id, snap.sku), isNull(products.supplierId)))
+
+        // en-ie scans always update the product title to the English name.
+        if (isEnglishAcerSource(snap.sourceUrl ?? null) && snap.sourceName) {
+          await db.update(products)
+            .set({ title: snap.sourceName })
+            .where(eq(products.id, snap.sku))
+        }
       }
+
+      // URL priority: top-4 locales (en-ie, fr, de, nl) always overwrite existing URL.
+      // Other locales only set URL if currently NULL in D1.
+      const existingUrl = existingStockMap.get(snap.sku)?.sourceUrl ?? null
+      const newUrl = snap.sourceUrl ?? null
+      const shouldUpdateUrl = newUrl !== null
+        && (isTop4AcerLocale(newUrl) || existingUrl === null)
 
       await db.insert(warehouseStock).values({
         productId:        snap.sku,
         warehouseId,
         quantity:         snap.quantity,
-        sourceUrl:        snap.sourceUrl        ?? null,
+        sourceUrl:        newUrl,
         sourceName:       snap.sourceName       ?? null,
         importPrice:      snap.importPrice      ?? null,
         importPromoPrice: snap.importPromoPrice ?? null,
@@ -103,7 +145,7 @@ export async function applyWarehouseSnapshots(
         target: [warehouseStock.productId, warehouseStock.warehouseId],
         set: {
           quantity:         snap.quantity,
-          sourceUrl:        snap.sourceUrl        ?? null,
+          sourceUrl:        shouldUpdateUrl ? newUrl : existingUrl,
           sourceName:       snap.sourceName       ?? null,
           importPrice:      snap.importPrice      ?? null,
           importPromoPrice: snap.importPromoPrice ?? null,

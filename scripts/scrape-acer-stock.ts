@@ -22,15 +22,31 @@ import * as path from 'path'
 
 // Default category URLs — overridden by ACER_STORE_SCRAPE_URLS in .dev.vars
 // Format in .dev.vars: comma-separated list of full URLs
-// ACER_STORE_SCRAPE_URLS=https://store.acer.com/fr-fr/ecrans,https://store.acer.com/fr-fr/ordinateurs-portables
 const DEFAULT_CATEGORY_URLS = [
-  'https://store.acer.com/fr-fr/ordinateurs-portables',
-  'https://store.acer.com/fr-fr/ordinateurs-de-bureau',
+  'https://store.acer.com/en-ie/monitors',
   'https://store.acer.com/fr-fr/ecrans',
-  'https://store.acer.com/fr-fr/peripheriques',
-  'https://store.acer.com/fr-fr/accessoires',
-  'https://store.acer.com/fr-fr/gaming',
+  'https://store.acer.com/de-de/monitore',
+  'https://store.acer.com/nl-nl/monitoren',
 ]
+
+// Locale priority for URL selection when the same SKU appears in multiple stores.
+// Scan order: en-ie → fr → de → nl → others (ascending priority = nl wins the URL).
+// en-ie is scanned first so its product name is captured first (English name rule).
+const LOCALE_URL_PRIORITY: Record<string, number> = {
+  'en-ie': 1,
+  'fr-fr': 2, 'fr-be': 2,
+  'de-de': 3,
+  'nl-nl': 4, 'nl-be': 4,
+}
+const TOP4_LOCALES = new Set(Object.keys(LOCALE_URL_PRIORITY))
+
+function getLocaleFromUrl(url: string): string {
+  const m = url.match(/store\.acer\.com\/([a-z]{2}-[a-z]{2})\//)
+  return m ? m[1] : 'other'
+}
+function getLocalePriority(url: string): number {
+  return LOCALE_URL_PRIORITY[getLocaleFromUrl(url)] ?? 0
+}
 
 // Non-hardware items that appear on the store but are not physical products
 const BLOCKED_NAME_TOKENS = ['trouver', 'réparation', 'mcafee', 'garantie', 'recovery', 'service']
@@ -135,8 +151,10 @@ function extractProductsFromPage(): AcerProduct[] {
     const promoPrice = oldPrice !== null && price !== null && oldPrice > price ? price : null
     const importPrice = oldPrice !== null && promoPrice !== null ? oldPrice : price
 
-    const stockText = stockEl?.textContent?.toLowerCase() ?? ''
-    const inStock = stockText.includes('en stock') || (!stockText.includes('rupture') && !stockText.includes('indisponible'))
+    // Stock detection by CSS class (works across all languages/locales)
+    const inStock = !stockEl
+      || stockEl.classList.contains('available')
+      || (!stockEl.classList.contains('unavailable') && !stockEl.classList.contains('out-of-stock'))
 
     results.push({ sku, name, url, price: importPrice, promoPrice, inStock })
   }
@@ -227,12 +245,17 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
     : CATEGORY_URLS
 
   if (categoriesToRun.length === 0) {
-    // Show the locale/slug portion (e.g. "fr-fr/ecrans", "de-de/monitore") so the hint is unambiguous
     log(`❌ No category matched "--category=${ONLY_CAT}". Available:\n  ${CATEGORY_URLS.map(u => u.replace('https://store.acer.com/', '')).join('\n  ')}`)
     process.exit(1)
   }
 
-  log(`Target: ${BASE_URL}${IS_DRY ? '  [DRY RUN]' : ''}  categories: ${categoriesToRun.map(u => u.split('/').pop()).join(', ')}`)
+  // Sort by ascending priority so en-ie is scraped first (English names captured first),
+  // and nl-nl last (nl-nl URL wins in the merge for products found in multiple stores).
+  const sortedCategories = [...categoriesToRun].sort(
+    (a, b) => getLocalePriority(a) - getLocalePriority(b)
+  )
+
+  log(`Target: ${BASE_URL}${IS_DRY ? '  [DRY RUN]' : ''}  categories: ${sortedCategories.map(u => u.replace('https://store.acer.com/', '')).join(', ')}`)
 
   const browser = await chromium.launch({
     channel: 'chrome',
@@ -241,31 +264,49 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   })
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    locale: 'fr-FR',
+    locale: 'en-IE',
   })
   const page = await context.newPage()
 
-  const seen = new Set<string>()
-  const allProducts: AcerProduct[] = []
+  // Map<sku, product> — merge by lowest price + highest-priority URL.
+  // Name is kept from the first encounter (en-ie scanned first → English name wins).
+  const productMap = new Map<string, AcerProduct>()
 
-  for (const catUrl of categoriesToRun) {
-    log(`\n📂 ${catUrl}`)
+  for (const catUrl of sortedCategories) {
+    const catLocale = getLocaleFromUrl(catUrl)
+    const isTop4 = TOP4_LOCALES.has(catLocale)
+    log(`\n📂 [${catLocale}] ${catUrl}`)
     try {
-      const products = await crawlCategory(page, catUrl)
-      for (const p of products) {
-        if (seen.has(p.sku)) continue
+      const found = await crawlCategory(page, catUrl)
+      for (const p of found) {
         const nameLower = p.name.toLowerCase()
         if (BLOCKED_NAME_TOKENS.some(t => nameLower.includes(t))) continue
-        seen.add(p.sku)
-        allProducts.push(p)
+        const existing = productMap.get(p.sku)
+        if (!existing) {
+          productMap.set(p.sku, { ...p })
+        } else {
+          // URL: top-4 locales always overwrite; others only set if new SKU (handled above)
+          if (isTop4) existing.url = p.url
+          // Price: keep lowest across all stores in this batch
+          if (p.price !== null) {
+            existing.price = existing.price === null ? p.price : Math.min(existing.price, p.price)
+          }
+          if (p.promoPrice !== null) {
+            existing.promoPrice = existing.promoPrice === null
+              ? p.promoPrice
+              : Math.min(existing.promoPrice, p.promoPrice)
+          }
+        }
       }
-      log(`  → running total: ${allProducts.length} unique products`)
+      log(`  → running total: ${productMap.size} unique products`)
     } catch (err) {
       log(`  ❌ Failed: ${err instanceof Error ? err.message : err}`)
     }
   }
 
   await browser.close()
+
+  const allProducts = Array.from(productMap.values())
 
   log(`\n📦 Total unique products scraped: ${allProducts.length}`)
 

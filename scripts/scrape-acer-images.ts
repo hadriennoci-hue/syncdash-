@@ -138,14 +138,38 @@ type ProductCategory = 'monitor' | 'laptops' | null
 function detectCategory(sourceName: string, sourceUrl: string): ProductCategory {
   const n = sourceName.toLowerCase()
   const u = sourceUrl.toLowerCase()
-  // Monitor — FR keywords
-  if (n.includes('écran') || n.includes('ecran') || u.includes('ecran')) return 'monitor'
-  // Monitor — DE keywords / URL
-  if (u.includes('/de-de/monitore') || u.includes('monitor') || n.includes('monitor')) return 'monitor'
-  // Laptop — FR keywords
-  if (n.includes('ordinateur') || n.includes('portable') || u.includes('ordinateur-portable')) return 'laptops'
-  // Laptop — DE keywords
-  if (n.includes('notebook') || n.includes('laptop') || u.includes('notebook') || u.includes('laptop')) return 'laptops'
+
+  // --- Monitor: URL slug first (most reliable) ---
+  if (u.includes('ecran')         // FR: /ecrans
+   || u.includes('monitore')      // DE: /monitore, NL: /monitoren, ES: /monitores, PL: /monitory
+   || u.includes('monitor')       // EN: /monitors, IT: /monitor, DA/SV/NO: /monitorer
+   || u.includes('skærm')         // DA: /skærme
+   || u.includes('sk%c3%a6rm')    // DA URL-encoded ærm
+   || u.includes('skärm')         // SV: /skärmar
+   || u.includes('sk%c3%a4rm')    // SV URL-encoded ärm
+   || u.includes('skjerm')        // NO: /skjermer
+   || u.includes('schermi')       // IT: /schermi
+   || u.includes('n%c3%a4yt')     // FI URL-encoded näyt
+   || u.includes('näyt')          // FI: /näytöt
+  ) return 'monitor'
+  // Name-based fallback
+  if (n.includes('écran') || n.includes('ecran') || n.includes('monitor')
+   || n.includes('scherm') || n.includes('skærm') || n.includes('skärm')
+   || n.includes('skjerm') || n.includes('schermo') || n.includes('näyttö')
+  ) return 'monitor'
+
+  // --- Laptop: URL slug ---
+  if (u.includes('laptop') || u.includes('notebook') || u.includes('ordinateur-portable')
+   || u.includes('portables') || u.includes('ordenadores-portatiles')
+   || u.includes('barbar')        // SV: bärbara / DA: bærbare
+   || u.includes('b%c3%a4rbar') || u.includes('b%c3%a6rbar')
+   || u.includes('kannettav')     // FI: kannettavat
+  ) return 'laptops'
+  // Name-based fallback
+  if (n.includes('ordinateur') || n.includes('portable') || n.includes('laptop')
+   || n.includes('notebook') || n.includes('portátil') || n.includes('kannettava')
+  ) return 'laptops'
+
   return null
 }
 
@@ -165,8 +189,39 @@ function detectLocale(sourceUrl: string): string | null {
 // Run: npm run scrape:acer:dump -- <product-url>  to discover exact labels.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Locale-aware label maps
+// Keys are lowercase label text as it appears on the store's spec tab.
+// Values are canonical English attribute keys stored in Wizhard.
+//
+// To add a new language or verify labels:
+//   npm run scrape:acer:dump -- https://store.acer.com/<locale>/<product-slug>
+//
+// Verified locales are marked [✓]. Others are best-guess — run dump to confirm.
+// ---------------------------------------------------------------------------
+
 const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
-  fr: {
+  en: { // [✓] en-ie — English (Ireland)
+    'screen size':                   'screen_size',
+    'display size':                  'screen_size',
+    'maximum resolution':            'resolution',
+    'native resolution':             'resolution',
+    'panel technology':              'panel_type',
+    'refresh rate':                  'refresh_rate',
+    'response time':                 'response_time',
+    'aspect ratio':                  'aspect_ratio',
+    'brightness':                    'brightness',
+    'sync technology':               'gsync_freesync',
+    'adaptive sync':                 'gsync_freesync',
+    'vesa mount standard':           'vesa_mount',
+    'colour':                        'color',
+    'color':                         'color',
+    'curved':                        'curved',
+    'hdr':                           'hdr',
+    'color gamut':                   'color_gamut',
+    'colour gamut':                  'color_gamut',
+  },
+  fr: { // [✓] fr-fr / fr-be — French
     "taille de l'écran":             'screen_size',
     "taille d'écran":                'screen_size',
     'diagonale':                     'screen_size',
@@ -186,17 +241,19 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'compatible g-sync':             'gsync_freesync',
     'compatible freesync':           'gsync_freesync',
     'freesync':                      'gsync_freesync',
+    'synctechnologie':               'gsync_freesync',
     'gamme de couleurs':             'color_gamut',
     'espace colorimétrique':         'color_gamut',
     'vesa':                          'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
     'couleur':                       'color',
     'connectivité':                  'ports',
     'ports':                         'ports',
   },
-  de: {
-    // Labels verified from store.acer.com/de-de — Technische Daten tab
+  de: { // [✓] de-de — German (verified from store.acer.com/de-de)
     'bildschirmdiagonale':           'screen_size',
     'maximale auflösung':            'resolution',
+    'bildschirmauflösung':           'resolution',
     'panel-technologie':             'panel_type',
     'bildwiederholungsrate':         'refresh_rate',
     'reaktionszeit':                 'response_time',
@@ -204,12 +261,145 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'helligkeit':                    'brightness',
     'synctechnologie':               'gsync_freesync',
     'vesa mount standard':           'vesa_mount',
+    'vesa-wandhalterungsnorm':       'vesa_mount',
     'farbe':                         'color',
+  },
+  nl: { // nl-nl / nl-be — Dutch [best-guess: run dump to verify]
+    'beeldschermdiagonaal':          'screen_size',
+    'schermdiagonaal':               'screen_size',
+    'maximale resolutie':            'resolution',
+    'schermresolutie':               'resolution',
+    'paneeltechnologie':             'panel_type',
+    'verversingsfrequentie':         'refresh_rate',
+    'reactietijd':                   'response_time',
+    'beeldverhouding':               'aspect_ratio',
+    'helderheid':                    'brightness',
+    'synchronisatietechnologie':     'gsync_freesync',
+    'vesa mount standard':           'vesa_mount',
+    'kleur':                         'color',
+  },
+  es: { // es-es — Spanish [best-guess: run dump to verify]
+    'diagonal de pantalla':          'screen_size',
+    'tamaño de pantalla':            'screen_size',
+    'resolución máxima':             'resolution',
+    'resolución nativa':             'resolution',
+    'tecnología del panel':          'panel_type',
+    'frecuencia de actualización':   'refresh_rate',
+    'tiempo de respuesta':           'response_time',
+    'relación de aspecto':           'aspect_ratio',
+    'brillo':                        'brightness',
+    'tecnología de sincronización':  'gsync_freesync',
+    'estándar de montaje vesa':      'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'color':                         'color',
+  },
+  it: { // it-it — Italian [best-guess: run dump to verify]
+    'diagonale schermo':             'screen_size',
+    'dimensioni dello schermo':      'screen_size',
+    'risoluzione massima':           'resolution',
+    'risoluzione nativa':            'resolution',
+    'tecnologia del pannello':       'panel_type',
+    'frequenza di aggiornamento':    'refresh_rate',
+    'tempo di risposta':             'response_time',
+    'rapporto di aspetto':           'aspect_ratio',
+    'luminosità':                    'brightness',
+    'tecnologia di sincronizzazione':'gsync_freesync',
+    'standard di montaggio vesa':    'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'colore':                        'color',
+  },
+  pl: { // pl-pl — Polish [best-guess: run dump to verify]
+    'przekątna ekranu':              'screen_size',
+    'maksymalna rozdzielczość':      'resolution',
+    'technologia panelu':            'panel_type',
+    'częstotliwość odświeżania':     'refresh_rate',
+    'czas reakcji':                  'response_time',
+    'proporcje obrazu':              'aspect_ratio',
+    'jasność':                       'brightness',
+    'technologia synchronizacji':    'gsync_freesync',
+    'standard montażu vesa':         'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'kolor':                         'color',
+  },
+  da: { // da-dk — Danish [best-guess: run dump to verify]
+    'skærmstørrelse':                'screen_size',
+    'skærmdiagonal':                 'screen_size',
+    'maksimal opløsning':            'resolution',
+    'panelteknologi':                'panel_type',
+    'opdateringshastighed':          'refresh_rate',
+    'responstid':                    'response_time',
+    'billedformat':                  'aspect_ratio',
+    'lysstyrke':                     'brightness',
+    'synkroniseringsteknologi':      'gsync_freesync',
+    'vesa monteringsstandard':       'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'farve':                         'color',
+  },
+  sv: { // sv-se — Swedish [best-guess: run dump to verify]
+    'skärmstorlek':                  'screen_size',
+    'skärmdiagonal':                 'screen_size',
+    'maximal upplösning':            'resolution',
+    'panelteknik':                   'panel_type',
+    'uppdateringsfrekvens':          'refresh_rate',
+    'responstid':                    'response_time',
+    'bildformat':                    'aspect_ratio',
+    'ljusstyrka':                    'brightness',
+    'synkroniseringsteknik':         'gsync_freesync',
+    'vesa monteringsstandard':       'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'färg':                          'color',
+  },
+  no: { // no-no — Norwegian [best-guess: run dump to verify]
+    'skjermstørrelse':               'screen_size',
+    'skjermdiagonal':                'screen_size',
+    'maksimal oppløsning':           'resolution',
+    'panelteknologi':                'panel_type',
+    'oppdateringsfrekvens':          'refresh_rate',
+    'responstid':                    'response_time',
+    'bildeformat':                   'aspect_ratio',
+    'lysstyrke':                     'brightness',
+    'synkroniseringsteknologi':      'gsync_freesync',
+    'vesa monteringsstandard':       'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'farge':                         'color',
+  },
+  fi: { // fi-fi — Finnish [best-guess: run dump to verify]
+    'näytön koko':                   'screen_size',
+    'näyttödiagonaali':              'screen_size',
+    'maksimitarkkuus':               'resolution',
+    'paneelitekniikka':              'panel_type',
+    'virkistystaajuus':              'refresh_rate',
+    'vasteaika':                     'response_time',
+    'kuvasuhde':                     'aspect_ratio',
+    'kirkkaus':                      'brightness',
+    'synkronointitekniikka':         'gsync_freesync',
+    'vesa-kiinnitysstandardi':       'vesa_mount',
+    'vesa mount standard':           'vesa_mount',
+    'väri':                          'color',
   },
 }
 
 const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
-  fr: {
+  en: { // [✓] en-ie — English
+    'screen size':                   'screen_size',
+    'maximum resolution':            'resolution',
+    'panel technology':              'panel_type',
+    'processor':                     'processor_model',
+    'processor model':               'processor_model',
+    'processor brand':               'processor_brand',
+    'processor generation':          'processor_generation',
+    'number of cores':               'processor_cores',
+    'refresh rate':                  'refresh_rate',
+    'touchscreen':                   'touchscreen',
+    'memory':                        'ram',
+    'ram':                           'ram',
+    'memory type':                   'ram_type',
+    'maximum memory':                'ram_max',
+    'storage':                       'storage',
+    'storage capacity':              'storage',
+    'storage type':                  'storage_type',
+  },
+  fr: { // [✓] fr-fr / fr-be
     "taille de l'écran":             'screen_size',
     "taille d'écran":                'screen_size',
     'résolution':                    'resolution',
@@ -231,8 +421,7 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'capacité de stockage':          'storage',
     'type de stockage':              'storage_type',
   },
-  de: {
-    // Run: npm run scrape:acer:dump -- <de laptop url>  to verify these
+  de: { // [✓] de-de — German
     'bildschirmdiagonale':           'screen_size',
     'maximale auflösung':            'resolution',
     'panel-technologie':             'screen_type',
@@ -246,6 +435,106 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'ram':                           'ram',
     'speicherkapazität':             'storage',
     'speichertyp':                   'storage_type',
+  },
+  nl: { // nl-nl / nl-be [best-guess]
+    'beeldschermdiagonaal':          'screen_size',
+    'maximale resolutie':            'resolution',
+    'paneeltechnologie':             'screen_type',
+    'processor':                     'processor_model',
+    'processormerk':                 'processor_brand',
+    'verversingsfrequentie':         'refresh_rate',
+    'touchscreen':                   'touchscreen',
+    'werkgeheugen':                  'ram',
+    'ram':                           'ram',
+    'opslagcapaciteit':              'storage',
+    'opslagtype':                    'storage_type',
+  },
+  es: { // es-es [best-guess]
+    'diagonal de pantalla':          'screen_size',
+    'resolución máxima':             'resolution',
+    'tecnología del panel':          'screen_type',
+    'procesador':                    'processor_model',
+    'marca del procesador':          'processor_brand',
+    'frecuencia de actualización':   'refresh_rate',
+    'pantalla táctil':               'touchscreen',
+    'memoria ram':                   'ram',
+    'ram':                           'ram',
+    'almacenamiento':                'storage',
+    'tipo de almacenamiento':        'storage_type',
+  },
+  it: { // it-it [best-guess]
+    'diagonale schermo':             'screen_size',
+    'risoluzione massima':           'resolution',
+    'tecnologia del pannello':       'screen_type',
+    'processore':                    'processor_model',
+    'marca del processore':          'processor_brand',
+    'frequenza di aggiornamento':    'refresh_rate',
+    'touchscreen':                   'touchscreen',
+    'memoria ram':                   'ram',
+    'ram':                           'ram',
+    'memoria di archiviazione':      'storage',
+    'tipo di archiviazione':         'storage_type',
+  },
+  pl: { // pl-pl [best-guess]
+    'przekątna ekranu':              'screen_size',
+    'maksymalna rozdzielczość':      'resolution',
+    'technologia panelu':            'screen_type',
+    'procesor':                      'processor_model',
+    'marka procesora':               'processor_brand',
+    'częstotliwość odświeżania':     'refresh_rate',
+    'ekran dotykowy':                'touchscreen',
+    'pamięć ram':                    'ram',
+    'ram':                           'ram',
+    'pojemność pamięci':             'storage',
+    'typ pamięci masowej':           'storage_type',
+  },
+  da: { // da-dk [best-guess]
+    'skærmstørrelse':                'screen_size',
+    'maksimal opløsning':            'resolution',
+    'panelteknologi':                'screen_type',
+    'processor':                     'processor_model',
+    'opdateringshastighed':          'refresh_rate',
+    'touchskærm':                    'touchscreen',
+    'hukommelse':                    'ram',
+    'ram':                           'ram',
+    'lagerkapacitet':                'storage',
+    'lagertype':                     'storage_type',
+  },
+  sv: { // sv-se [best-guess]
+    'skärmstorlek':                  'screen_size',
+    'maximal upplösning':            'resolution',
+    'panelteknik':                   'screen_type',
+    'processor':                     'processor_model',
+    'uppdateringsfrekvens':          'refresh_rate',
+    'pekskärm':                      'touchscreen',
+    'arbetsminne':                   'ram',
+    'ram':                           'ram',
+    'lagringskapacitet':             'storage',
+    'lagringstyp':                   'storage_type',
+  },
+  no: { // no-no [best-guess]
+    'skjermstørrelse':               'screen_size',
+    'maksimal oppløsning':           'resolution',
+    'panelteknologi':                'screen_type',
+    'prosessor':                     'processor_model',
+    'oppdateringsfrekvens':          'refresh_rate',
+    'berøringsskjerm':               'touchscreen',
+    'minne':                         'ram',
+    'ram':                           'ram',
+    'lagringskapasitet':             'storage',
+    'lagringstype':                  'storage_type',
+  },
+  fi: { // fi-fi [best-guess]
+    'näytön koko':                   'screen_size',
+    'maksimitarkkuus':               'resolution',
+    'paneelitekniikka':              'screen_type',
+    'prosessori':                    'processor_model',
+    'virkistystaajuus':              'refresh_rate',
+    'kosketusnäyttö':                'touchscreen',
+    'muisti':                        'ram',
+    'ram':                           'ram',
+    'tallennuskapasiteetti':         'storage',
+    'tallennustyyppi':               'storage_type',
   },
 }
 
