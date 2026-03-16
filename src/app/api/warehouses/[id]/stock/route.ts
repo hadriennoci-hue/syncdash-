@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       columns: { productId: true, quantity: true, sourceUrl: true, sourceName: true, updatedAt: true },
       with: {
         product: {
-          columns: { status: true },
+          columns: { status: true, pendingReview: true, description: true },
           with: {
             images:     { columns: { id: true } },
             metafields: { columns: { id: true } },
@@ -37,6 +37,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sourceName:     r.sourceName,
       updatedAt:      r.updatedAt,
       status:         r.product?.status ?? null,
+      pendingReview:  r.product?.pendingReview ?? 0,
+      hasDescription: !!(r.product?.description && r.product.description.trim().length > 0),
       imageCount:     r.product?.images.length ?? 0,
       attributeCount: r.product?.metafields.length ?? 0,
     }))

@@ -74,6 +74,8 @@ interface StockRow {
   sourceName:     string | null
   quantity:       number | null
   status:         string | null
+  pendingReview:  number
+  hasDescription: boolean
   imageCount:     number
   attributeCount: number
 }
@@ -88,14 +90,16 @@ async function getAcerStockRows(): Promise<StockRow[]> {
 }
 
 /**
- * A product needs filling if:
- * - status is 'info' (auto-created, not yet reviewed), AND
- * - has no images yet, OR (for monitor/laptop) has no attributes yet
+ * A product needs filling if it was auto-created (pendingReview=1) AND
+ * at least one of the following is missing:
+ *   - images
+ *   - description
+ *   - attributes (only for monitor/laptop categories)
  */
 function needsFilling(row: StockRow): boolean {
-  if (row.status !== 'info') return false
+  if (!row.pendingReview) return false
   if (row.imageCount === 0) return true
-  // For attribute-mapped categories, also re-fill if attributes are missing
+  if (!row.hasDescription) return true
   const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
   if (cat !== null && row.attributeCount === 0) return true
   return false
@@ -903,6 +907,7 @@ async function processProduct(
   quantity: number,
   index: number,
   total: number,
+  existing: { hasImages: boolean; hasDescription: boolean; hasAttributes: boolean },
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
@@ -957,17 +962,15 @@ async function processProduct(
   }
 
   const { images: imageRefs, specs: rawSpecs, description, price, promoPrice } = pageData
-
-  if (imageRefs.length === 0) {
-    log(`  ⚠️  No images found`)
-    return { ok: 0, skipped: 0, errors: ['No images found on page'] }
-  }
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
 
   // ------------------------------------------------------------------
   // Step 3: Save description + flag product if translation is needed
+  //   Skip entirely if description is already present in D1
   // ------------------------------------------------------------------
-  if (description) {
+  if (existing.hasDescription) {
+    log(`  ℹ️  Description already present — skipping`)
+  } else if (description) {
     try {
       await uploadProductInfo(sku, {
         description,
@@ -995,9 +998,12 @@ async function processProduct(
 
   // ------------------------------------------------------------------
   // Step 4: Map spec attributes to English keys
+  //   Skip entirely if attributes are already present in D1
   // ------------------------------------------------------------------
   const category = detectCategory(sourceName, sourceUrl)
-  if (category) {
+  if (existing.hasAttributes) {
+    log(`  ℹ️  Attributes already present — skipping`)
+  } else if (category) {
     const unmappedLabels: string[] = []
     const attributes = mapSpecs(rawSpecs, category, fetchLocale, (label, value) => {
       unmappedLabels.push(`"${label}" = "${value}"`)
@@ -1035,7 +1041,18 @@ async function processProduct(
 
   // ------------------------------------------------------------------
   // Step 6: Download + upload images to R2
+  //   Skip entirely if images are already present in D1
   // ------------------------------------------------------------------
+  if (existing.hasImages) {
+    log(`  ℹ️  Images already present — skipping`)
+    return { ok: 0, skipped: 0, errors: [] }
+  }
+
+  if (imageRefs.length === 0) {
+    log(`  ⚠️  No images found on page`)
+    return { ok: 0, skipped: 0, errors: ['No images found on page'] }
+  }
+
   const downloads = await Promise.all(
     imageRefs.map(async (ref, i) => {
       const result = await downloadImage(ref.url)
@@ -1118,15 +1135,19 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
 
   if (rows.length === 0) {
     const totalWithUrl = withUrl.length
-    log(`No products need filling (${totalWithUrl} have Acer URLs — all already have images+attributes or status != info).`)
+    log(`No products need filling (${totalWithUrl} have Acer URLs — all complete or not pendingReview).`)
     process.exit(0)
   }
-  log(`Found ${rows.length} product(s) to fill (status=info, missing images or attributes)`)
+  log(`Found ${rows.length} product(s) to fill (pendingReview=1, missing images/description/attributes)`)
 
   if (IS_DRY_RUN) {
     rows.forEach(r => {
-      const reason = r.imageCount === 0 ? 'no images' : 'no attributes'
-      log(`  ${r.productId}  [${reason}]  →  ${r.sourceUrl}`)
+      const missing = [
+        r.imageCount === 0      && 'no images',
+        !r.hasDescription       && 'no description',
+        (() => { const cat = detectCategory(r.sourceName ?? '', r.sourceUrl ?? ''); return cat !== null && r.attributeCount === 0 && 'no attributes' })(),
+      ].filter(Boolean).join(', ')
+      log(`  ${r.productId}  [${missing}]  →  ${r.sourceUrl}`)
     })
     process.exit(0)
   }
@@ -1150,7 +1171,10 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   const tasks = rows.map(row => async () => {
     const idx = ++i
     try {
-      const result = await processProduct(context, row.productId, row.sourceUrl!, row.sourceName ?? '', row.quantity ?? 0, idx, rows.length)
+      const result = await processProduct(
+        context, row.productId, row.sourceUrl!, row.sourceName ?? '', row.quantity ?? 0, idx, rows.length,
+        { hasImages: row.imageCount > 0, hasDescription: row.hasDescription, hasAttributes: row.attributeCount > 0 },
+      )
       totalOk += result.ok
       totalErrors += result.errors.length
     } catch (err) {
