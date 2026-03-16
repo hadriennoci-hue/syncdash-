@@ -1138,9 +1138,114 @@ async function uploadAttributes(sku: string, attributes: Array<{ key: string; va
 // Product info upload — description + status (D1 only, no platform push)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tag generation — 6 tags per product derived from attributes + title
+// Tags must be single words (hyphens OK, no spaces). Max 10, we use up to 6.
+// Always regenerated on fill runs so they improve as attributes fill in.
+// ---------------------------------------------------------------------------
+
+function generateTags(
+  category: ProductCategory,
+  attrs: Array<{ key: string; value: string }>,
+  title: string,
+  description: string | null,
+): string[] {
+  const a = Object.fromEntries(attrs.map(x => [x.key, x.value.toLowerCase()]))
+  const text = (title + ' ' + (description ?? '')).toLowerCase()
+  const tags: string[] = []
+
+  if (category === 'monitor') {
+    // 1. Screen size bucket (inches)
+    const sz = parseFloat(a['screen_size'] ?? '')
+    if (!isNaN(sz)) tags.push(sz <= 22 ? '22-inch' : sz <= 24.9 ? '24-inch' : sz <= 27.9 ? '27-inch' : sz <= 31.9 ? '32-inch' : '34-inch-plus')
+
+    // 2. Resolution label
+    const res = a['resolution'] ?? ''
+    if (/3840|4k|uhd/.test(res))           tags.push('4k')
+    else if (/2560|1440|qhd|2k/.test(res)) tags.push('2k')
+    else if (/1920|1080|fhd/.test(res))    tags.push('full-hd')
+
+    // 3. Panel type
+    const panel = a['panel_type'] ?? ''
+    if (panel.includes('oled'))      tags.push('oled')
+    else if (panel.includes('ips'))  tags.push('ips')
+    else if (panel.includes('va'))   tags.push('va')
+    else if (panel.includes('tn'))   tags.push('tn')
+
+    // 4. Refresh rate bucket
+    const hz = parseInt(a['refresh_rate'] ?? '0', 10)
+    if (hz >= 240)      tags.push('240hz')
+    else if (hz >= 165) tags.push('165hz')
+    else if (hz >= 144) tags.push('144hz')
+    else if (hz >= 100) tags.push('100hz')
+    else if (hz >= 60)  tags.push('60hz')
+
+    // 5. Use case
+    if (/nitro|predator|gaming|game/.test(text))      tags.push('gaming')
+    else if (/vero|eco|sustainable/.test(text))        tags.push('eco')
+    else if (/design|creative|color-accurate/.test(text)) tags.push('creative')
+    else if (/portable|pd193|dual-screen/.test(text)) tags.push('portable')
+    else                                               tags.push('office')
+
+    // 6. Acer series from title
+    const series = title.toLowerCase().match(/\b(nitro|predator|vero|ek|sa|xv|xf|kg|qg|b7|b9|cb|prodesigner)\b/)
+    if (series) {
+      const m: Record<string, string> = { nitro: 'nitro', predator: 'predator', vero: 'vero', sa: 'sa-series', ek: 'ek-series', xv: 'xv-series', xf: 'xf-series', kg: 'kg-series', qg: 'qg-series' }
+      tags.push(m[series[1]] ?? series[1] + '-series')
+    }
+  }
+
+  if (category === 'laptops') {
+    // 1. Screen size bucket
+    const sz = parseFloat(a['screen_size'] ?? '')
+    if (!isNaN(sz)) tags.push(sz <= 13.5 ? '13-inch' : sz <= 14.5 ? '14-inch' : sz <= 15.9 ? '15-inch' : sz <= 16.5 ? '16-inch' : '17-inch')
+
+    // 2. Processor tier
+    const cpu = a['processor_model'] ?? ''
+    if (/core.{0,4}i9|ultra.{0,4}9/.test(cpu))          tags.push('intel-i9')
+    else if (/core.{0,4}i7|ultra.{0,4}7/.test(cpu))     tags.push('intel-i7')
+    else if (/core.{0,4}i5|ultra.{0,4}5/.test(cpu))     tags.push('intel-i5')
+    else if (/core.{0,4}i3/.test(cpu))                   tags.push('intel-i3')
+    else if (/ryzen.{0,4}9/.test(cpu))                   tags.push('amd-ryzen-9')
+    else if (/ryzen.{0,4}7/.test(cpu))                   tags.push('amd-ryzen-7')
+    else if (/ryzen.{0,4}5/.test(cpu))                   tags.push('amd-ryzen-5')
+    else if (/ryzen.{0,4}3/.test(cpu))                   tags.push('amd-ryzen-3')
+    else if (/celeron/.test(cpu))                         tags.push('intel-celeron')
+    else if (/pentium/.test(cpu))                         tags.push('intel-pentium')
+
+    // 3. RAM tier
+    const ram = parseInt((a['ram'] ?? '').match(/(\d+)/)?.[1] ?? '0', 10)
+    if (ram >= 32)      tags.push('32gb-ram')
+    else if (ram >= 16) tags.push('16gb-ram')
+    else if (ram >= 8)  tags.push('8gb-ram')
+    else if (ram > 0)   tags.push('4gb-ram')
+
+    // 4. Storage tier
+    const stMatch = (a['storage'] ?? '').match(/(\d+(?:\.\d+)?)\s*(gb|tb)/i)
+    if (stMatch) {
+      const gb = stMatch[2].toLowerCase() === 'tb' ? parseFloat(stMatch[1]) * 1000 : parseFloat(stMatch[1])
+      tags.push(gb >= 1000 ? '1tb-ssd' : gb >= 512 ? '512gb-ssd' : gb >= 256 ? '256gb-ssd' : '128gb-ssd')
+    }
+
+    // 5. Keyboard layout (already stored as attribute)
+    if (a['keyboard_layout']) tags.push(a['keyboard_layout'])
+
+    // 6. Use case
+    if (/nitro|predator|gaming|game/.test(text))           tags.push('gaming')
+    else if (/spin|convertible|2.in.1|2-in-1/.test(text)) tags.push('2-in-1')
+    else if (/chromebook/.test(text))                      tags.push('chromebook')
+    else if (/swift|ultrathin|slim|ultra/.test(text))      tags.push('ultrabook')
+    else if (/vero|eco/.test(text))                        tags.push('eco')
+    else                                                   tags.push('everyday')
+  }
+
+  // Deduplicate and cap at 6
+  return [...new Set(tags)].slice(0, 6)
+}
+
 async function uploadProductInfo(
   sku: string,
-  fields: { description?: string; status?: 'active' | 'archived'; categoryIds?: string[] },
+  fields: { description?: string; status?: 'active' | 'archived'; categoryIds?: string[]; tags?: string[] },
 ): Promise<void> {
   // Note: omit `platforms` entirely (not []) — Zod schema requires min(1) if present.
   // Omitting means D1-only update, no platform push.
@@ -1358,6 +1463,30 @@ async function processProduct(
   }
 
   log(`  ✅ ${uploaded}/${files.length} uploaded to R2${skipped > 0 ? `, ${skipped} download failures` : ''}`)
+
+  // ------------------------------------------------------------------
+  // Step 7: Generate + upload tags (always overwrite — improves as
+  //   attributes fill in over successive runs)
+  // ------------------------------------------------------------------
+  if (category) {
+    // Re-run mapSpecs without warnings — pure function, cheap, no side effects.
+    // Needed because attributes may have been skipped (existing.hasAttributes).
+    const attrsForTags = mapSpecs(rawSpecs, category, fetchLocale)
+    if (category === 'laptops') {
+      const layout = detectKeyboardLayout(sourceUrl)
+      if (layout) attrsForTags.push({ key: 'keyboard_layout', value: layout })
+    }
+    const tags = generateTags(category, attrsForTags, sourceName, description)
+    if (tags.length > 0) {
+      try {
+        await uploadProductInfo(sku, { tags })
+        log(`  🏷️  Tags: ${tags.join(', ')}`)
+      } catch (err) {
+        log(`  ⚠️  Tag upload failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
   return { ok: uploaded, skipped, errors }
 }
 
