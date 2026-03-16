@@ -114,11 +114,19 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     const metafields = Array.isArray(p?.metafields) ? p.metafields : []
     if (!metafields.length) return []
 
-    const attributesOnly = metafields.filter((m: any) => m?.namespace === 'attributes')
-    const source = attributesOnly
+    // Priority keys appear first (laptop-specific)
+    const PRIORITY_KEYS = ['keyboard_layout', 'processor_brand', 'processor_model', 'ram', 'storage', 'graphics', 'screen_size', 'operating_system']
 
-    return source
-      .filter((m: any) => typeof m?.key === 'string')
+    return metafields
+      .filter((m: any) => m?.namespace === 'attributes' && typeof m?.key === 'string')
+      .sort((a: any, b: any) => {
+        const ai = PRIORITY_KEYS.indexOf(a.key)
+        const bi = PRIORITY_KEYS.indexOf(b.key)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
       .map((m: any): AttributeRow => ({
         id: String(m.id),
         name: humanizeAttributeName(String(m.namespace ?? 'attributes'), String(m.key)),
