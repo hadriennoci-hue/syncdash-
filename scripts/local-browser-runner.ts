@@ -47,12 +47,19 @@ function sleep(ms: number): Promise<void> {
 }
 
 function readDevVars(): Record<string, string> {
-  const envPath = path.join(process.cwd(), '.dev.vars')
-  if (!fs.existsSync(envPath)) return {}
+  const candidates = [
+    path.join(process.cwd(), '.dev.vars'),
+    path.resolve(__dirname, '..', '.dev.vars'),
+  ]
+  const envPath = candidates.find((p) => fs.existsSync(p))
+  if (!envPath) return {}
+
   const content = fs.readFileSync(envPath, 'utf-8')
   const vars: Record<string, string> = {}
-  for (const line of content.split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.+)$/)
+  for (const raw of content.split('\n')) {
+    const line = raw.replace('\uFEFF', '').trim()
+    if (!line || line.startsWith('#')) continue
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
     if (m) vars[m[1]] = m[2].trim()
   }
   return vars

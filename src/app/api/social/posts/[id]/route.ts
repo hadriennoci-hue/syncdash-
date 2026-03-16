@@ -4,10 +4,12 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { socialMediaPosts } from '@/lib/db/schema'
+import { socialMediaAccounts, socialMediaPosts } from '@/lib/db/schema'
 
 const patchSchema = z.object({
-  status: z.enum(['suggested', 'validated', 'canceled', 'published']),
+  accountId: z.string().min(1).optional(),
+  content: z.string().min(1).max(500).optional(),
+  status: z.enum(['suggested', 'validated', 'canceled', 'published']).optional(),
   scheduledFor: z.string().datetime().optional(),
   externalPostId: z.string().optional(),
   imageUrl: z.string().url().optional(),
@@ -31,12 +33,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) {
     return apiError('VALIDATION_ERROR', parsed.error.message, 400)
   }
+  if (Object.keys(parsed.data).length === 0) {
+    return apiError('VALIDATION_ERROR', 'No editable field provided', 400)
+  }
 
   const now = new Date().toISOString()
+  if (parsed.data.accountId) {
+    const account = await db.query.socialMediaAccounts.findFirst({
+      where: eq(socialMediaAccounts.id, parsed.data.accountId),
+      columns: { id: true },
+    })
+    if (!account) {
+      return apiError('NOT_FOUND', `social account ${parsed.data.accountId} not found`, 404)
+    }
+  }
   const images = parsed.data.images
     ? parsed.data.images.slice(0, 4)
     : (parsed.data.imageUrl ? [parsed.data.imageUrl] : undefined)
   await db.update(socialMediaPosts).set({
+    accountId: parsed.data.accountId ?? undefined,
+    content: parsed.data.content ?? undefined,
     status: parsed.data.status,
     scheduledFor: parsed.data.scheduledFor ?? undefined,
     externalPostId: parsed.data.externalPostId ?? undefined,
@@ -45,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     hypothesis: parsed.data.hypothesis ?? undefined,
     variantLabel: parsed.data.variantLabel ?? undefined,
     experimentGroup: parsed.data.experimentGroup ?? undefined,
-    publishedAt: parsed.data.status === 'published' ? now : null,
+    publishedAt: parsed.data.status === undefined ? undefined : (parsed.data.status === 'published' ? now : null),
     updatedAt: now,
   }).where(eq(socialMediaPosts.postPk, postPk))
 
