@@ -264,23 +264,27 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'vesa-wandhalterungsnorm':       'vesa_mount',
     'farbe':                         'color',
   },
-  nl: { // nl-nl / nl-be — Dutch [best-guess: run dump to verify]
+  nl: { // [✓] nl-nl / nl-be — Dutch (verified from store.acer.com/nl-be)
     'beeldschermdiagonaal':          'screen_size',
     'schermdiagonaal':               'screen_size',
+    'schermformaat':                 'screen_size',
     'maximale resolutie':            'resolution',
     'schermresolutie':               'resolution',
     'paneeltechnologie':             'panel_type',
     'verversingsfrequentie':         'refresh_rate',
+    'vernieuwingssnelheid':          'refresh_rate',
     'reactietijd':                   'response_time',
     'beeldverhouding':               'aspect_ratio',
     'helderheid':                    'brightness',
     'synchronisatietechnologie':     'gsync_freesync',
+    'montage vesa standaard':        'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'kleur':                         'color',
   },
-  es: { // es-es — Spanish [best-guess: run dump to verify]
+  es: { // [✓] es-es — Spanish (verified from store.acer.com/es-es)
     'diagonal de pantalla':          'screen_size',
     'tamaño de pantalla':            'screen_size',
+    'tamaño de la pantalla':         'screen_size',
     'resolución máxima':             'resolution',
     'resolución nativa':             'resolution',
     'tecnología del panel':          'panel_type',
@@ -293,8 +297,9 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'vesa mount standard':           'vesa_mount',
     'color':                         'color',
   },
-  it: { // it-it — Italian [best-guess: run dump to verify]
+  it: { // [✓] it-it — Italian (verified from store.acer.com/it-it)
     'diagonale schermo':             'screen_size',
+    'dimensione dello schermo':      'screen_size',
     'dimensioni dello schermo':      'screen_size',
     'risoluzione massima':           'resolution',
     'risoluzione nativa':            'resolution',
@@ -304,11 +309,12 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'rapporto di aspetto':           'aspect_ratio',
     'luminosità':                    'brightness',
     'tecnologia di sincronizzazione':'gsync_freesync',
+    'montaggio vesa standard':       'vesa_mount',
     'standard di montaggio vesa':    'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'colore':                        'color',
   },
-  pl: { // pl-pl — Polish [best-guess: run dump to verify]
+  pl: { // [✓] pl-pl — Polish (verified from store.acer.com/pl-pl)
     'przekątna ekranu':              'screen_size',
     'maksymalna rozdzielczość':      'resolution',
     'technologia panelu':            'panel_type',
@@ -321,35 +327,40 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'vesa mount standard':           'vesa_mount',
     'kolor':                         'color',
   },
-  da: { // da-dk — Danish [best-guess: run dump to verify]
+  da: { // [✓] da-dk — Danish (verified from store.acer.com/da-dk)
     'skærmstørrelse':                'screen_size',
     'skærmdiagonal':                 'screen_size',
     'maksimal opløsning':            'resolution',
     'panelteknologi':                'panel_type',
     'opdateringshastighed':          'refresh_rate',
+    'svartid':                       'response_time',
     'responstid':                    'response_time',
     'billedformat':                  'aspect_ratio',
     'lysstyrke':                     'brightness',
     'synkroniseringsteknologi':      'gsync_freesync',
+    'vesa-monteringsstandard':       'vesa_mount',
     'vesa monteringsstandard':       'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'farve':                         'color',
   },
-  sv: { // sv-se — Swedish [best-guess: run dump to verify]
+  sv: { // [✓] sv-se — Swedish (verified from store.acer.com/sv-se)
+    'bildskärmsstorlek':             'screen_size',
     'skärmstorlek':                  'screen_size',
     'skärmdiagonal':                 'screen_size',
     'maximal upplösning':            'resolution',
     'panelteknik':                   'panel_type',
     'uppdateringsfrekvens':          'refresh_rate',
+    'svarstid':                      'response_time',
     'responstid':                    'response_time',
     'bildformat':                    'aspect_ratio',
     'ljusstyrka':                    'brightness',
     'synkroniseringsteknik':         'gsync_freesync',
+    'vesa-monteringsstandard':       'vesa_mount',
     'vesa monteringsstandard':       'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'färg':                          'color',
   },
-  no: { // no-no — Norwegian [best-guess: run dump to verify]
+  no: { // [✓] no-no — Norwegian (verified from store.acer.com/no-no)
     'skjermstørrelse':               'screen_size',
     'skjermdiagonal':                'screen_size',
     'maksimal oppløsning':           'resolution',
@@ -359,20 +370,24 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
     'bildeformat':                   'aspect_ratio',
     'lysstyrke':                     'brightness',
     'synkroniseringsteknologi':      'gsync_freesync',
+    'vesa-monteringsstandard':       'vesa_mount',
     'vesa monteringsstandard':       'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'farge':                         'color',
   },
-  fi: { // fi-fi — Finnish [best-guess: run dump to verify]
+  fi: { // [✓] fi-fi — Finnish (verified from store.acer.com/fi-fi)
     'näytön koko':                   'screen_size',
     'näyttödiagonaali':              'screen_size',
     'maksimitarkkuus':               'resolution',
     'paneelitekniikka':              'panel_type',
+    'pystysuuntainen taajuus':       'refresh_rate',
     'virkistystaajuus':              'refresh_rate',
+    'vastausaika':                   'response_time',
     'vasteaika':                     'response_time',
     'kuvasuhde':                     'aspect_ratio',
     'kirkkaus':                      'brightness',
     'synkronointitekniikka':         'gsync_freesync',
+    'standardi vesa mount':          'vesa_mount',
     'vesa-kiinnitysstandardi':       'vesa_mount',
     'vesa mount standard':           'vesa_mount',
     'väri':                          'color',
@@ -576,6 +591,7 @@ function mapSpecs(
   rawSpecs: Record<string, string>,
   category: ProductCategory,
   locale: string | null,
+  warnUnmapped?: (label: string, value: string) => void,
 ): Array<{ key: string; value: string }> {
   if (!category) return []
   const maps = category === 'monitor' ? MONITOR_LABEL_MAPS : LAPTOP_LABEL_MAPS
@@ -594,7 +610,12 @@ function mapSpecs(
       attrKey = maps[loc]?.[label]
       if (attrKey) break
     }
-    if (!attrKey || seen.has(attrKey)) continue
+    if (!attrKey) {
+      // Warn about any non-trivial unmapped label so the user can extend the maps
+      if (label.length >= 3 && warnUnmapped) warnUnmapped(rawLabel, rawValue)
+      continue
+    }
+    if (seen.has(attrKey)) continue
     const value = normalizeSpecValue(attrKey, rawValue)
     if (!value) continue
     seen.add(attrKey)
@@ -805,6 +826,13 @@ async function processProduct(
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
+  const locale   = detectLocale(sourceUrl)
+
+  // Warn early if source is non-English — description stored in D1 may be in a foreign language
+  if (locale && locale !== 'en') {
+    log(`  ⚠️  [desc-lang] Source locale is "${locale}" — product description may not be in English. Verify and translate if needed.`)
+  }
+
   const { images: imageRefs, specs: rawSpecs, price, promoPrice } = await extractProductData(context, sourceUrl)
   if (imageRefs.length === 0) {
     log(`  ⚠️  No images found`)
@@ -814,9 +842,16 @@ async function processProduct(
 
   // Detect category + locale, then map attributes to English keys
   const category = detectCategory(sourceName, sourceUrl)
-  const locale   = detectLocale(sourceUrl)
   if (category) {
-    const attributes = mapSpecs(rawSpecs, category, locale)
+    const unmappedLabels: string[] = []
+    const attributes = mapSpecs(rawSpecs, category, locale, (label, value) => {
+      unmappedLabels.push(`"${label}" = "${value}"`)
+    })
+    if (unmappedLabels.length > 0) {
+      log(`  ⚠️  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${locale ?? '?'}):`)
+      for (const u of unmappedLabels) log(`       ${u}`)
+      log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${locale ?? '?'}] if they are useful attributes.`)
+    }
     if (attributes.length > 0) {
       try {
         await uploadAttributes(sku, attributes)
