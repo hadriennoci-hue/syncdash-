@@ -222,8 +222,9 @@ interface Snapshot {
 }
 
 async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
-  // Send in batches of 500 to stay within Cloudflare Worker request size limits
-  const BATCH = 500
+  // Send in batches of 50 — D1 prefetch query uses inArray(skus) which hits
+  // D1's ~100 bound-parameter limit at higher batch sizes.
+  const BATCH = 50
   for (let i = 0; i < snapshots.length; i += BATCH) {
     const batch = snapshots.slice(i, i + BATCH)
     const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {

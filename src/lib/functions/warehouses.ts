@@ -74,13 +74,18 @@ export async function applyWarehouseSnapshots(
 
   // Pre-fetch all existing stock rows for this warehouse so we can apply
   // URL priority logic without N extra DB reads in the loop.
+  // D1 has a ~100 bound-parameter limit per query, so chunk the inArray.
   const skusInBatch = snapshots.map(s => s.sku).filter(Boolean)
   const existingStockMap = new Map<string, { sourceUrl: string | null }>()
   if (isAcerSource && skusInBatch.length > 0) {
-    const rows = await db.select({ productId: warehouseStock.productId, sourceUrl: warehouseStock.sourceUrl })
-      .from(warehouseStock)
-      .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, skusInBatch)))
-    for (const row of rows) existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
+    const PREFETCH_CHUNK = 80 // stay safely under D1's variable limit
+    for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
+      const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
+      const rows = await db.select({ productId: warehouseStock.productId, sourceUrl: warehouseStock.sourceUrl })
+        .from(warehouseStock)
+        .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
+      for (const row of rows) existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
+    }
   }
 
   for (const snap of snapshots) {
