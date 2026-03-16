@@ -184,8 +184,8 @@ function extractProductsFromPage(): Omit<AcerProduct, 'descLocale'>[] {
 async function crawlCategory(
   page: Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>['newPage']>>,
   categoryUrl: string,
-): Promise<AcerProduct[]> {
-  const all: AcerProduct[] = []
+): Promise<Omit<AcerProduct, 'descLocale'>[]> {
+  const all: Omit<AcerProduct, 'descLocale'>[] = []
   let current: string | null = categoryUrl
   let pageNum = 1
 
