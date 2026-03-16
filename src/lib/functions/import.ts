@@ -204,7 +204,7 @@ export async function importFromPlatform(
             namespace: mf.namespace,
             key:       mf.key,
             value:     mf.value,
-            type:      mf.type,
+            type:      mf.type ?? 'single_line_text_field',
           }).onConflictDoUpdate({
             target: productMetafields.id,
             set: { value: mf.value },

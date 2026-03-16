@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { categories, productCategories, productMetafields, productPrices, products } from '@/lib/db/schema'
+import { categories, productCategories, productImages, productMetafields, productPrices, products } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
@@ -33,6 +33,14 @@ interface ProductState {
   missingDisplayAttributeKeys: string[]
 }
 
+interface FirecrawlBudget {
+  descriptionCallsRemaining: number
+  attributeCallsRemaining: number
+  imageCallsRemaining: number
+  maxAttributeKeysPerCall: number
+  maxImagesPerCall: number
+}
+
 const WIZHARD_COLLECTION_PLATFORM = 'shopify_komputerzz'
 
 function normalizeText(input: string): string {
@@ -60,6 +68,27 @@ function parseTags(raw: string | null): string[] {
       .filter((v) => v.length > 0 && !/\s/.test(v))
   } catch {
     return []
+  }
+}
+
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  const n = Math.trunc(parsed)
+  if (n < min) return min
+  if (n > max) return max
+  return n
+}
+
+function createFirecrawlBudget(): FirecrawlBudget {
+  return {
+    descriptionCallsRemaining: envInt('FIRECRAWL_DESCRIPTION_CALLS_PER_PRODUCT', 1, 0, 3),
+    attributeCallsRemaining: envInt('FIRECRAWL_ATTRIBUTE_CALLS_PER_PRODUCT', 1, 0, 3),
+    imageCallsRemaining: envInt('FIRECRAWL_IMAGE_CALLS_PER_PRODUCT', 1, 0, 3),
+    maxAttributeKeysPerCall: envInt('FIRECRAWL_MAX_ATTRIBUTE_KEYS_PER_CALL', 8, 1, 30),
+    maxImagesPerCall: envInt('FIRECRAWL_MAX_IMAGES_PER_CALL', 5, 1, 10),
   }
 }
 
@@ -210,7 +239,9 @@ function pickWarehousePriceData(
   return { importPrice: null, importPromoPrice: null, source: null }
 }
 
-async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string | null> {
+async function scrapeDescriptionFromSourceUrl(sourceUrl: string, budget: FirecrawlBudget): Promise<string | null> {
+  if (budget.descriptionCallsRemaining <= 0) return null
+  budget.descriptionCallsRemaining -= 1
   const apiKey = process.env.FIRECRAWL_API_KEY
   if (!apiKey) return null
 
@@ -234,19 +265,23 @@ async function scrapeDescriptionFromSourceUrl(sourceUrl: string): Promise<string
 
 async function scrapeMissingAttributesFromSourceUrl(
   sourceUrl: string,
-  missingKeys: string[]
+  missingKeys: string[],
+  budget: FirecrawlBudget
 ): Promise<Record<string, string>> {
+  if (budget.attributeCallsRemaining <= 0) return {}
+  budget.attributeCallsRemaining -= 1
   const apiKey = process.env.FIRECRAWL_API_KEY
   if (!apiKey || missingKeys.length === 0) return {}
+  const selectedKeys = missingKeys.slice(0, budget.maxAttributeKeysPerCall)
 
   const app = new FirecrawlApp({ apiKey })
   const schemaProperties: Record<string, { type: string | string[] }> = {}
-  for (const key of missingKeys) {
+  for (const key of selectedKeys) {
     schemaProperties[key] = { type: ['string', 'null'] }
   }
 
   const prompt =
-    `Extract only these product attributes from this page: ${missingKeys.join(', ')}. ` +
+    `Extract only these product attributes from this page: ${selectedKeys.join(', ')}. ` +
     'Return values exactly as shown on the page when possible. ' +
     'If an attribute is not visible, return null for that key.'
 
@@ -265,7 +300,7 @@ async function scrapeMissingAttributesFromSourceUrl(
 
   const extracted = (result as { extract?: Record<string, unknown> }).extract ?? {}
   const out: Record<string, string> = {}
-  for (const key of missingKeys) {
+  for (const key of selectedKeys) {
     const raw = extracted[key]
     if (typeof raw !== 'string') continue
     const trimmed = raw.trim()
@@ -273,6 +308,101 @@ async function scrapeMissingAttributesFromSourceUrl(
     out[key] = trimmed
   }
   return out
+}
+
+function dedupeImageUrls(images: Array<{ url: string; alt: string | null }>): Array<{ url: string; alt: string | null }> {
+  const out: Array<{ url: string; alt: string | null }> = []
+  const seen = new Set<string>()
+  for (const img of images) {
+    const normalized = img.url.split('?')[0]?.trim().toLowerCase() ?? ''
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    out.push(img)
+  }
+  return out
+}
+
+async function scrapeImagesFromSourceUrl(sourceUrl: string, budget: FirecrawlBudget): Promise<Array<{ url: string; alt: string | null }>> {
+  if (budget.imageCallsRemaining <= 0) return []
+  budget.imageCallsRemaining -= 1
+  const apiKey = process.env.FIRECRAWL_API_KEY
+  if (!apiKey) return []
+
+  const app = new FirecrawlApp({ apiKey })
+  const result = await firecrawlSemaphore.run(() => app.scrapeUrl(sourceUrl, {
+    formats: ['extract'],
+    extract: {
+      prompt:
+        'Extract ONLY high-quality product image URLs from this product page. ' +
+        'Return only full-size images suitable for product gallery usage. ' +
+        'Do NOT return tiny thumbnails, logos, icons, placeholders, or non-product assets.',
+      schema: {
+        type: 'object',
+        properties: {
+          images: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string' },
+                alt: { type: 'string' },
+              },
+              required: ['url'],
+            },
+          },
+        },
+        required: ['images'],
+      } as any,
+    },
+  }))
+
+  if (!result.success) return []
+  const extracted = (result as { extract?: { images?: { url?: string; alt?: string }[] } }).extract
+  const raw = (extracted?.images ?? [])
+    .filter((img): img is { url: string; alt?: string } => typeof img?.url === 'string' && img.url.trim().length > 0)
+    .map((img) => ({ url: img.url.trim(), alt: (img.alt ?? '').trim() || null }))
+
+  return dedupeImageUrls(raw).slice(0, budget.maxImagesPerCall)
+}
+
+async function backfillMissingImages(
+  product: {
+    id: string
+    images: Array<unknown>
+    warehouseStock: Array<{
+      warehouseId: string
+      sourceUrl: string | null
+    }>
+  },
+  state: ProductState,
+  budget: FirecrawlBudget,
+  filled: string[],
+  sources: string[]
+): Promise<void> {
+  // Cost-control rule: never call Firecrawl for image backfill if at least one image already exists.
+  if (state.hasImages || product.images.length > 0) return
+
+  const sourceRow = product.warehouseStock.find((ws) => ws.sourceUrl && ws.sourceUrl.trim().length > 0)
+  if (!sourceRow?.sourceUrl) return
+
+  const images = await scrapeImagesFromSourceUrl(sourceRow.sourceUrl, budget)
+  if (images.length === 0) return
+
+  const now = new Date().toISOString()
+  await db.delete(productImages).where(eq(productImages.productId, product.id))
+  await db.insert(productImages).values(
+    images.map((img, index) => ({
+      id: generateId(),
+      productId: product.id,
+      url: img.url,
+      alt: img.alt,
+      position: index,
+      createdAt: now,
+    }))
+  )
+
+  filled.push(`images(${images.length})`)
+  sources.push(sourceRow.warehouseId)
 }
 
 async function backfillFromWarehouses(
@@ -287,6 +417,7 @@ async function backfillFromWarehouses(
       sourceUrl: string | null
     }>
   },
+  budget: FirecrawlBudget,
   filled: string[],
   sources: string[]
 ): Promise<void> {
@@ -326,7 +457,7 @@ async function backfillFromWarehouses(
     const sourceRow = product.warehouseStock
       .find((ws) => ws.sourceUrl && ws.sourceUrl.trim().length > 0)
     if (sourceRow?.sourceUrl) {
-      const description = await scrapeDescriptionFromSourceUrl(sourceRow.sourceUrl)
+      const description = await scrapeDescriptionFromSourceUrl(sourceRow.sourceUrl, budget)
       if (description) {
         await db.update(products)
           .set({ description, updatedAt: now })
@@ -348,6 +479,7 @@ async function backfillMissingAttributes(
     }>
   },
   state: ProductState,
+  budget: FirecrawlBudget,
   filled: string[],
   sources: string[]
 ): Promise<void> {
@@ -363,7 +495,7 @@ async function backfillMissingAttributes(
   const sourceRow = product.warehouseStock.find((ws) => ws.sourceUrl && ws.sourceUrl.trim().length > 0)
   if (!sourceRow?.sourceUrl) return
 
-  const extracted = await scrapeMissingAttributesFromSourceUrl(sourceRow.sourceUrl, missingKeys)
+  const extracted = await scrapeMissingAttributesFromSourceUrl(sourceRow.sourceUrl, missingKeys, budget)
   const keys = Object.keys(extracted)
   if (keys.length === 0) return
 
@@ -390,7 +522,7 @@ async function backfillMissingAttributes(
       namespace: 'attributes',
       key,
       value: extracted[key],
-      type: null,
+      type: 'single_line_text_field',
       createdAt: new Date().toISOString(),
     })
   }
@@ -428,6 +560,7 @@ export async function fillMissingFields(
   sku: string,
   triggeredBy: 'human' | 'agent' = 'human'
 ): Promise<FillResult> {
+  const firecrawlBudget = createFirecrawlBudget()
   const load = async () => db.query.products.findFirst({
     where: eq(products.id, sku),
     with: {
@@ -478,8 +611,15 @@ export async function fillMissingFields(
     }
   }
 
-  await backfillMissingAttributes(workingProduct, workingState, filled, sources)
-  await backfillFromWarehouses(workingProduct, filled, sources)
+  await backfillMissingImages(workingProduct, workingState, firecrawlBudget, filled, sources)
+  const afterImageBackfill = await load()
+  if (afterImageBackfill) {
+    workingProduct = afterImageBackfill
+    workingState = buildState(afterImageBackfill)
+  }
+
+  await backfillMissingAttributes(workingProduct, workingState, firecrawlBudget, filled, sources)
+  await backfillFromWarehouses(workingProduct, firecrawlBudget, filled, sources)
 
   const finalProduct = await load()
   if (!finalProduct) throw new Error(`Product ${sku} not found after backfill`)

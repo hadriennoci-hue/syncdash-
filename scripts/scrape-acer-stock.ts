@@ -20,7 +20,10 @@ import * as path from 'path'
 // Config
 // ---------------------------------------------------------------------------
 
-const CATEGORY_URLS = [
+// Default category URLs — overridden by ACER_STORE_SCRAPE_URLS in .dev.vars
+// Format in .dev.vars: comma-separated list of full URLs
+// ACER_STORE_SCRAPE_URLS=https://store.acer.com/fr-fr/ecrans,https://store.acer.com/fr-fr/ordinateurs-portables
+const DEFAULT_CATEGORY_URLS = [
   'https://store.acer.com/fr-fr/ordinateurs-portables',
   'https://store.acer.com/fr-fr/ordinateurs-de-bureau',
   'https://store.acer.com/fr-fr/ecrans',
@@ -57,6 +60,13 @@ const IS_DRY      = args.includes('--dry-run')
 const IS_HEADED   = args.includes('--headed')
 // --category=ecrans  (matches any part of the URL slug)
 const ONLY_CAT    = args.find(a => a.startsWith('--category='))?.split('=')[1] ?? null
+
+// URLs from .dev.vars override the defaults — easy to extend without touching code
+const envUrls = (DEV_VARS['ACER_STORE_SCRAPE_URLS'] ?? process.env['ACER_STORE_SCRAPE_URLS'] ?? '')
+  .split(',')
+  .map(u => u.trim())
+  .filter(u => u.startsWith('http'))
+const CATEGORY_URLS = envUrls.length > 0 ? envUrls : DEFAULT_CATEGORY_URLS
 
 const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'

@@ -92,8 +92,8 @@ export const productMetafields = sqliteTable('product_metafields', {
   namespace: text('namespace').notNull(),
   key:       text('key').notNull(),
   value:     text('value'),
-  type:      text('type'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  type:      text('type').notNull().default('single_line_text_field'),
+  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 
 export const attributeAllowedValues = sqliteTable('attribute_allowed_values', {
