@@ -130,6 +130,48 @@ async function uploadImages(
 }
 
 // ---------------------------------------------------------------------------
+// en-ie URL construction
+// Maps any locale category slug back to the en-ie equivalent so we can
+// always try the English store first for description, images, and specs.
+// ---------------------------------------------------------------------------
+
+const TO_EN_IE_CAT: Record<string, string> = {
+  // monitors
+  'monitors': 'monitors', 'monitor': 'monitors',
+  'ecrans': 'monitors', 'monitore': 'monitors', 'monitoren': 'monitors',
+  'monitores': 'monitors', 'monitory': 'monitors', 'skaerme': 'monitors',
+  'bildskarmar': 'monitors', 'skjermer': 'monitors', 'naytot': 'monitors',
+  // laptops
+  'laptops': 'laptops', 'laptop': 'laptops',
+  'ordinateurs-portables': 'laptops', 'ordenadores-portatiles': 'laptops',
+  'laptopy': 'laptops', 'baerbare-computere': 'laptops',
+  'barbara-datorer': 'laptops', 'baebare-pc': 'laptops', 'kannettavat': 'laptops',
+  // desktops / peripherals / accessories / gaming (for future categories)
+  'desktops': 'desktops', 'desktop': 'desktops',
+  'ordinateurs-de-bureau': 'desktops', 'ordenadores-sobremesa': 'desktops',
+  'peripherals': 'peripherals', 'peripheriques': 'peripherals',
+  'periferiche': 'peripherals', 'urzadzenia-peryferyjne': 'peripherals',
+  'randapparatuur': 'peripherals', 'periferiudstyr': 'peripherals',
+  'kringutrustning': 'peripherals', 'periferiutstyr': 'peripherals',
+  'oheislaitteet': 'peripherals',
+  'accessories': 'accessories', 'accessoires': 'accessories',
+  'accessori': 'accessories', 'akcesoria': 'accessories',
+  'zubehoer': 'accessories', 'tillbehoer': 'accessories',
+  'tilbehoer': 'accessories', 'lisavarusteet': 'accessories',
+  'gaming': 'gaming', 'pelaaminen': 'gaming',
+}
+
+/** Rewrite any Acer store product URL to its en-ie equivalent, or return null. */
+function tryConstructEnglishUrl(sourceUrl: string): string | null {
+  const m = sourceUrl.match(/^(https:\/\/store\.acer\.com\/)([a-z]{2}-[a-z]{2})\/([^/?#]+)\/(.+)$/)
+  if (!m) return null
+  if (m[2] === 'en-ie') return sourceUrl // already English
+  const enCat = TO_EN_IE_CAT[m[3]]
+  if (!enCat) return null
+  return `${m[1]}en-ie/${enCat}/${m[4]}`
+}
+
+// ---------------------------------------------------------------------------
 // Category detection
 // ---------------------------------------------------------------------------
 
@@ -629,10 +671,11 @@ function mapSpecs(
 // ---------------------------------------------------------------------------
 
 interface ProductPageData {
-  images:     Array<{ url: string; alt: string }>
-  specs:      Record<string, string>
-  price:      number | null
-  promoPrice: number | null
+  images:      Array<{ url: string; alt: string }>
+  specs:       Record<string, string>
+  description: string | null
+  price:       number | null
+  promoPrice:  number | null
 }
 
 /** Extract images and spec table from the product page in a single visit */
@@ -725,7 +768,24 @@ async function extractProductData(
         price = parsePrice(finalPriceEl.textContent)
       }
 
-      return { images, specs, price, promoPrice }
+      // Description — extract as plain text (rule: no HTML to sales channels)
+      // Acer Store (Magento 2): short description is in .product.attribute.description .value
+      const descEl = document.querySelector<HTMLElement>(
+        '.product.attribute.description .value, .product-attribute-description .value, .overview .value'
+      )
+      let description: string | null = null
+      if (descEl) {
+        // Replace block-level elements with newlines before reading textContent
+        const clone = descEl.cloneNode(true) as HTMLElement
+        clone.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
+        clone.querySelectorAll('p, li, div, h1, h2, h3, h4').forEach(el => {
+          el.textContent = (el.textContent ?? '') + '\n'
+        })
+        const raw = (clone.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
+        if (raw.length > 10) description = raw
+      }
+
+      return { images, specs, description, price, promoPrice }
     })
   } finally {
     await page.close()
@@ -812,6 +872,26 @@ async function uploadPrices(
 }
 
 // ---------------------------------------------------------------------------
+// Product info upload — description + status (D1 only, no platform push)
+// ---------------------------------------------------------------------------
+
+async function uploadProductInfo(
+  sku: string,
+  fields: { description?: string; status?: 'active' | 'archived' },
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${TOKEN}`,
+      ...getAccessHeaders(),
+    },
+    body: JSON.stringify({ fields, platforms: [], triggeredBy: 'agent' }),
+  })
+  if (!res.ok) throw new Error(`Product PATCH ${res.status}: ${await res.text()}`)
+}
+
+// ---------------------------------------------------------------------------
 // Process one product
 // ---------------------------------------------------------------------------
 
@@ -826,45 +906,122 @@ async function processProduct(
 ): Promise<{ ok: number; skipped: number; errors: string[] }> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
-  const locale   = detectLocale(sourceUrl)
+  const sourceLocale = detectLocale(sourceUrl)
 
-  // Warn early if source is non-English — description stored in D1 may be in a foreign language
-  if (locale && locale !== 'en') {
-    log(`  ⚠️  [desc-lang] Source locale is "${locale}" — product description may not be in English. Verify and translate if needed.`)
+  // ------------------------------------------------------------------
+  // Step 1: Determine which URL to use for content extraction.
+  //
+  // Always try en-ie first — it provides English descriptions, images,
+  // and spec labels (no translation needed).
+  //
+  // If the product is not on en-ie (store-exclusive product):
+  //   → import the foreign description from sourceUrl
+  //   → mark the product archived + needs-translation
+  // ------------------------------------------------------------------
+  let fetchLocale = sourceLocale
+  let needsTranslation = false
+  let pageData: ProductPageData | null = null
+
+  if (sourceLocale !== 'en') {
+    const enUrl = tryConstructEnglishUrl(sourceUrl)
+    if (enUrl) {
+      log(`  🇮🇪 Trying en-ie first: ${enUrl}`)
+      try {
+        const enData = await extractProductData(context, enUrl)
+        if (enData.images.length > 0 || enData.description) {
+          // Product exists on en-ie — use its content directly (no second visit needed)
+          pageData    = enData
+          fetchLocale = 'en'
+          log(`  ✓  Found on en-ie — using English content`)
+        } else {
+          // Page loaded but no product content (redirected to homepage / 404-like)
+          needsTranslation = true
+          log(`  ⚠️  en-ie page empty — product not in Irish store, falling back to ${sourceLocale} URL`)
+        }
+      } catch {
+        needsTranslation = true
+        log(`  ⚠️  en-ie fetch failed — falling back to ${sourceLocale} URL`)
+      }
+    } else {
+      // Can't construct en-ie URL (unknown category slug)
+      needsTranslation = true
+      log(`  ⚠️  Cannot map URL to en-ie — will use foreign URL (locale=${sourceLocale})`)
+    }
   }
 
-  const { images: imageRefs, specs: rawSpecs, price, promoPrice } = await extractProductData(context, sourceUrl)
+  // ------------------------------------------------------------------
+  // Step 2: Extract content from the original URL only if en-ie wasn't used
+  // ------------------------------------------------------------------
+  if (!pageData) {
+    pageData = await extractProductData(context, sourceUrl)
+  }
+
+  const { images: imageRefs, specs: rawSpecs, description, price, promoPrice } = pageData
+
   if (imageRefs.length === 0) {
     log(`  ⚠️  No images found`)
     return { ok: 0, skipped: 0, errors: ['No images found on page'] }
   }
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
 
-  // Detect category + locale, then map attributes to English keys
+  // ------------------------------------------------------------------
+  // Step 3: Save description + flag product if translation is needed
+  // ------------------------------------------------------------------
+  if (description) {
+    try {
+      await uploadProductInfo(sku, {
+        description,
+        // Archive products whose description is not in English
+        ...(needsTranslation ? { status: 'archived' } : {}),
+      })
+      if (needsTranslation) {
+        log(`  📝 Foreign description saved (${fetchLocale ?? 'unknown'}) — product archived, needs translation`)
+        log(`     ⚠️  [needs-translation] ${sku}: translate description then set status=active`)
+      } else {
+        log(`  📝 English description saved`)
+      }
+    } catch (err) {
+      log(`  ⚠️  Description save failed: ${err instanceof Error ? err.message : err}`)
+    }
+  } else if (needsTranslation) {
+    // No description found AND not on en-ie — still archive it
+    try {
+      await uploadProductInfo(sku, { status: 'archived' })
+      log(`  ⚠️  [needs-translation] ${sku}: no description found (foreign store only) — product archived until translation`)
+    } catch (err) {
+      log(`  ⚠️  Status update failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Step 4: Map spec attributes to English keys
+  // ------------------------------------------------------------------
   const category = detectCategory(sourceName, sourceUrl)
   if (category) {
     const unmappedLabels: string[] = []
-    const attributes = mapSpecs(rawSpecs, category, locale, (label, value) => {
+    const attributes = mapSpecs(rawSpecs, category, fetchLocale, (label, value) => {
       unmappedLabels.push(`"${label}" = "${value}"`)
     })
     if (unmappedLabels.length > 0) {
-      log(`  ⚠️  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${locale ?? '?'}):`)
+      log(`  ⚠️  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${fetchLocale ?? '?'}):`)
       for (const u of unmappedLabels) log(`       ${u}`)
-      log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${locale ?? '?'}] if they are useful attributes.`)
+      log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${fetchLocale ?? '?'}] if needed.`)
     }
     if (attributes.length > 0) {
       try {
         await uploadAttributes(sku, attributes)
-        log(`  📋 ${attributes.length} attributes saved (${category}, locale=${locale ?? 'unknown'})`)
+        log(`  📋 ${attributes.length} attributes saved (${category}, locale=${fetchLocale ?? 'unknown'})`)
       } catch (err) {
         log(`  ⚠️  Attributes failed: ${err instanceof Error ? err.message : err}`)
       }
     } else {
-      log(`  ℹ️  No mappable attributes found (${category}, locale=${locale ?? 'unknown'})`)
+      log(`  ℹ️  No mappable attributes found (${category}, locale=${fetchLocale ?? 'unknown'})`)
     }
   }
 
-  // Upload prices if found
+  // ------------------------------------------------------------------
+  // Step 5: Upload prices if found
+  // ------------------------------------------------------------------
   if (price !== null || promoPrice !== null) {
     try {
       await uploadPrices(sku, quantity, sourceUrl, sourceName, price, promoPrice)
@@ -876,7 +1033,9 @@ async function processProduct(
     }
   }
 
-  // Download all images in parallel
+  // ------------------------------------------------------------------
+  // Step 6: Download + upload images to R2
+  // ------------------------------------------------------------------
   const downloads = await Promise.all(
     imageRefs.map(async (ref, i) => {
       const result = await downloadImage(ref.url)
@@ -898,13 +1057,12 @@ async function processProduct(
     return { ok: 0, skipped, errors: ['All image downloads failed'] }
   }
 
-  // Upload to R2 via Wizhard API (in batches of 10 to stay well within limits)
   const errors: string[] = []
   let uploaded = 0
   const BATCH = 10
   for (let b = 0; b < files.length; b += BATCH) {
     const batch = files.slice(b, b + BATCH)
-    const batchMode = b === 0 ? MODE : 'add'  // first batch respects mode, rest always append
+    const batchMode = b === 0 ? MODE : 'add'
     try {
       const result = await uploadImages(sku, batch, batchMode)
       uploaded += result.urls.length
