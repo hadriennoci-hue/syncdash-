@@ -227,7 +227,8 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
     : CATEGORY_URLS
 
   if (categoriesToRun.length === 0) {
-    log(`❌ No category matched "--category=${ONLY_CAT}". Available: ${CATEGORY_URLS.map(u => u.split('/').pop()).join(', ')}`)
+    // Show the locale/slug portion (e.g. "fr-fr/ecrans", "de-de/monitore") so the hint is unambiguous
+    log(`❌ No category matched "--category=${ONLY_CAT}". Available:\n  ${CATEGORY_URLS.map(u => u.replace('https://store.acer.com/', '')).join('\n  ')}`)
     process.exit(1)
   }
 
