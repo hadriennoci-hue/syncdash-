@@ -674,9 +674,10 @@ const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
 }
 
 const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
-  en: { // [✓] en-ie — English
+  en: { // [✓] en-ie — English (verified from store.acer.com/en-ie NX.KSAEK.00T)
     'screen size':                   'screen_size',
     'maximum resolution':            'resolution',
+    'display screen technology':     'panel_type',  // actual label on en-ie
     'panel technology':              'panel_type',
     'display technology':            'panel_type',
     'processor type':                'processor_model',
@@ -695,10 +696,12 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'ram':                           'ram',
     'memory type':                   'ram_type',
     'maximum memory':                'ram_max',
+    'ssd storage capacity':          'storage',  // actual label on en-ie
     'total ssd capacity':            'storage',
     'storage':                       'storage',
     'storage capacity':              'storage',
     'storage type':                  'storage_type',
+    'graphics controller model':     'graphics',  // actual label on en-ie
     'graphics card model':           'graphics',
     'graphics':                      'graphics',
     'graphics card':                 'graphics',
@@ -771,29 +774,30 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'farbe':                         'color',
     'gehäusefarbe':                  'color',
   },
-  nl: { // nl-nl / nl-be — updated to match Magento 2 pattern (best-guess based on es/it/fr)
+  nl: { // [✓] nl-nl / nl-be — verified from store.acer.com/nl-nl (NX.J3UET.004)
+    'schermformaat':                 'screen_size',  // actual label
     'schermgrootte':                 'screen_size',
     'beeldschermdiagonaal':          'screen_size',
+    'resolutie (maximaal)':          'resolution',   // actual label
     'maximale resolutie':            'resolution',
+    'schermtechnologie':             'panel_type',   // actual label
     'beeldschermtechnologie':        'panel_type',
     'paneeltechnologie':             'panel_type',
+    'verversingssnelheid':           'refresh_rate', // actual label
     'verversingsfrequentie':         'refresh_rate',
     // "Processor" row has brand only — use specific fields
     'processortype':                 'processor_model',
+    'processor model':               'processor_model', // actual label (with space)
+    'processor producent':           'processor_brand',  // actual label (with space)
     'processorproducent':            'processor_brand',
-    'processormerk':                 'processor_brand',
     'besturingssysteem':             'operating_system',
     'touchscreen':                   'touchscreen',
-    'multi-touchscherm':             'touchscreen',
+    'multi-touch scherm':            'touchscreen',  // actual label (with space)
     'standaardgeheugen':             'ram',
-    'werkgeheugen':                  'ram',
-    'ram':                           'ram',
+    'totale ssd capaciteit':         'storage',      // actual label (no hyphen)
     'totale ssd-opslagcapaciteit':   'storage',
-    'opslagcapaciteit':              'storage',
-    'opslagtype':                    'storage_type',
-    'grafische kaartmodel':          'graphics',
+    'model grafische-kaart':         'graphics',     // actual label
     'grafische kaart':               'graphics',
-    'grafisch':                      'graphics',
     'kleur':                         'color',
   },
   es: { // es-es — verified from store.acer.com/es-es (NX.J02EB.002)
@@ -850,31 +854,25 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'colore':                        'color',
     'colore chassis':                'color',
   },
-  pl: { // pl-pl — updated to match Magento 2 pattern (best-guess based on es/it/fr)
+  pl: { // [✓] pl-pl — verified from store.acer.com/pl-pl (NX.KTSEP.007)
     'rozmiar ekranu':                'screen_size',
     'przekątna ekranu':              'screen_size',
     'maksymalna rozdzielczość':      'resolution',
+    'technologia wyświetlacza':      'panel_type',   // actual label
     'technologia ekranu':            'panel_type',
-    'technologia panelu':            'panel_type',
+    'częstotliwość odświeżania ekranu': 'refresh_rate', // actual label (with suffix)
     'częstotliwość odświeżania':     'refresh_rate',
     // "Procesor" row has brand only — use specific fields
-    'typ procesora':                 'processor_model',
-    'producent procesora':           'processor_brand',
-    'marka procesora':               'processor_brand',
+    'typ procesora':                 'processor_model',  // actual label
+    'producent procesora':           'processor_brand',  // actual label
     'system operacyjny':             'operating_system',
     'ekran dotykowy':                'touchscreen',
     'ekran wielodotykowy':           'touchscreen',
+    'pamięć standardowa':            'ram',   // actual label (reversed word order)
     'standardowa pamięć':            'ram',
-    'pamięć ram':                    'ram',
-    'ram':                           'ram',
     'całkowita pojemność dysku ssd': 'storage',
-    'pojemność pamięci':             'storage',
-    'typ pamięci masowej':           'storage_type',
-    'model karty graficznej':        'graphics',
-    'karta graficzna':               'graphics',
-    'grafika':                       'graphics',
+    'model karty graficznej':        'graphics',  // actual label
     'kolor':                         'color',
-    'kolor obudowy':                 'color',
   },
   da: { // da-dk — updated to match Magento 2 pattern (best-guess based on es/it/fr)
     'skærmstørrelse':                'screen_size',
@@ -899,74 +897,66 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'grafik':                        'graphics',
     'farve':                         'color',
   },
-  sv: { // sv-se — updated to match Magento 2 pattern (best-guess based on es/it/fr)
+  sv: { // [✓] sv-se — verified from store.acer.com/sv-se (NX.J3JED.002)
     'skärmstorlek':                  'screen_size',
+    'bildskärmsupplösning':          'resolution',   // actual label
     'maximal upplösning':            'resolution',
+    'bildskärmsteknologi':           'panel_type',   // actual label
     'skärmteknik':                   'panel_type',
-    'panelteknik':                   'panel_type',
     'uppdateringsfrekvens':          'refresh_rate',
-    // "Processor" row has brand only — use specific fields
+    // "Processor" row has 'Core™ Ultra 5' (model info) — also map generic 'processor'
+    'processor':                     'processor_model', // actual: has 'Core™ Ultra 5'
     'processortyp':                  'processor_model',
-    'processortillverkare':          'processor_brand',
+    'processortillverkare':          'processor_brand',  // actual label ✓
     'operativsystem':                'operating_system',
     'pekskärm':                      'touchscreen',
-    'multi-touch-skärm':             'touchscreen',
+    'pekskärm med multi-touch':      'touchscreen',  // actual label
+    'standard minne':                'ram',           // actual label (with space)
     'standardminne':                 'ram',
-    'arbetsminne':                   'ram',
-    'ram':                           'ram',
+    'totalt solid state-drivkapacitet': 'storage',   // actual label
     'total ssd-kapacitet':           'storage',
-    'lagringskapacitet':             'storage',
-    'lagringstyp':                   'storage_type',
-    'grafikkortmodell':              'graphics',
-    'grafikkort':                    'graphics',
-    'grafik':                        'graphics',
+    'grafikkortsmodell':             'graphics',      // actual label
     'färg':                          'color',
   },
-  no: { // no-no — updated to match Magento 2 pattern (best-guess based on es/it/fr)
+  no: { // [✓] no-no — verified from store.acer.com/no-no (NX.J3JED.002)
     'skjermstørrelse':               'screen_size',
+    'skjermoppløsning':              'resolution',   // actual label
     'maksimal oppløsning':           'resolution',
-    'skjermteknologi':               'panel_type',
-    'panelteknologi':                'panel_type',
+    'skjermteknologi':               'panel_type',   // actual label ✓
     'oppdateringsfrekvens':          'refresh_rate',
     // "Prosessor" row has brand only — use specific fields
-    'prosessortype':                 'processor_model',
-    'prosessortilvirker':            'processor_brand',
+    'prosessortype':                 'processor_model',  // actual: 'Core™ Ultra 5'
+    'prosessorfabrikant':            'processor_brand',  // actual label (not 'tilvirker')
     'operativsystem':                'operating_system',
-    'berøringsskjerm':               'touchscreen',
-    'multi-touch-skjerm':            'touchscreen',
-    'standardminne':                 'ram',
-    'minne':                         'ram',
-    'ram':                           'ram',
+    'touchskjerm':                   'touchscreen',   // actual label
+    'multi-touch-skjerm':            'touchscreen',   // actual label ✓
+    'standard minne':                'ram',           // actual label (with space)
+    'total kapasitet solid state drive': 'storage',   // actual label
     'total ssd-kapasitet':           'storage',
-    'lagringskapasitet':             'storage',
-    'lagringstype':                  'storage_type',
+    'grafikkort modell':             'graphics',      // actual label (with space)
     'grafikkortmodell':              'graphics',
-    'grafikkort':                    'graphics',
-    'grafikk':                       'graphics',
     'farge':                         'color',
   },
-  fi: { // fi-fi — updated to match Magento 2 pattern (best-guess based on es/it/fr)
+  fi: { // [✓] fi-fi — verified from store.acer.com/fi-fi (NX.J3JED.002)
     'näytön koko':                   'screen_size',
+    'näytön resoluutio':             'resolution',   // actual label
     'enimmäisresoluutio':            'resolution',
-    'maksimitarkkuus':               'resolution',
+    'näyttöruudun tekniikka':        'panel_type',   // actual label
     'näyttötekniikka':               'panel_type',
-    'paneelitekniikka':              'panel_type',
     'virkistystaajuus':              'refresh_rate',
     // "Prosessori" row has brand only — use specific fields
+    'prosessorin tyyppi':            'processor_model',  // actual label (with 'in')
     'prosessorityyppi':              'processor_model',
-    'prosessorivalmistaja':          'processor_brand',
+    'prosessorivalmistaja':          'processor_brand',  // actual label ✓
     'käyttöjärjestelmä':             'operating_system',
     'kosketusnäyttö':                'touchscreen',
-    'monikoske-näyttö':              'touchscreen',
+    'monikosketusnäyttö':            'touchscreen',  // actual label (no hyphen)
+    'standardimuisti':               'ram',           // actual label
     'vakiokoko muistia':             'ram',
-    'muisti':                        'ram',
-    'ram':                           'ram',
+    'ssd-massamuistin kapasiteetin kokonaismäärä': 'storage', // actual label
     'ssd-kokonaiskapasiteetti':      'storage',
-    'tallennuskapasiteetti':         'storage',
-    'tallennustyyppi':               'storage_type',
+    'grafiikkaohjaimen malli':       'graphics',      // actual label
     'näytönohjainmalli':             'graphics',
-    'näytönohjain':                  'graphics',
-    'grafiikka':                     'graphics',
     'väri':                          'color',
   },
 }
