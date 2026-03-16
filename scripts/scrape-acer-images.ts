@@ -147,7 +147,7 @@ async function fetchTiktokCollectionMap(): Promise<void> {
 function needsBrowserFill(row: StockRow): boolean {
   if (!row.pendingReview) return false
   if (row.imageCount === 0) return true
-  if (!row.hasDescription) return true
+  // Descriptions are already saved during stock scan (step 1) — no browser visit needed for them
   // Only scan attributes for categories that have label maps
   const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
   if (ATTRIBUTE_SCAN_CATEGORIES.has(cat) && row.attributeCount === 0) return true
@@ -1542,9 +1542,8 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
     rows.forEach(r => {
       const cat  = detectCategory(r.sourceName ?? '', r.sourceUrl ?? '')
       const missing = [
-        r.imageCount === 0             && 'no images',
-        !r.hasDescription              && 'no description',
-        cat !== null && r.attributeCount === 0 && 'no attributes',
+        r.imageCount === 0                      && 'no images',
+        cat !== null && r.attributeCount === 0  && 'no attributes',
         cat !== null && r.categoryCount === 0   && 'no collection',
       ].filter(Boolean).join(', ')
       log(`  ${r.productId}  [${missing}]  →  ${r.sourceUrl}`)
