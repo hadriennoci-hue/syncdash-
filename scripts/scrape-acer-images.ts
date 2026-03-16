@@ -69,19 +69,36 @@ function log(msg: string): void { console.log(`[acer-img ${tsNow()}] ${msg}`) }
 // ---------------------------------------------------------------------------
 
 interface StockRow {
-  productId: string
-  sourceUrl:  string | null
-  sourceName: string | null
-  quantity:   number | null
+  productId:      string
+  sourceUrl:      string | null
+  sourceName:     string | null
+  quantity:       number | null
+  status:         string | null
+  imageCount:     number
+  attributeCount: number
 }
 
 async function getAcerStockRows(): Promise<StockRow[]> {
-  const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/stock`, {
+  const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/stock?withProduct=1`, {
     headers: { Authorization: `Bearer ${TOKEN}`, ...getAccessHeaders() },
   })
   if (!res.ok) throw new Error(`Failed to fetch acer_store stock: ${res.status} ${await res.text()}`)
   const json = await res.json() as { data: { stock: StockRow[] } }
   return json.data?.stock ?? []
+}
+
+/**
+ * A product needs filling if:
+ * - status is 'info' (auto-created, not yet reviewed), AND
+ * - has no images yet, OR (for monitor/laptop) has no attributes yet
+ */
+function needsFilling(row: StockRow): boolean {
+  if (row.status !== 'info') return false
+  if (row.imageCount === 0) return true
+  // For attribute-mapped categories, also re-fill if attributes are missing
+  const cat = detectCategory(row.sourceName ?? '', row.sourceUrl ?? '')
+  if (cat !== null && row.attributeCount === 0) return true
+  return false
 }
 
 async function uploadImages(
@@ -541,18 +558,25 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   // Step 1 — fetch acer_store stock to get all sourceUrls
   log('Fetching acer_store stock list...')
   const allRows = await getAcerStockRows()
-  const rows = allRows
-    .filter(r => r.sourceUrl && r.sourceUrl !== 'null')
+  const withUrl = allRows.filter(r => r.sourceUrl && r.sourceUrl !== 'null')
+
+  // When targeting a single SKU, skip the status filter (allow re-fill of any product)
+  const rows = withUrl
     .filter(r => !ONLY_SKU || r.productId === ONLY_SKU)
+    .filter(r => ONLY_SKU || needsFilling(r))
 
   if (rows.length === 0) {
-    log('No products with Acer Store source URLs found.')
+    const totalWithUrl = withUrl.length
+    log(`No products need filling (${totalWithUrl} have Acer URLs — all already have images+attributes or status != info).`)
     process.exit(0)
   }
-  log(`Found ${rows.length} product(s) with Acer source URLs`)
+  log(`Found ${rows.length} product(s) to fill (status=info, missing images or attributes)`)
 
   if (IS_DRY_RUN) {
-    rows.forEach(r => log(`  ${r.productId}  →  ${r.sourceUrl}`))
+    rows.forEach(r => {
+      const reason = r.imageCount === 0 ? 'no images' : 'no attributes'
+      log(`  ${r.productId}  [${reason}]  →  ${r.sourceUrl}`)
+    })
     process.exit(0)
   }
 
