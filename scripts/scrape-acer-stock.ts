@@ -74,15 +74,17 @@ const args        = process.argv.slice(2)
 const IS_LOCAL    = args.includes('--local')
 const IS_DRY      = args.includes('--dry-run')
 const IS_HEADED   = args.includes('--headed')
-// --category=ecrans  (matches any part of the URL slug)
+// --category=ecrans  (substring match on URL slug)
 const ONLY_CAT    = args.find(a => a.startsWith('--category='))?.split('=')[1] ?? null
+// --source=monitors | --source=laptops | --source=all (default: all)
+const SOURCE      = (args.find(a => a.startsWith('--source='))?.split('=')[1] ?? 'all') as 'monitors' | 'laptops' | 'all'
 
-// URLs from .dev.vars — monitor URLs + laptop URLs combined, then filtered by --category if set
+// URLs from .dev.vars — select by --source flag
 const parseUrls = (val: string) => val.split(',').map(u => u.trim()).filter(u => u.startsWith('http'))
 const monitorUrls = parseUrls(DEV_VARS['ACER_STORE_SCRAPE_URLS'] ?? process.env['ACER_STORE_SCRAPE_URLS'] ?? '')
 const laptopUrls  = parseUrls(DEV_VARS['ACER_LAPTOP_SCRAPE_URLS'] ?? process.env['ACER_LAPTOP_SCRAPE_URLS'] ?? '')
-const allEnvUrls  = [...monitorUrls, ...laptopUrls]
-const CATEGORY_URLS = allEnvUrls.length > 0 ? allEnvUrls : DEFAULT_CATEGORY_URLS
+const selectedUrls = SOURCE === 'monitors' ? monitorUrls : SOURCE === 'laptops' ? laptopUrls : [...monitorUrls, ...laptopUrls]
+const CATEGORY_URLS = selectedUrls.length > 0 ? selectedUrls : DEFAULT_CATEGORY_URLS
 
 const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'
