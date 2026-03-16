@@ -138,70 +138,126 @@ type ProductCategory = 'monitor' | 'laptops' | null
 function detectCategory(sourceName: string, sourceUrl: string): ProductCategory {
   const n = sourceName.toLowerCase()
   const u = sourceUrl.toLowerCase()
+  // Monitor — FR keywords
   if (n.includes('écran') || n.includes('ecran') || u.includes('ecran')) return 'monitor'
+  // Monitor — DE keywords / URL
+  if (u.includes('/de-de/monitore') || u.includes('monitor') || n.includes('monitor')) return 'monitor'
+  // Laptop — FR keywords
   if (n.includes('ordinateur') || n.includes('portable') || u.includes('ordinateur-portable')) return 'laptops'
+  // Laptop — DE keywords
+  if (n.includes('notebook') || n.includes('laptop') || u.includes('notebook') || u.includes('laptop')) return 'laptops'
   return null
 }
 
 // ---------------------------------------------------------------------------
-// Attribute label → key mapping (French labels from Acer Store FR)
+// Locale detection from source URL
+// store.acer.com/fr-fr/… → 'fr'   store.acer.com/de-de/… → 'de'
 // ---------------------------------------------------------------------------
 
-const MONITOR_LABEL_MAP: Record<string, string> = {
-  "taille de l'écran":         'screen_size',
-  "taille d'écran":            'screen_size',
-  'diagonale':                 'screen_size',
-  'résolution':                'resolution',
-  'résolution native':         'resolution',
-  'type de panneau':           'panel_type',
-  'technologie de panneau':    'panel_type',
-  'fréquence de rafraîchissement': 'refresh_rate',
-  'taux de rafraîchissement':  'refresh_rate',
-  'temps de réponse':          'response_time',
-  "format d'image":            'aspect_ratio',
-  'rapport hauteur/largeur':   'aspect_ratio',
-  'courbure':                  'curved',
-  'luminosité':                'brightness',
-  'luminosité (typ.)':         'brightness',
-  'hdr':                       'hdr',
-  'compatible g-sync':         'gsync_freesync',
-  'compatible freesync':       'gsync_freesync',
-  'freesync':                  'gsync_freesync',
-  'gamme de couleurs':         'color_gamut',
-  'espace colorimétrique':     'color_gamut',
-  'vesa':                      'vesa_mount',
-  'couleur':                   'color',
-  'connectivité':              'ports',
-  'ports':                     'ports',
+function detectLocale(sourceUrl: string): string | null {
+  const m = sourceUrl.match(/store\.acer\.com\/([a-z]{2})-[a-z]{2}\//)
+  return m ? m[1] : null
 }
 
-const LAPTOP_LABEL_MAP: Record<string, string> = {
-  "taille de l'écran":         'screen_size',
-  "taille d'écran":            'screen_size',
-  'résolution':                'resolution',
-  'résolution native':         'resolution',
-  'processeur':                'processor_model',
-  'modèle de processeur':      'processor_model',
-  'marque du processeur':      'processor_brand',
-  'génération du processeur':  'processor_generation',
-  'nombre de coeurs':          'processor_cores',
-  'type de panneau':           'screen_type',
-  "type d'écran":              'screen_type',
-  'fréquence de rafraîchissement': 'refresh_rate',
-  'écran tactile':             'touchscreen',
-  'mémoire ram':               'ram',
-  'ram':                       'ram',
-  'type de ram':               'ram_type',
-  'ram maximale':              'ram_max',
-  'stockage':                  'storage',
-  'capacité de stockage':      'storage',
-  'type de stockage':          'storage_type',
+// ---------------------------------------------------------------------------
+// Attribute label → key maps  (one block per language, same attribute keys)
+// To add a new language: copy a block, change the labels, add the locale key.
+// Run: npm run scrape:acer:dump -- <product-url>  to discover exact labels.
+// ---------------------------------------------------------------------------
+
+const MONITOR_LABEL_MAPS: Record<string, Record<string, string>> = {
+  fr: {
+    "taille de l'écran":             'screen_size',
+    "taille d'écran":                'screen_size',
+    'diagonale':                     'screen_size',
+    'résolution':                    'resolution',
+    'résolution native':             'resolution',
+    'type de panneau':               'panel_type',
+    'technologie de panneau':        'panel_type',
+    'fréquence de rafraîchissement': 'refresh_rate',
+    'taux de rafraîchissement':      'refresh_rate',
+    'temps de réponse':              'response_time',
+    "format d'image":                'aspect_ratio',
+    'rapport hauteur/largeur':       'aspect_ratio',
+    'courbure':                      'curved',
+    'luminosité':                    'brightness',
+    'luminosité (typ.)':             'brightness',
+    'hdr':                           'hdr',
+    'compatible g-sync':             'gsync_freesync',
+    'compatible freesync':           'gsync_freesync',
+    'freesync':                      'gsync_freesync',
+    'gamme de couleurs':             'color_gamut',
+    'espace colorimétrique':         'color_gamut',
+    'vesa':                          'vesa_mount',
+    'couleur':                       'color',
+    'connectivité':                  'ports',
+    'ports':                         'ports',
+  },
+  de: {
+    // Labels verified from store.acer.com/de-de — Technische Daten tab
+    'bildschirmdiagonale':           'screen_size',
+    'maximale auflösung':            'resolution',
+    'panel-technologie':             'panel_type',
+    'bildwiederholungsrate':         'refresh_rate',
+    'reaktionszeit':                 'response_time',
+    'seitenverhältnis':              'aspect_ratio',
+    'helligkeit':                    'brightness',
+    'synctechnologie':               'gsync_freesync',
+    'vesa mount standard':           'vesa_mount',
+    'farbe':                         'color',
+  },
+}
+
+const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
+  fr: {
+    "taille de l'écran":             'screen_size',
+    "taille d'écran":                'screen_size',
+    'résolution':                    'resolution',
+    'résolution native':             'resolution',
+    'processeur':                    'processor_model',
+    'modèle de processeur':          'processor_model',
+    'marque du processeur':          'processor_brand',
+    'génération du processeur':      'processor_generation',
+    'nombre de coeurs':              'processor_cores',
+    'type de panneau':               'screen_type',
+    "type d'écran":                  'screen_type',
+    'fréquence de rafraîchissement': 'refresh_rate',
+    'écran tactile':                 'touchscreen',
+    'mémoire ram':                   'ram',
+    'ram':                           'ram',
+    'type de ram':                   'ram_type',
+    'ram maximale':                  'ram_max',
+    'stockage':                      'storage',
+    'capacité de stockage':          'storage',
+    'type de stockage':              'storage_type',
+  },
+  de: {
+    // Run: npm run scrape:acer:dump -- <de laptop url>  to verify these
+    'bildschirmdiagonale':           'screen_size',
+    'maximale auflösung':            'resolution',
+    'panel-technologie':             'screen_type',
+    'prozessor':                     'processor_model',
+    'prozessormodell':               'processor_model',
+    'prozessormarke':                'processor_brand',
+    'prozessorkerne':                'processor_cores',
+    'bildwiederholungsrate':         'refresh_rate',
+    'touchscreen':                   'touchscreen',
+    'arbeitsspeicher':               'ram',
+    'ram':                           'ram',
+    'speicherkapazität':             'storage',
+    'speichertyp':                   'storage_type',
+  },
 }
 
 function normalizeSpecValue(key: string, raw: string): string {
-  const v = raw.trim()
-  // screen_size: extract number e.g. "27"" → "27", '27 pouces' → '27'
+  // Normalise German decimal comma to dot first (e.g. "60,5" → "60.5")
+  const v = raw.trim().replace(/(\d),(\d)/g, '$1.$2')
+  // screen_size: extract inch number
+  // handles: '27"', '27 pouces', '60.5 cm (23.8 Zoll)', '23.8"'
   if (key === 'screen_size') {
+    // Prefer value in parentheses with Zoll: "(23.8 Zoll)"
+    const zoll = v.match(/\((\d+(?:\.\d+)?)\s*zoll\)/i)
+    if (zoll) return zoll[1]
     const m = v.match(/(\d+(?:\.\d+)?)/)
     return m ? m[1] : v
   }
@@ -214,7 +270,7 @@ function normalizeSpecValue(key: string, raw: string): string {
     const m = v.match(/(\d+)/)
     return m ? m[1] : v
   }
-  // response_time: extract number e.g. "1 ms" → "1"
+  // response_time: extract number e.g. "1 ms", "500 µs" → "1", "500"
   if (key === 'response_time') {
     const m = v.match(/(\d+(?:\.\d+)?)/)
     return m ? m[1] : v
@@ -229,13 +285,26 @@ function normalizeSpecValue(key: string, raw: string): string {
 
 function mapSpecs(
   rawSpecs: Record<string, string>,
-  labelMap: Record<string, string>,
+  category: ProductCategory,
+  locale: string | null,
 ): Array<{ key: string; value: string }> {
+  if (!category) return []
+  const maps = category === 'monitor' ? MONITOR_LABEL_MAPS : LAPTOP_LABEL_MAPS
+
+  // Build lookup order: detected locale first, then all others as fallback
+  const locales = locale && maps[locale]
+    ? [locale, ...Object.keys(maps).filter(l => l !== locale)]
+    : Object.keys(maps)
+
   const out: Array<{ key: string; value: string }> = []
   const seen = new Set<string>()
   for (const [rawLabel, rawValue] of Object.entries(rawSpecs)) {
     const label = rawLabel.toLowerCase().trim()
-    const attrKey = labelMap[label]
+    let attrKey: string | undefined
+    for (const loc of locales) {
+      attrKey = maps[loc]?.[label]
+      if (attrKey) break
+    }
     if (!attrKey || seen.has(attrKey)) continue
     const value = normalizeSpecValue(attrKey, rawValue)
     if (!value) continue
@@ -454,20 +523,20 @@ async function processProduct(
   }
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
 
-  // Detect category and map attributes
+  // Detect category + locale, then map attributes to English keys
   const category = detectCategory(sourceName, sourceUrl)
+  const locale   = detectLocale(sourceUrl)
   if (category) {
-    const labelMap = category === 'monitor' ? MONITOR_LABEL_MAP : LAPTOP_LABEL_MAP
-    const attributes = mapSpecs(rawSpecs, labelMap)
+    const attributes = mapSpecs(rawSpecs, category, locale)
     if (attributes.length > 0) {
       try {
         await uploadAttributes(sku, attributes)
-        log(`  📋 ${attributes.length} attributes saved (${category})`)
+        log(`  📋 ${attributes.length} attributes saved (${category}, locale=${locale ?? 'unknown'})`)
       } catch (err) {
         log(`  ⚠️  Attributes failed: ${err instanceof Error ? err.message : err}`)
       }
     } else {
-      log(`  ℹ️  No mappable attributes found (${category})`)
+      log(`  ℹ️  No mappable attributes found (${category}, locale=${locale ?? 'unknown'})`)
     }
   }
 
