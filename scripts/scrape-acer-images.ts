@@ -260,9 +260,12 @@ function tryConstructEnglishUrl(sourceUrl: string): string | null {
       if (slug.endsWith(suffix)) { slug = slug.slice(0, -suffix.length); break }
     }
     // Infer en-ie category from keywords in the slug
+    // Includes native-language laptop/monitor terms used in Nordic + other non-English slugs
     let enCat: string | null = null
-    if (/laptop|notebook/.test(slug))               enCat = 'laptops'
-    else if (/monitor|display|screen/.test(slug))   enCat = 'monitors'
+    if (/laptop|notebook|barbar|speldator|datorer|dator|baerbar|kannettava|b%C3%A6rbar|portabil/.test(slug))
+                                                    enCat = 'laptops'
+    else if (/monitor|display|screen|bildskarm|nayton|skaerm|bildskarmar/.test(slug))
+                                                    enCat = 'monitors'
     if (!enCat) return null
     return `${m2[1]}en-ie/${enCat}/${slug}`
   }
@@ -961,6 +964,33 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
   },
 }
 
+// Maps non-English Yes/No equivalents → canonical English
+const NON_EN_YES = new Set(['ja', 'oui', 'sì', 'sí', 'sim', 'tak', 'kyllä'])
+const NON_EN_NO  = new Set(['nej', 'nei', 'ei', 'nein', 'non', 'nee', 'nie', 'não'])
+
+// Maps non-English color words (lowercase) → canonical English
+const NON_EN_COLORS: Record<string, string> = {
+  // Black
+  svart: 'Black', musta: 'Black', noir: 'Black', schwarz: 'Black',
+  zwart: 'Black', nero: 'Black', negro: 'Black', czarny: 'Black', sort: 'Black',
+  // Silver
+  hopea: 'Silver', silber: 'Silver', argent: 'Silver', zilver: 'Silver', sølv: 'Silver',
+  // Gray
+  gris: 'Gray', grau: 'Gray', grijs: 'Gray', harmaa: 'Gray', grå: 'Gray', szary: 'Gray', grigio: 'Gray',
+  // White
+  blanc: 'White', weiß: 'White', weiss: 'White', wit: 'White', valkoinen: 'White',
+  hvid: 'White', hvit: 'White', vit: 'White', biały: 'White', bialy: 'White', bianco: 'White', blanco: 'White',
+  // Blue
+  bleu: 'Blue', blau: 'Blue', blauw: 'Blue', sininen: 'Blue', blå: 'Blue', niebieski: 'Blue', blu: 'Blue', azul: 'Blue',
+  // Red
+  rouge: 'Red', rot: 'Red', rood: 'Red', punainen: 'Red', rød: 'Red', röd: 'Red', czerwony: 'Red', rosso: 'Red', rojo: 'Red',
+  // Gold
+  goud: 'Gold', kulta: 'Gold', guld: 'Gold', złoty: 'Gold', zloty: 'Gold', oro: 'Gold',
+  // Green
+  vert: 'Green', grün: 'Green', grun: 'Green', groen: 'Green', vihreä: 'Green', vihrea: 'Green',
+  grøn: 'Green', grønn: 'Green', grön: 'Green', zielony: 'Green', verde: 'Green',
+}
+
 function normalizeSpecValue(key: string, raw: string): string {
   // Normalise German decimal comma to dot first (e.g. "60,5" → "60.5")
   const v = raw.trim().replace(/(\d),(\d)/g, '$1.$2')
@@ -991,6 +1021,29 @@ function normalizeSpecValue(key: string, raw: string): string {
   if (key === 'brightness') {
     const m = v.match(/(\d+)/)
     return m ? m[1] : v
+  }
+  // Boolean attributes (touchscreen etc.): normalise non-English Yes/No
+  if (key === 'touchscreen' || key === 'curved') {
+    const lower = v.toLowerCase()
+    if (NON_EN_YES.has(lower)) return 'Yes'
+    if (NON_EN_NO.has(lower))  return 'No'
+  }
+  // Color: translate non-English color names to English
+  if (key === 'color') {
+    const lower = v.toLowerCase()
+    // Direct match (e.g. "Svart" → "Black")
+    if (NON_EN_COLORS[lower]) return NON_EN_COLORS[lower]
+    // Compound color (e.g. "Svart / Goud" → "Black / Gold")
+    if (lower.includes('/') || lower.includes('-')) {
+      const sep = lower.includes('/') ? '/' : '-'
+      const parts = v.split(sep).map(p => {
+        const key2 = p.trim().toLowerCase()
+        return NON_EN_COLORS[key2] ?? p.trim()
+      })
+      const result = parts.join(` ${sep} `)
+      // Only return if at least one part was translated
+      if (result !== v) return result
+    }
   }
   return v
 }
