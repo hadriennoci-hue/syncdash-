@@ -303,7 +303,8 @@ async function extractProductData(
       }
 
       // Prices (Magento 2 price box)
-      function parsePrice(text: string | null | undefined): number | null {
+      // Arrow function avoids tsx injecting __name() helper which breaks in browser context
+      const parsePrice = (text: string | null | undefined): number | null => {
         if (!text) return null
         // Remove currency symbols, spaces, non-breaking spaces; normalise decimal separator
         const cleaned = text.replace(/[^0-9,.\u00a0]/g, '').replace(/\u00a0/g, '').replace(',', '.')
