@@ -962,6 +962,21 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'näytönohjainmalli':             'graphics',
     'väri':                          'color',
   },
+  da: { // [✓] da-dk — Danish (verified from store.acer.com/da-dk NH.QXAED.008)
+    'skærmstørrelse':                'screen_size',
+    'skærmopløsning':                'resolution',
+    'skærmteknologi':                'panel_type',
+    'opdateringshastighed':          'refresh_rate',
+    'processortype':                 'processor_model',
+    'processorfabrikant':            'processor_brand',
+    'styresystem':                   'operating_system',
+    'touchskærm':                    'touchscreen',
+    'multi-touch-skærm':             'touchscreen',
+    'standard hukommelse':           'ram',
+    'samlet ssd kapacitet':          'storage',
+    'grafikkort model':              'graphics',      // actual label (with space)
+    'farve':                         'color',
+  },
 }
 
 // Maps non-English Yes/No equivalents → canonical English
