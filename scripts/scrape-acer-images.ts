@@ -678,8 +678,6 @@ interface ProductPageData {
   images:      Array<{ url: string; alt: string }>
   specs:       Record<string, string>
   description: string | null
-  price:       number | null
-  promoPrice:  number | null
 }
 
 /** Extract images and spec table from the product page in a single visit */
@@ -745,33 +743,6 @@ async function extractProductData(
         })
       }
 
-      // Prices (Magento 2 price box)
-      // Arrow function avoids tsx injecting __name() helper which breaks in browser context
-      const parsePrice = (text: string | null | undefined): number | null => {
-        if (!text) return null
-        // Remove currency symbols, spaces, non-breaking spaces; normalise decimal separator
-        const cleaned = text.replace(/[^0-9,.\u00a0]/g, '').replace(/\u00a0/g, '').replace(',', '.')
-        const n = parseFloat(cleaned)
-        return isNaN(n) ? null : n
-      }
-
-      // When on sale: .old-price = original, .special-price = promo/final
-      // When not on sale: .price-box .price = regular
-      const oldPriceEl   = document.querySelector('.old-price .price, [data-price-type="oldPrice"] .price')
-      const salePriceEl  = document.querySelector('.special-price .price, [data-price-type="specialPrice"] .price')
-      const finalPriceEl = document.querySelector('[data-price-type="finalPrice"] .price, .price-box .price-final_price .price')
-
-      let price:      number | null = null
-      let promoPrice: number | null = null
-
-      if (oldPriceEl && salePriceEl) {
-        // On sale: old = regular, sale = promo
-        price      = parsePrice(oldPriceEl.textContent)
-        promoPrice = parsePrice(salePriceEl.textContent)
-      } else if (finalPriceEl) {
-        price = parsePrice(finalPriceEl.textContent)
-      }
-
       // Description — extract as plain text (rule: no HTML to sales channels)
       // Acer Store (Magento 2): short description is in .product.attribute.description .value
       const descEl = document.querySelector<HTMLElement>(
@@ -789,7 +760,7 @@ async function extractProductData(
         if (raw.length > 10) description = raw
       }
 
-      return { images, specs, description, price, promoPrice }
+      return { images, specs, description }
     })
   } finally {
     await page.close()
@@ -841,41 +812,6 @@ async function uploadAttributes(sku: string, attributes: Array<{ key: string; va
 }
 
 // ---------------------------------------------------------------------------
-// Price upload — sends a minimal ingest to update import prices in D1
-// ---------------------------------------------------------------------------
-
-async function uploadPrices(
-  sku: string,
-  quantity: number,
-  sourceUrl: string,
-  sourceName: string,
-  price: number | null,
-  promoPrice: number | null,
-): Promise<void> {
-  if (price === null && promoPrice === null) return
-  const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${TOKEN}`,
-      ...getAccessHeaders(),
-    },
-    body: JSON.stringify({
-      snapshots: [{
-        sku,
-        quantity,
-        sourceUrl,
-        sourceName,
-        importPrice:      price      ?? undefined,
-        importPromoPrice: promoPrice ?? undefined,
-      }],
-      triggeredBy: 'agent',
-    }),
-  })
-  if (!res.ok) throw new Error(`Prices ingest ${res.status}: ${await res.text()}`)
-}
-
-// ---------------------------------------------------------------------------
 // Product info upload — description + status (D1 only, no platform push)
 // ---------------------------------------------------------------------------
 
@@ -904,7 +840,6 @@ async function processProduct(
   sku: string,
   sourceUrl: string,
   sourceName: string,
-  quantity: number,
   index: number,
   total: number,
   existing: { hasImages: boolean; hasDescription: boolean; hasAttributes: boolean },
@@ -961,7 +896,7 @@ async function processProduct(
     pageData = await extractProductData(context, sourceUrl)
   }
 
-  const { images: imageRefs, specs: rawSpecs, description, price, promoPrice } = pageData
+  const { images: imageRefs, specs: rawSpecs, description } = pageData
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
 
   // ------------------------------------------------------------------
@@ -1026,22 +961,7 @@ async function processProduct(
   }
 
   // ------------------------------------------------------------------
-  // Step 5: Upload prices if found
-  // ------------------------------------------------------------------
-  if (price !== null || promoPrice !== null) {
-    try {
-      await uploadPrices(sku, quantity, sourceUrl, sourceName, price, promoPrice)
-      const priceStr = price != null ? `${price}€` : '—'
-      const promoStr = promoPrice != null ? ` → promo ${promoPrice}€` : ''
-      log(`  💶 Price updated: ${priceStr}${promoStr}`)
-    } catch (err) {
-      log(`  ⚠️  Price update failed: ${err instanceof Error ? err.message : err}`)
-    }
-  }
-
-  // ------------------------------------------------------------------
-  // Step 6: Download + upload images to R2
-  //   Skip entirely if images are already present in D1
+  // Step 5: Download + upload images to R2 (skip if already present)
   // ------------------------------------------------------------------
   if (existing.hasImages) {
     log(`  ℹ️  Images already present — skipping`)
@@ -1172,7 +1092,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
     const idx = ++i
     try {
       const result = await processProduct(
-        context, row.productId, row.sourceUrl!, row.sourceName ?? '', row.quantity ?? 0, idx, rows.length,
+        context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, rows.length,
         { hasImages: row.imageCount > 0, hasDescription: row.hasDescription, hasAttributes: row.attributeCount > 0 },
       )
       totalOk += result.ok
