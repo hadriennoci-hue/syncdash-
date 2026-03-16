@@ -1097,8 +1097,10 @@ async function extractProductData(
     if (specTab) { try { await specTab.click(); await page.waitForTimeout(400) } catch {} }
 
     return await page.evaluate(() => {
-      // Images
-      const images = Array.from(document.querySelectorAll<HTMLElement>('[data-src],[src]'))
+      // Images — scope to .product.media (main image + carousel only)
+      // Avoids picking up bundle/accessory images (McAfee, NordVPN, etc.) outside the gallery
+      const galleryRoot = document.querySelector('.product.media') ?? document
+      const images = Array.from(galleryRoot.querySelectorAll<HTMLElement>('[data-src],[src]'))
         .map(el => ({
           rawUrl: el.getAttribute('data-src') || (el as HTMLImageElement).src || '',
           alt:    (el as HTMLImageElement).alt || '',
