@@ -83,7 +83,11 @@ const SOURCE      = (args.find(a => a.startsWith('--source='))?.split('=')[1] ??
 const parseUrls = (val: string) => val.split(',').map(u => u.trim()).filter(u => u.startsWith('http'))
 const monitorUrls = parseUrls(DEV_VARS['ACER_STORE_SCRAPE_URLS'] ?? process.env['ACER_STORE_SCRAPE_URLS'] ?? '')
 const laptopUrls  = parseUrls(DEV_VARS['ACER_LAPTOP_SCRAPE_URLS'] ?? process.env['ACER_LAPTOP_SCRAPE_URLS'] ?? '')
-const selectedUrls = SOURCE === 'monitors' ? monitorUrls : SOURCE === 'laptops' ? laptopUrls : [...monitorUrls, ...laptopUrls]
+const allUrls     = parseUrls(DEV_VARS['ACER_ALL_SCRAPE_URLS'] ?? process.env['ACER_ALL_SCRAPE_URLS'] ?? '')
+const selectedUrls = SOURCE === 'monitors' ? monitorUrls
+  : SOURCE === 'laptops' ? laptopUrls
+  : allUrls.length > 0 ? allUrls
+  : [...monitorUrls, ...laptopUrls]
 const CATEGORY_URLS = selectedUrls.length > 0 ? selectedUrls : DEFAULT_CATEGORY_URLS
 
 const BASE_URL = IS_LOCAL
@@ -349,7 +353,7 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   // Convert to WarehouseStockSnapshot format
   const snapshots: Snapshot[] = allProducts.map(p => ({
     sku:              p.sku,
-    quantity:         p.inStock ? 2 : 0,
+    quantity:         2, // always 2 — presence in the catalogue means available
     sourceUrl:        p.url,
     sourceName:       p.name,
     importPrice:      p.price,
