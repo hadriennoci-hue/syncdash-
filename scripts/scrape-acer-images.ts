@@ -220,7 +220,7 @@ const TO_EN_IE_CAT: Record<string, string> = {
   'laptops': 'laptops', 'laptop': 'laptops',
   'ordinateurs-portables': 'laptops', 'ordenadores-portatiles': 'laptops',
   'laptopy': 'laptops', 'baerbare-computere': 'laptops',
-  'barbara-datorer': 'laptops', 'baebare-pc': 'laptops', 'kannettavat': 'laptops',
+  'barbara-datorer': 'laptops', 'baerbar-pc': 'laptops', 'kannettavat': 'laptops',
   // desktops / peripherals / accessories / gaming (for future categories)
   'desktops': 'desktops', 'desktop': 'desktops',
   'ordinateurs-de-bureau': 'desktops', 'ordenadores-sobremesa': 'desktops',
@@ -304,7 +304,8 @@ function detectCategory(sourceName: string, sourceUrl: string): ProductCategory 
   // --- Laptop ---
   if (u.includes('laptop') || u.includes('notebook') || u.includes('ordinateur-portable')
    || u.includes('portables') || u.includes('ordenadores-portatiles')
-   || u.includes('barbar')        // SV: bärbara / DA: bærbare
+   || u.includes('barbar')        // SV: bärbara datorer
+   || u.includes('baerbar')       // NO/DK: bærbar-pc / bærbare-computere
    || u.includes('b%c3%a4rbar') || u.includes('b%c3%a6rbar')
    || u.includes('kannettav')     // FI: kannettavat
   ) return 'laptops'
