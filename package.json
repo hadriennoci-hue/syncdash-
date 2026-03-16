@@ -56,6 +56,7 @@
     "scrape:acer:images": "npx tsx scripts/scrape-acer-images.ts",
     "scrape:acer:images:local": "npx tsx scripts/scrape-acer-images.ts --local",
     "scrape:acer:images:dry": "npx tsx scripts/scrape-acer-images.ts --dry-run",
+    "scrape:acer:dump": "npx tsx scripts/dump-acer-specs.ts",
     "push:browser": "npx tsx scripts/push-browser-channels.ts",
     "push:browser:local": "npx tsx scripts/push-browser-channels.ts --local",
     "push:browser:dry": "npx tsx scripts/push-browser-channels.ts --dry-run",
