@@ -433,6 +433,37 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </table>
       </section>
 
+      {/* Keyboard Layout Family */}
+      {p.variantSiblings?.length > 0 && (
+        <section className="border border-border rounded p-3 text-xs space-y-1.5">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Keyboard Layout Family ({p.variantSiblings.length + 1} variants)</h2>
+          <table className="w-full">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="text-left font-medium py-0.5 pr-2">SKU</th>
+                <th className="text-left font-medium py-0.5">Keyboard Layout</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-border bg-accent/30">
+                <td className="py-1 pr-2 font-mono">{p.id} <span className="text-muted-foreground">(this)</span></td>
+                <td className="py-1">
+                  {p.metafields?.find((m: any) => m.namespace === 'attributes' && m.key === 'keyboard_layout')?.value ?? '—'}
+                </td>
+              </tr>
+              {p.variantSiblings.map((s: any) => (
+                <tr key={s.sku} className="border-t border-border">
+                  <td className="py-1 pr-2 font-mono">
+                    <a href={`/products/${s.sku}`} className="text-primary hover:underline">{s.sku}</a>
+                  </td>
+                  <td className="py-1">{s.keyboardLayout ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {/* Variants */}
       {p.variants?.length > 0 && (
         <section className="border border-border rounded p-3 text-xs space-y-1.5">

@@ -4,7 +4,8 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
 import { products } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
+import { productMetafields } from '@/lib/db/schema'
 import { updateProduct, deleteProduct } from '@/lib/functions/products'
 import type { Platform } from '@/types/platform'
 
@@ -129,6 +130,29 @@ export async function GET(
     }])
   )
   const acerSource = stockMap.acer_store ?? null
+
+  // Variant siblings: other products in the same variant group
+  let variantSiblings: { sku: string; keyboardLayout: string | null }[] = []
+  if (product.variantGroupId) {
+    const siblings = await db.query.products.findMany({
+      where: and(eq(products.variantGroupId, product.variantGroupId), ne(products.id, product.id)),
+      columns: { id: true },
+      with: {
+        metafields: {
+          where: and(
+            eq(productMetafields.namespace, 'attributes'),
+            eq(productMetafields.key, 'keyboard_layout')
+          ),
+          columns: { value: true },
+        },
+      },
+    })
+    variantSiblings = siblings.map((s) => ({
+      sku: s.id,
+      keyboardLayout: s.metafields[0]?.value ?? null,
+    }))
+  }
+
   const categoryItems = product.categories
     .filter((c) => c.category)
     .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType, platform: c.category!.platform }))
@@ -169,6 +193,8 @@ export async function GET(
       xmr_bazaar:         product.pushedXmrBazaar,
       libre_market:       product.pushedLibreMarket,
     },
+    variantGroupId:       product.variantGroupId ?? null,
+    variantSiblings,
     createdAt:            product.createdAt,
     updatedAt:            product.updatedAt,
   })
