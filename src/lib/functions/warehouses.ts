@@ -220,12 +220,15 @@ interface ChannelStockResult {
   errors: string[]
 }
 
-type WooSkuAware = {
+type SkuAwareStockConnector = {
+  updateStockForSku: (platformId: string, sku: string, quantity: number) => Promise<void>
   bulkSetStockForSkus: (items: Array<{ platformId: string; sku: string; quantity: number }>) => Promise<void>
 }
 
-function isWooSkuAware(connector: unknown): connector is WooSkuAware {
-  return !!connector && typeof (connector as WooSkuAware).bulkSetStockForSkus === 'function'
+function isSkuAwareStockConnector(connector: unknown): connector is SkuAwareStockConnector {
+  return !!connector
+    && typeof (connector as SkuAwareStockConnector).updateStockForSku === 'function'
+    && typeof (connector as SkuAwareStockConnector).bulkSetStockForSkus === 'function'
 }
 
 function supportsBatchTouchFinalize(platform: Platform): boolean {
@@ -294,7 +297,11 @@ export async function pushStockToChannels(
         if (totalQuantity <= 0) continue
 
         try {
-          await connector.updateStock(mapping.platformId, totalQuantity)
+          if (mapping.recordType === 'variant' && isSkuAwareStockConnector(connector)) {
+            await connector.updateStockForSku(mapping.platformId, mapping.productId, totalQuantity)
+          } else {
+            await connector.updateStock(mapping.platformId, totalQuantity)
+          }
           touchedPlatformIds.add(mapping.platformId)
           touchedCount++
           await db.update(platformMappings)
@@ -338,7 +345,7 @@ export async function pushStockToChannels(
 
         if (toZero.length > 0) {
           try {
-            if (platform === 'coincart2' && isWooSkuAware(connector)) {
+            if (isSkuAwareStockConnector(connector)) {
               await connector.bulkSetStockForSkus(toZero)
             } else {
               await connector.bulkSetStock(
@@ -392,7 +399,11 @@ export async function pushStockToChannels(
       for (const mapping of mappings) {
         try {
           const totalQuantity = quantityByProductId.get(mapping.productId) ?? 0
-          await connector.updateStock(mapping.platformId, totalQuantity)
+          if (mapping.recordType === 'variant' && isSkuAwareStockConnector(connector)) {
+            await connector.updateStockForSku(mapping.platformId, mapping.productId, totalQuantity)
+          } else {
+            await connector.updateStock(mapping.platformId, totalQuantity)
+          }
 
           await logOperation({
             productId:   mapping.productId,

@@ -5,6 +5,14 @@ import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import type { Platform, SyncResult, TriggeredBy } from '@/types/platform'
 
+type SkuAwarePriceConnector = {
+  updatePriceForSku: (platformId: string, sku: string, price: number | null, compareAt?: number | null) => Promise<void>
+}
+
+function isSkuAwarePriceConnector(connector: unknown): connector is SkuAwarePriceConnector {
+  return !!connector && typeof (connector as SkuAwarePriceConnector).updatePriceForSku === 'function'
+}
+
 function getPushStatusUpdate(platform: Platform): Record<string, string> {
   if (platform === 'coincart2')        return { pushedCoincart2: '2push' }
   if (platform === 'shopify_komputerzz') return { pushedShopifyKomputerzz: '2push' }
@@ -49,7 +57,11 @@ export async function updateProductPrice(
         continue
       }
       const connector = await createConnector(platform)
-      await connector.updatePrice(mapping.platformId, price, compareAt)
+      if (mapping.recordType === 'variant' && isSkuAwarePriceConnector(connector)) {
+        await connector.updatePriceForSku(mapping.platformId, sku, price, compareAt)
+      } else {
+        await connector.updatePrice(mapping.platformId, price, compareAt)
+      }
       await logOperation({ productId: sku, platform, action: 'update_price', status: 'success', triggeredBy })
       results.push({ platform, success: true, platformId: mapping.platformId })
     } catch (err) {

@@ -26,7 +26,12 @@ interface ChannelSyncOptions {
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
 interface CatRow     { category: { id: string; platform: string; name: string; slug: string | null } }
 interface StockRow   { quantity: number }
-interface MappingRow { platform: string; platformId: string }
+interface MappingRow {
+  platform: string
+  platformId: string
+  recordType: 'product' | 'variant'
+  variantId: string | null
+}
 interface ImageRow   { url: string; position: number; alt: string | null }
 
 type WooSkuAware = {
@@ -51,6 +56,7 @@ interface EligibleProduct {
   title:                   string
   description:             string | null
   ean:                     string | null
+  variantGroupId:          string | null
   vendor:                  string | null
   productType:             string | null
   pushedCoincart2:       string
@@ -80,7 +86,48 @@ interface EligibleProduct {
   platformMappings:        MappingRow[]
 }
 
+interface VariantGroupMember {
+  product: EligibleProduct
+  priceRow: PriceRow | undefined
+  totalStock: number
+  keyboardLayout: string | null
+}
+
+interface SinglePushTarget {
+  kind: 'single'
+  primary: EligibleProduct
+}
+
+interface GroupPushTarget {
+  kind: 'group'
+  groupId: string
+  primary: EligibleProduct
+  parentSku: string
+  members: VariantGroupMember[]
+}
+
+type PushTarget = SinglePushTarget | GroupPushTarget
+
 const BROWSER_PLATFORMS: Platform[] = ['xmr_bazaar', 'libre_market']
+const GROUPED_VARIANT_PLATFORMS = new Set<Platform>(['coincart2', 'shopify_komputerzz'])
+const KEYBOARD_LAYOUT_LABELS: Record<string, string> = {
+  be_azerty: 'BE AZERTY',
+  fra_azerty: 'FR AZERTY',
+  fr_azerty: 'FR AZERTY',
+  ger_qwertz: 'DE QWERTZ',
+  de_qwertz: 'DE QWERTZ',
+  ita_qwerty: 'IT QWERTY',
+  it_qwerty: 'IT QWERTY',
+  spa_qwerty: 'ES QWERTY',
+  es_qwerty: 'ES QWERTY',
+  swe_qwerty: 'SE QWERTY',
+  se_qwerty: 'SE QWERTY',
+  swiss_qwertz: 'CH QWERTZ',
+  ch_qwertz: 'CH QWERTZ',
+  uk_qwerty: 'UK QWERTY',
+  us_qwerty: 'US QWERTY',
+  nordic: 'Nordic',
+}
 
 function slugifyHandle(input: string): string {
   return input
@@ -229,18 +276,142 @@ function getPushUpdate(platform: Platform, value: string): Record<string, string
   return {}
 }
 
-function checkCompleteness(p: EligibleProduct, platform: Platform): string[] {
+function checkBaseCompleteness(p: EligibleProduct): string[] {
   const missing: string[] = []
 
   if (!p.title || p.title === p.id) missing.push('title')
   if (!p.description?.trim())        missing.push('description')
   if (p.images.length < 2)           missing.push(`images (${p.images.length}/2)`)
 
+  return missing
+}
+
+function checkCompleteness(p: EligibleProduct, platform: Platform): string[] {
+  const missing = checkBaseCompleteness(p)
+
   const price = p.prices.find((r) => r.platform === platform)
   if (!price?.price)                 missing.push(`price (${platform})`)
 
   // Categories are optional - products can still push without categories.
   return missing
+}
+
+function supportsGroupedVariants(platform: Platform): boolean {
+  return GROUPED_VARIANT_PLATFORMS.has(platform)
+}
+
+function getProductTotalStock(product: EligibleProduct): number {
+  return product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
+}
+
+function getProductPriceRow(product: EligibleProduct, platform: Platform): PriceRow | undefined {
+  return product.prices.find((row) => row.platform === platform)
+}
+
+function getKeyboardLayout(product: EligibleProduct): string | null {
+  const metafield = product.metafields.find((mf) =>
+    mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === 'keyboard_layout'
+  )
+  return metafield?.value?.trim() ?? null
+}
+
+function formatKeyboardLayout(layout: string | null, fallbackSku: string): string {
+  if (!layout) return fallbackSku
+  const normalized = layout.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  return KEYBOARD_LAYOUT_LABELS[normalized]
+    ?? layout
+      .split(/[_-]+/)
+      .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+      .join(' ')
+}
+
+function buildVariantGroupParentSku(groupId: string): string {
+  return `VG-${groupId.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 24)}`
+}
+
+function choosePrimaryProduct(productsInGroup: EligibleProduct[]): EligibleProduct {
+  return [...productsInGroup].sort((a, b) => {
+    const imageDiff = b.images.length - a.images.length
+    if (imageDiff !== 0) return imageDiff
+    const descDiff = Number(!!b.description?.trim()) - Number(!!a.description?.trim())
+    if (descDiff !== 0) return descDiff
+    const titleDiff = a.title.length - b.title.length
+    if (titleDiff !== 0) return titleDiff
+    return a.id.localeCompare(b.id)
+  })[0]
+}
+
+function buildPushTargets(eligible: EligibleProduct[], platform: Platform): PushTarget[] {
+  const pushable = eligible.filter((product) => isPushable(product, platform))
+  if (!supportsGroupedVariants(platform)) {
+    return pushable.map((product) => ({ kind: 'single', primary: product }))
+  }
+
+  const groupMembersById = new Map<string, EligibleProduct[]>()
+  for (const product of pushable) {
+    if (!product.variantGroupId) continue
+    const existing = groupMembersById.get(product.variantGroupId) ?? []
+    existing.push(product)
+    groupMembersById.set(product.variantGroupId, existing)
+  }
+
+  const seenGroups = new Set<string>()
+  const targets: PushTarget[] = []
+
+  for (const product of pushable) {
+    if (!product.variantGroupId) {
+      targets.push({ kind: 'single', primary: product })
+      continue
+    }
+
+    const members = groupMembersById.get(product.variantGroupId) ?? []
+    if (members.length <= 1) {
+      targets.push({ kind: 'single', primary: product })
+      continue
+    }
+
+    if (seenGroups.has(product.variantGroupId)) continue
+    seenGroups.add(product.variantGroupId)
+
+    const primary = choosePrimaryProduct(members)
+    const preparedMembers = members
+      .map((member) => ({
+        product: member,
+        priceRow: getProductPriceRow(member, platform),
+        totalStock: getProductTotalStock(member),
+        keyboardLayout: getKeyboardLayout(member),
+      }))
+      .sort((a, b) => a.product.id.localeCompare(b.product.id))
+
+    targets.push({
+      kind: 'group',
+      groupId: product.variantGroupId,
+      primary,
+      parentSku: buildVariantGroupParentSku(product.variantGroupId),
+      members: preparedMembers,
+    })
+  }
+
+  return targets
+}
+
+function checkTargetCompleteness(target: PushTarget, platform: Platform): Array<{ sku: string; missing: string[] }> {
+  if (target.kind === 'single') {
+    const missing = checkCompleteness(target.primary, platform)
+    return missing.length > 0 ? [{ sku: target.primary.id, missing }] : []
+  }
+
+  const issues: Array<{ sku: string; missing: string[] }> = []
+  const baseMissing = checkBaseCompleteness(target.primary)
+  if (baseMissing.length > 0) {
+    issues.push({ sku: target.primary.id, missing: baseMissing })
+  }
+  for (const member of target.members) {
+    const missing: string[] = []
+    if (!member.priceRow?.price) missing.push(`price (${platform})`)
+    if (missing.length > 0) issues.push({ sku: member.product.id, missing })
+  }
+  return issues
 }
 
 export async function syncChannelAvailability(
@@ -274,11 +445,12 @@ export async function syncChannelAvailability(
 
   const incompleteMap = new Map<string, string[]>()
   for (const platform of platforms) {
-    for (const product of eligible.filter((p) => isPushable(p, platform))) {
-      const missing = checkCompleteness(product, platform)
-      if (missing.length > 0) {
-        const prev = incompleteMap.get(product.id) ?? []
-        incompleteMap.set(product.id, [...new Set([...prev, ...missing])])
+    for (const target of buildPushTargets(eligible, platform)) {
+      for (const issue of checkTargetCompleteness(target, platform)) {
+        const prev = incompleteMap.get(issue.sku) ?? []
+        if (issue.missing.length > 0) {
+          incompleteMap.set(issue.sku, [...new Set([...prev, ...issue.missing])])
+        }
       }
     }
   }
@@ -324,7 +496,7 @@ async function pushPlatform(
     }
   }
 
-  const toPush    = eligible.filter((p) => isPushable(p, platform))
+  const toPush    = buildPushTargets(eligible, platform)
   const connector = await createConnector(platform)
   const errors: string[] = []
   const newSkus: string[] = []
@@ -348,99 +520,212 @@ async function pushPlatform(
     }))
   }
 
-  for (const product of toPush) {
-    const mapping = product.platformMappings.find((m) => m.platform === platform)
+  const collectCategoryIds = (product: EligibleProduct): string[] => (
+    product.categories
+      .filter((pc) => platform === 'coincart2'
+        ? pc.category.platform !== 'coincart2'
+        : pc.category.platform === platform)
+      .map((pc) => pc.category.id)
+  )
+
+  const collectCollections = (product: EligibleProduct): Array<{ name: string; handle: string }> => (
+    product.categories
+      .filter((pc) => pc.category.platform !== 'coincart2')
+      .map((pc) => ({
+        name: pc.category.name,
+        handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
+      }))
+      .filter((c) => c.name.trim().length > 0)
+  )
+
+  const buildImages = (product: EligibleProduct): ImageInput[] => (
+    [...product.images]
+      .sort((a, b) => a.position - b.position)
+      .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
+  )
+
+  const markPushStatus = async (productIds: string[], value: string): Promise<void> => {
+    for (const productId of productIds) {
+      await db.update(products)
+        .set(getPushUpdate(platform, value) as Record<string, string>)
+        .where(eq(products.id, productId))
+    }
+  }
+
+  const logPushResult = async (
+    productIds: string[],
+    status: 'success' | 'error',
+    message: string
+  ): Promise<void> => {
+    for (const productId of productIds) {
+      await logOperation({
+        productId,
+        platform,
+        action: 'push_product',
+        status,
+        message,
+        triggeredBy,
+      })
+    }
+  }
+
+  const findPlatformIdForTarget = async (target: PushTarget): Promise<string | null> => {
+    if (target.kind === 'single') {
+      return connector.findProductIdBySku?.(target.primary.id) ?? null
+    }
+    for (const member of target.members) {
+      const hit = await connector.findProductIdBySku?.(member.product.id)
+      if (hit) return hit
+    }
+    return null
+  }
+
+  for (const target of toPush) {
+    const productIds = target.kind === 'single'
+      ? [target.primary.id]
+      : target.members.map((member) => member.product.id)
+    const primary = target.primary
+    const mapping = primary.platformMappings.find((m) => m.platform === platform)
     if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
-    const totalStock = product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
-    const priceRow = product.prices.find((r) => r.platform === platform)
+
+    const totalStock = target.kind === 'single'
+      ? getProductTotalStock(primary)
+      : target.members.reduce((sum, member) => sum + member.totalStock, 0)
+    const priceRow = getProductPriceRow(primary, platform)
     const coincartAttributeValues = platform === 'coincart2'
-      ? collectCoincartAttributeValues(product)
+      ? collectCoincartAttributeValues(primary)
       : {}
 
     try {
-      const identityPatch = (
-        platform.startsWith('shopify')
-          ? { ean: product.ean?.trim() ? product.ean.trim() : undefined }
-          : {
-              sku: product.id,
-              ean: product.ean?.trim() ? product.ean.trim() : undefined,
-              collections: product.categories
-                .filter((pc) => pc.category.platform !== 'coincart2')
-                .map((pc) => ({
-                  title: pc.category.name,
-                  handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
-                }))
-                .filter((c) => c.title.trim().length > 0)
-                .map((c) => ({ name: c.title, handle: c.handle })),
-              ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
-                ? { attributeValues: coincartAttributeValues }
-                : {}),
-            }
-      )
-      const variantPayloads = buildVariantPayloads(product, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+      const identityPatch = target.kind === 'group'
+        ? (
+            platform.startsWith('shopify')
+              ? {}
+              : {
+                  sku: target.parentSku,
+                  collections: collectCollections(primary),
+                  ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
+                    ? { attributeValues: coincartAttributeValues }
+                    : {}),
+                }
+          )
+        : (
+            platform.startsWith('shopify')
+              ? { ean: primary.ean?.trim() ? primary.ean.trim() : undefined }
+              : {
+                  sku: primary.id,
+                  ean: primary.ean?.trim() ? primary.ean.trim() : undefined,
+                  collections: collectCollections(primary),
+                  ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
+                    ? { attributeValues: coincartAttributeValues }
+                    : {}),
+                }
+          )
+      const variantPayloads = target.kind === 'group'
+        ? target.members.map((member) => ({
+            title: formatKeyboardLayout(member.keyboardLayout, member.product.id),
+            sku: member.product.id,
+            price: member.priceRow?.price ?? null,
+            compareAt: member.priceRow?.compareAt ?? null,
+            stock: member.totalStock,
+            optionName1: 'Keyboard Layout',
+            option1: formatKeyboardLayout(member.keyboardLayout, member.product.id),
+            optionName2: null,
+            option2: null,
+            optionName3: null,
+            option3: null,
+          }))
+        : buildVariantPayloads(primary, priceRow?.price ?? null, priceRow?.compareAt ?? null)
       const payloadWithVariants = {
         ...identityPatch,
         ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
       }
 
-      const upsertMapping = async (platformId: string): Promise<void> => {
+      const upsertMappings = async (platformId: string): Promise<void> => {
+        const now = new Date().toISOString()
+        if (target.kind === 'group') {
+          for (const member of target.members) {
+            await db.insert(platformMappings).values({
+              productId: member.product.id,
+              platform,
+              platformId,
+              recordType: 'variant',
+              variantId: null,
+              syncStatus: 'synced',
+              lastSynced: now,
+            }).onConflictDoUpdate({
+              target: [platformMappings.productId, platformMappings.platform],
+              set: { platformId, recordType: 'variant', variantId: null, syncStatus: 'synced', lastSynced: now },
+            })
+          }
+          return
+        }
+
         await db.insert(platformMappings).values({
-          productId: product.id,
+          productId: primary.id,
           platform,
           platformId,
           syncStatus: 'synced',
-          lastSynced: new Date().toISOString(),
+          lastSynced: now,
         }).onConflictDoUpdate({
           target: [platformMappings.productId, platformMappings.platform],
-          set: { platformId, syncStatus: 'synced', lastSynced: new Date().toISOString() },
+          set: { platformId, syncStatus: 'synced', lastSynced: now },
         })
       }
 
       const updateExisting = async (platformId: string): Promise<void> => {
+        if (target.kind === 'group') {
+          await connector.updateProduct(platformId, platform === 'coincart2' ? payloadWithVariants : {
+            ...identityPatch,
+            title: primary.title,
+            description: primary.description,
+            status: 'active',
+            vendor: primary.vendor,
+            productType: primary.productType,
+          })
+          if (!isWooSkuAware(connector)) {
+            throw new Error(`Grouped variant updates are not supported for ${platform}`)
+          }
+          for (const member of target.members) {
+            await connector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null)
+            await connector.updateStockForSku(platformId, member.product.id, member.totalStock)
+          }
+          await connector.toggleStatus(platformId, 'active')
+          return
+        }
+
         if (platform === 'coincart2' && isWooSkuAware(connector)) {
           if (variantPayloads?.length) {
             await connector.updateProduct(platformId, payloadWithVariants)
             await connector.toggleStatus(platformId, 'active')
           } else {
-            await connector.updateProductForSku(platformId, product.id, identityPatch)
-            await connector.updatePriceForSku(platformId, product.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-            await connector.updateStockForSku(platformId, product.id, totalStock)
-            await connector.toggleStatusForSku(platformId, product.id, 'active')
+            await connector.updateProductForSku(platformId, primary.id, identityPatch)
+            await connector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+            await connector.updateStockForSku(platformId, primary.id, totalStock)
+            await connector.toggleStatusForSku(platformId, primary.id, 'active')
           }
-        } else {
-          await connector.updateProduct(platformId, payloadWithVariants)
-          await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-          await connector.updateStock(platformId, totalStock)
-          await connector.toggleStatus(platformId, 'active')
+          return
         }
+
+        await connector.updateProduct(platformId, payloadWithVariants)
+        await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
+        await connector.updateStock(platformId, totalStock)
+        await connector.toggleStatus(platformId, 'active')
       }
 
       const createNew = async (): Promise<string> => {
-        const images: ImageInput[] = product.images
-          .sort((a, b) => a.position - b.position)
-          .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
-
-        const categoryIds = product.categories
-          .filter((pc) => platform === 'coincart2'
-            ? pc.category.platform !== 'coincart2'
-            : pc.category.platform === platform)
-          .map((pc) => pc.category.id)
-        const collections = product.categories
-          .filter((pc) => pc.category.platform !== 'coincart2')
-          .map((pc) => ({
-            name: pc.category.name,
-            handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
-          }))
-          .filter((c) => c.name.trim().length > 0)
+        const images = buildImages(primary)
+        const categoryIds = collectCategoryIds(primary)
+        const collections = collectCollections(primary)
 
         const platformId = await connector.createProduct({
-          sku: product.id,
-          ean: product.ean?.trim() ? product.ean.trim() : null,
-          title: product.title,
-          description: product.description,
+          sku: target.kind === 'group' ? target.parentSku : primary.id,
+          ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
+          title: primary.title,
+          description: primary.description,
           status: 'active',
-          vendor: product.vendor,
-          productType: product.productType,
+          vendor: primary.vendor,
+          productType: primary.productType,
           taxCode: null,
           price: priceRow?.price ?? null,
           compareAt: priceRow?.compareAt ?? null,
@@ -454,7 +739,17 @@ async function pushPlatform(
         })
 
         if (images.length > 0) await connector.setImages(platformId, images)
-        await connector.updateStock(platformId, totalStock)
+        if (target.kind === 'group') {
+          if (!isWooSkuAware(connector)) {
+            throw new Error(`Grouped variant stock updates are not supported for ${platform}`)
+          }
+          for (const member of target.members) {
+            await connector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null)
+            await connector.updateStockForSku(platformId, member.product.id, member.totalStock)
+          }
+        } else {
+          await connector.updateStock(platformId, totalStock)
+        }
         return platformId
       }
 
@@ -468,45 +763,45 @@ async function pushPlatform(
           finalPlatformId = mappedId
           successMessage = 'updated by mapping'
         } catch (mappedErr) {
-          const skuHit = await connector.findProductIdBySku?.(product.id) ?? null
+          const skuHit = await findPlatformIdForTarget(target)
           if (skuHit) {
-            await upsertMapping(skuHit)
+            await upsertMappings(skuHit)
             await updateExisting(skuHit)
             finalPlatformId = skuHit
             successMessage = skuHit === mappedId ? 'updated by mapping after retry' : 'updated by SKU remap'
           } else {
             const createdId = await createNew()
-            await upsertMapping(createdId)
+            await upsertMappings(createdId)
             finalPlatformId = createdId
-            newSkus.push(product.id)
+            newSkus.push(...productIds)
             successMessage = 'created after missing mapped ID'
           }
           if (!finalPlatformId) throw mappedErr
         }
       } else {
-        const skuHit = await connector.findProductIdBySku?.(product.id) ?? null
+        const skuHit = await findPlatformIdForTarget(target)
         if (skuHit) {
-          await upsertMapping(skuHit)
+          await upsertMappings(skuHit)
           await updateExisting(skuHit)
           finalPlatformId = skuHit
           successMessage = 'updated by SKU'
         } else {
           const createdId = await createNew()
-          await upsertMapping(createdId)
+          await upsertMappings(createdId)
           finalPlatformId = createdId
-          newSkus.push(product.id)
+          newSkus.push(...productIds)
           successMessage = 'created'
         }
       }
 
       if (finalPlatformId) {
         touchedPlatformIds.add(finalPlatformId)
-        if (!newSkus.includes(product.id)) statusUpdated++
+        if (!productIds.every((productId) => newSkus.includes(productId))) statusUpdated += productIds.length
       }
 
       // Shopify: when pushing to a non-TikTok Shopify channel, sync TikTok collections by title/handle.
       if (platform.startsWith('shopify') && platform !== 'shopify_tiktok') {
-        const tikCats = product.categories
+        const tikCats = primary.categories
           .filter((pc) => pc.category.platform === 'shopify_tiktok')
           .map((pc) => ({
             title: pc.category.name,
@@ -519,19 +814,19 @@ async function pushPlatform(
       }
 
       if (platform === 'shopify_komputerzz' && typeof (connector as any).syncProductAttributeMetafields === 'function' && finalPlatformId) {
-        const productMetafields = collectShopifyProductMetafieldsFromAttributes(product)
+        const productMetafields = collectShopifyProductMetafieldsFromAttributes(primary)
         if (Object.keys(productMetafields).length > 0) {
           await (connector as any).syncProductAttributeMetafields(finalPlatformId, productMetafields)
         }
       }
 
       if (platform === 'shopify_komputerzz' && typeof (connector as any).syncCollectionAttributeValues === 'function') {
-        const targets = detectKomputerzzCollectionTargets(product)
+        const targets = detectKomputerzzCollectionTargets(primary)
         const laptopKeys = new Set(Object.keys(ATTRIBUTE_OPTIONS.laptops))
         const displayKeys = new Set(Object.keys(ATTRIBUTE_OPTIONS.monitor))
         for (const target of targets) {
           const attrs = collectProductAttributeValues(
-            product,
+            primary,
             target.type === 'laptops' ? laptopKeys : displayKeys
           )
           if (Object.keys(attrs).length === 0) continue
@@ -539,32 +834,13 @@ async function pushPlatform(
         }
       }
 
-      await db.update(products)
-        .set(getPushUpdate(platform, 'done') as Record<string, string>)
-        .where(eq(products.id, product.id))
-
-      await logOperation({
-        productId: product.id,
-        platform,
-        action: 'push_product',
-        status: 'success',
-        message: successMessage,
-        triggeredBy,
-      })
+      await markPushStatus(productIds, 'done')
+      await logPushResult(productIds, 'success', successMessage)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      errors.push(`${product.id}: ${msg}`)
-      await db.update(products)
-        .set(getPushUpdate(platform, `FAIL: ${msg.slice(0, 200)}`) as Record<string, string>)
-        .where(eq(products.id, product.id))
-      await logOperation({
-        productId: product.id,
-        platform,
-        action: 'push_product',
-        status: 'error',
-        message: msg,
-        triggeredBy,
-      })
+      errors.push(`${primary.id}: ${msg}`)
+      await markPushStatus(productIds, `FAIL: ${msg.slice(0, 200)}`)
+      await logPushResult(productIds, 'error', msg)
     }
   }
 
@@ -586,7 +862,7 @@ async function pushPlatform(
       .map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
 
     if (toZero.length > 0) {
-      if (platform === 'coincart2' && isWooSkuAware(connector)) {
+      if (isWooSkuAware(connector)) {
         await connector.bulkSetStockForSkus(toZero)
       } else {
         await connector.bulkSetStock(toZero.map(({ platformId, quantity }) => ({ platformId, quantity })))

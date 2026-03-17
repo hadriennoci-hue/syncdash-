@@ -304,6 +304,40 @@ export class ShopifyConnector implements PlatformConnector {
     return data.productVariants.nodes[0]?.product?.id ?? null
   }
 
+  private async findVariantBySku(
+    platformId: string,
+    sku: string
+  ): Promise<{ id: string; inventoryItemId: string | null } | null> {
+    const query = `
+      query VariantBySku($q: String!) {
+        productVariants(first: 10, query: $q) {
+          nodes {
+            id
+            inventoryItem { id }
+            product { id }
+          }
+        }
+      }
+    `
+    const data = await this.graphql<{
+      productVariants: {
+        nodes: Array<{
+          id: string
+          inventoryItem?: { id?: string | null } | null
+          product?: { id?: string | null } | null
+        }>
+      }
+    }>(query, { q: `sku:"${sku}"` })
+
+    const match = data.productVariants.nodes.find((node) => node.product?.id === platformId)
+    if (!match?.id) return null
+
+    return {
+      id: match.id,
+      inventoryItemId: match.inventoryItem?.id ?? null,
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Create product
   // -------------------------------------------------------------------------
@@ -469,6 +503,10 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  async updateProductForSku(platformId: string, _sku: string, data: Partial<ProductPayload>): Promise<void> {
+    await this.updateProduct(platformId, data)
+  }
+
   // -------------------------------------------------------------------------
   // Delete product
   // -------------------------------------------------------------------------
@@ -563,6 +601,26 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  async updatePriceForSku(platformId: string, sku: string, price: number | null, compareAt?: number | null): Promise<void> {
+    const variant = await this.findVariantBySku(platformId, sku)
+    if (!variant) {
+      await this.updatePrice(platformId, price, compareAt)
+      return
+    }
+
+    const numericId = this.gidToNumericId(variant.id)
+    const hasPromo = compareAt != null && compareAt > 0
+    const basePrice = price
+    const promoPrice = hasPromo ? compareAt : null
+    await this.rest('PUT', `/variants/${numericId}.json`, {
+      variant: {
+        id: numericId,
+        price: promoPrice != null ? promoPrice.toString() : (basePrice?.toString() ?? null),
+        compare_at_price: promoPrice != null ? (basePrice ?? promoPrice).toString() : null,
+      },
+    })
+  }
+
   // -------------------------------------------------------------------------
   // Stock
   // -------------------------------------------------------------------------
@@ -605,6 +663,42 @@ export class ShopifyConnector implements PlatformConnector {
       input: {
         reason: 'correction',
         setQuantities: [{ inventoryItemId, locationId: locationGid, quantity }],
+      },
+    })
+    if (result.inventorySetOnHandQuantities.userErrors.length > 0) {
+      throw new Error(result.inventorySetOnHandQuantities.userErrors.map((e) => e.message).join(', '))
+    }
+  }
+
+  async updateStockForSku(platformId: string, sku: string, quantity: number): Promise<void> {
+    let locationGid = this.locationId
+    if (!locationGid) {
+      const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(
+        `{ locations(first: 1) { nodes { id } } }`
+      )
+      locationGid = locData.locations.nodes[0]?.id
+      if (!locationGid) throw new Error('No Shopify location found for inventory update')
+    }
+
+    const variant = await this.findVariantBySku(platformId, sku)
+    if (!variant?.inventoryItemId) {
+      await this.updateStock(platformId, quantity)
+      return
+    }
+
+    const mutation = `
+      mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
+        inventorySetOnHandQuantities(input: $input) {
+          userErrors { field message }
+        }
+      }
+    `
+    const result = await this.graphql<{
+      inventorySetOnHandQuantities: { userErrors: Array<{ message: string }> }
+    }>(mutation, {
+      input: {
+        reason: 'correction',
+        setQuantities: [{ inventoryItemId: variant.inventoryItemId, locationId: locationGid, quantity }],
       },
     })
     if (result.inventorySetOnHandQuantities.userErrors.length > 0) {
@@ -682,6 +776,12 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  async bulkSetStockForSkus(items: Array<{ platformId: string; sku: string; quantity: number }>): Promise<void> {
+    for (const item of items) {
+      await this.updateStockForSku(item.platformId, item.sku, item.quantity)
+    }
+  }
+
   async listProductsForZeroing(): Promise<Array<{ platformId: string; sku: string | null; updatedAt: string | null }>> {
     const out: Array<{ platformId: string; sku: string | null; updatedAt: string | null }> = []
     let cursor: string | null = null
@@ -727,6 +827,10 @@ export class ShopifyConnector implements PlatformConnector {
 
   async toggleStatus(platformId: string, status: 'active' | 'archived'): Promise<void> {
     await this.updateProduct(platformId, { status })
+  }
+
+  async toggleStatusForSku(platformId: string, _sku: string, status: 'active' | 'archived'): Promise<void> {
+    await this.toggleStatus(platformId, status)
   }
 
   // -------------------------------------------------------------------------
