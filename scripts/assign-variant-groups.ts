@@ -29,7 +29,7 @@ const DEV_VARS_PATH = path.resolve(process.cwd(), '.dev.vars')
 function loadDevVars(): Record<string, string> {
   const out: Record<string, string> = {}
   if (!fs.existsSync(DEV_VARS_PATH)) return out
-  for (const line of fs.readFileSync(DEV_VARS_PATH, 'utf8').split('\n')) {
+  for (const line of fs.readFileSync(DEV_VARS_PATH, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
     if (m) out[m[1]] = m[2].trim()
   }
