@@ -102,6 +102,7 @@ export const attributeAllowedValues = sqliteTable('attribute_allowed_values', {
   collection:      text('collection').notNull(), // laptops | monitor
   key:             text('key').notNull(),
   value:           text('value').notNull(),
+  valueShort:      text('value_short'),
   valueNormalized: text('value_normalized').notNull(),
   createdAt:       text('created_at').default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({

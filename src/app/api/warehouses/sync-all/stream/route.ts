@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { syncWarehouse } from '@/lib/functions/warehouses'
 import { db } from '@/lib/db/client'
+import { requestRunnerWake } from '@/lib/functions/runner-signal'
 
 interface WarehouseSyncResult {
   warehouseId: string
@@ -43,6 +44,30 @@ export async function GET(req: NextRequest) {
           })
 
           try {
+            if (warehouse.id === 'acer_store') {
+              await requestRunnerWake('acer-stock', 'sync-all-stream')
+              const queued: WarehouseSyncResult & { queued: boolean; message: string } = {
+                warehouseId: 'acer_store',
+                productsUpdated: 0,
+                errors: [],
+                syncedAt: new Date().toISOString(),
+                queued: true,
+                message: 'ACER stock scan queued on local runner',
+              }
+              results.push(queued)
+              push('progress', {
+                warehouseId: warehouse.id,
+                warehouseIndex: index + 1,
+                warehouseTotal: ordered.length,
+                stage: 'fetch_done',
+                message: 'ACER stock scan queued on local runner',
+                current: 1,
+                total: 1,
+              })
+              push('warehouse_result', queued)
+              continue
+            }
+
             const result = await syncWarehouse(warehouse.id, 'human', {
               onProgress: (progress) => {
                 push('progress', {

@@ -3,7 +3,6 @@ import type { PlatformConnector, WarehouseConnector } from './types'
 import { ShopifyConnector, ShopifyWarehouseConnector } from './shopify'
 import { WooCommerceConnector } from './woocommerce'
 import { EbayConnector } from './ebay'
-import { AcerScraperConnector } from './acer-scraper'
 import { getStoredToken } from '@/lib/functions/tokens'
 
 // ---------------------------------------------------------------------------
@@ -100,18 +99,6 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
         process.env.SHOPIFY_TIKTOK_IRELAND_LOCATION_ID!
       )
 
-    case 'acer_store': {
-      const urls = process.env.ACER_STORE_SCRAPE_URLS
-        ? process.env.ACER_STORE_SCRAPE_URLS.split(',').map((u) => u.trim()).filter(Boolean)
-        : [
-            'https://store.acer.com/fr-fr/ecrans',
-            'https://store.acer.com/fr-fr/peripheriques',
-            'https://store.acer.com/fr-fr/accessoires',
-            'https://store.acer.com/fr-fr/gaming',
-          ]
-      return new AcerScraperConnector(process.env.FIRECRAWL_API_KEY!, urls)
-    }
-
     case 'poland':
       throw new Error('Poland warehouse connector not yet implemented - API TBD')
 
@@ -153,4 +140,4 @@ export const ALL_PLATFORMS: Platform[] = [
   'ebay_ie',
 ]
 
-export const ALL_WAREHOUSE_IDS = ['ireland', 'acer_store'] as const
+export const ALL_WAREHOUSE_IDS = ['ireland'] as const

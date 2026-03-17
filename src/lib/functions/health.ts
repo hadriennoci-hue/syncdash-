@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { createConnector, createWarehouseConnector, ALL_PLATFORMS, ALL_WAREHOUSE_IDS } from '@/lib/connectors/registry'
 import { generateId } from '@/lib/utils/id'
 import type { HealthCheckResult } from '@/lib/connectors/types'
+import { getRunnerSignal } from './runner-signal'
 
 interface HealthResults {
   checkedAt: string
@@ -96,6 +97,21 @@ export async function runApiHealthCheck(): Promise<HealthResults> {
         latencyMs: null,
         error: err instanceof Error ? err.message : 'Connector not available',
       }
+    }
+  }
+
+  try {
+    await getRunnerSignal('acer-stock')
+    results.acer_store = {
+      ok: true,
+      latencyMs: null,
+      error: 'Uses local acer runner',
+    }
+  } catch (err) {
+    results.acer_store = {
+      ok: false,
+      latencyMs: null,
+      error: err instanceof Error ? err.message : 'Runner signal unavailable',
     }
   }
 

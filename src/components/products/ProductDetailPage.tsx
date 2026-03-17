@@ -13,17 +13,16 @@ interface AttributeRow {
   value: string
 }
 
-
 export function ProductDetailPage({ sku }: { sku: string }) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['product', sku],
-    queryFn:  () => apiFetch(`/api/products/${sku}`),
+    queryFn: () => apiFetch(`/api/products/${sku}`),
   })
 
   const { data: collectionData } = useQuery({
     queryKey: ['collections'],
-    queryFn:  () => apiFetch('/api/collections'),
+    queryFn: () => apiFetch('/api/collections'),
   })
 
   const [description, setDescription] = useState('')
@@ -114,7 +113,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     const metafields = Array.isArray(p?.metafields) ? p.metafields : []
     if (!metafields.length) return []
 
-    // Priority keys appear first (laptop-specific)
     const PRIORITY_KEYS = ['keyboard_layout', 'processor_brand', 'processor_model', 'ram', 'storage', 'graphics', 'screen_size', 'operating_system']
 
     return metafields
@@ -147,46 +145,80 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         <div className="flex gap-2">
           <Link href={`/products/${sku}/edit`} className="text-xs border border-border rounded px-2 py-1 hover:bg-accent">Edit</Link>
           <span className={`text-xs px-2 py-1 rounded ${
-            p.status === 'active'   ? 'bg-green-100 text-green-700' :
-            p.status === 'info'     ? 'bg-red-100 text-red-600 font-semibold' :
-            'bg-muted text-muted-foreground'
+            p.status === 'active'
+              ? 'bg-green-100 text-green-700'
+              : p.status === 'info'
+                ? 'bg-red-100 text-red-600 font-semibold'
+                : 'bg-muted text-muted-foreground'
           }`}>
             {p.status}
           </span>
         </div>
       </div>
 
-      {/* Row 1 — Meta + Images */}
       <div className="grid grid-cols-3 gap-3 text-xs">
-        <section className="border border-border rounded p-3 space-y-1.5 col-span-1">
-          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Meta</h2>
-          <Row label="Vendor"     value={p.vendor      ?? '—'} />
-          <Row label="Type"       value={p.productType ?? '—'} />
-          <Row label="Tax code"   value={p.taxCode     ?? '—'} />
-          <Row label="EAN"        value={p.ean         ?? '—'} />
-          <Row label="Commodity"  value={p.commodityCode ?? '—'} />
-          <Row label="Origin"     value={p.countryOfManufacture ?? '—'} />
-          <Row label="Weight"     value={p.weight != null ? `${p.weight} ${p.weightUnit ?? 'kg'}` : '—'} />
-          <Row label="Featured"   value={p.isFeatured ? 'Yes' : 'No'} />
-          <Row label="Supplier"
-            value={p.supplier
-              ? <Link href={`/suppliers/${p.supplier.id}`} className="text-primary hover:underline">{p.supplier.name}</Link>
-              : '—'}
-          />
-          <Row label="Localization" value={p.localization ?? '—'} />
-          <Row label="Updated"    value={p.updatedAt?.slice(0, 10) ?? '—'} />
-        </section>
+        <div className="col-span-1 space-y-3">
+          {p.variantSiblings?.length > 0 && (
+            <section className="border border-border rounded p-3 text-xs space-y-1.5">
+              <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Keyboard Layout Family ({p.variantSiblings.length + 1} variants)</h2>
+              <table className="w-full">
+                <thead>
+                  <tr className="text-muted-foreground">
+                    <th className="text-left font-medium py-0.5 pr-2">SKU</th>
+                    <th className="text-left font-medium py-0.5">Keyboard Layout</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-t border-border bg-accent/30">
+                    <td className="py-1 pr-2 font-mono">{p.id} <span className="text-muted-foreground">(this)</span></td>
+                    <td className="py-1">
+                      {p.metafields?.find((m: any) => m.namespace === 'attributes' && m.key === 'keyboard_layout')?.value ?? '-'}
+                    </td>
+                  </tr>
+                  {p.variantSiblings.map((s: any) => (
+                    <tr key={s.sku} className="border-t border-border">
+                      <td className="py-1 pr-2 font-mono">
+                        <a href={`/products/${s.sku}`} className="text-primary hover:underline">{s.sku}</a>
+                      </td>
+                      <td className="py-1">{s.keyboardLayout ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          <section className="border border-border rounded p-3 space-y-1.5">
+            <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Meta</h2>
+            <Row label="Vendor" value={p.vendor ?? '-'} />
+            <Row label="Type" value={p.productType ?? '-'} />
+            <Row label="Tax code" value={p.taxCode ?? '-'} />
+            <Row label="EAN" value={p.ean ?? '-'} />
+            <Row label="Commodity" value={p.commodityCode ?? '-'} />
+            <Row label="Origin" value={p.countryOfManufacture ?? '-'} />
+            <Row label="Weight" value={p.weight != null ? `${p.weight} ${p.weightUnit ?? 'kg'}` : '-'} />
+            <Row label="Featured" value={p.isFeatured ? 'Yes' : 'No'} />
+            <Row
+              label="Supplier"
+              value={p.supplier
+                ? <Link href={`/suppliers/${p.supplier.id}`} className="text-primary hover:underline">{p.supplier.name}</Link>
+                : '-'}
+            />
+            <Row label="Localization" value={p.localization ?? '-'} />
+            <Row label="Updated" value={p.updatedAt?.slice(0, 10) ?? '-'} />
+          </section>
+        </div>
 
         <section className="border border-border rounded p-3 space-y-2 text-xs col-span-2">
           <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
-            Images ({p.images?.length ?? 0}{(p.images?.length ?? 0) < 5 ? ' — needs 5+' : ''})
+            Images ({p.images?.length ?? 0}{(p.images?.length ?? 0) < 5 ? ' - needs 5+' : ''})
           </h2>
           {p.images?.length > 0 ? (
             <div className="flex gap-2 flex-wrap">
               {p.images.map((img: any, i: number) => {
                 const h = img.url ? (new URL(img.url).searchParams.get('height') ?? null) : null
-                const w = img.url ? (new URL(img.url).searchParams.get('width')  ?? null) : null
-                const dims = h && w ? `${w}×${h}px` : null
+                const w = img.url ? (new URL(img.url).searchParams.get('width') ?? null) : null
+                const dims = h && w ? `${w}x${h}px` : null
                 return (
                   <div key={i} className="flex flex-col gap-0.5">
                     <a href={img.url} target="_blank" rel="noreferrer">
@@ -215,7 +247,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </section>
       </div>
 
-      {/* Row 2 — Description */}
       <section className="border border-border rounded p-3 space-y-1 text-xs">
         <div className="flex items-center justify-between">
           <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Description</h2>
@@ -256,6 +287,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         <p className="text-[10px] text-muted-foreground">One word per tag, separated by commas.</p>
         {tagsError && <p className="text-[10px] text-destructive">{tagsError}</p>}
       </section>
+
       <section className="border border-border rounded p-3 text-xs space-y-1.5">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
           Attributes (name / value)
@@ -281,7 +313,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
           </table>
         )}
       </section>
-      {/* Row 3 - Collections */}
+
       <section className="border border-border rounded p-3 text-xs space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Collections</h2>
@@ -326,7 +358,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         )}
       </section>
 
-      {/* Row 4 — Channels */}
       <section className="border border-border rounded p-3 space-y-1.5 text-xs">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Channels</h2>
         <table className="w-full">
@@ -346,17 +377,16 @@ export function ProductDetailPage({ sku }: { sku: string }) {
                 <td className="py-1 pr-2">
                   <Link href={`/channels/${pl}`} className="text-primary hover:underline">{PLATFORM_LABELS[pl as Platform] ?? pl}</Link>
                 </td>
-                <td className="py-1 pr-2 font-mono text-muted-foreground">{m.platformId ?? '—'}</td>
+                <td className="py-1 pr-2 font-mono text-muted-foreground">{m.platformId ?? '-'}</td>
                 <td className="py-1 pr-2">
-                  <span className={m.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{m.syncStatus ?? '—'}</span>
+                  <span className={m.syncStatus === 'synced' ? 'text-green-600' : 'text-amber-500'}>{m.syncStatus ?? '-'}</span>
                 </td>
-                <td className="py-1 pr-2">{p.prices?.[pl]?.price != null ? `€${p.prices[pl].price}` : '—'}</td>
-                <td className="py-1 pr-2">{p.prices?.[pl]?.compareAt != null ? `€${p.prices[pl].compareAt}` : '—'}</td>
+                <td className="py-1 pr-2">{p.prices?.[pl]?.price != null ? `EUR${p.prices[pl].price}` : '-'}</td>
+                <td className="py-1 pr-2">{p.prices?.[pl]?.compareAt != null ? `EUR${p.prices[pl].compareAt}` : '-'}</td>
                 <td className="py-1">
                   {m.listingUrl
-                    ? <a href={m.listingUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-primary hover:underline">view ↗</a>
-                    : <span className="text-muted-foreground/40">—</span>}
+                    ? <a href={m.listingUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">view</a>
+                    : <span className="text-muted-foreground/40">-</span>}
                 </td>
               </tr>
             ))}
@@ -364,7 +394,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </table>
       </section>
 
-      {/* Row 5 — Stock */}
       <section className="border border-border rounded p-3 space-y-1.5 text-xs">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Warehouse Stock</h2>
         <table className="w-full">
@@ -382,16 +411,15 @@ export function ProductDetailPage({ sku }: { sku: string }) {
                 <td className="py-1 pr-2">
                   <Link href={`/warehouses/${wh}`} className="text-primary hover:underline">{WAREHOUSE_LABELS[wh as keyof typeof WAREHOUSE_LABELS] ?? wh}</Link>
                 </td>
-                <td className="py-1 pr-2">{s.quantity ?? '—'}</td>
-                <td className="py-1 pr-2">{s.quantityOrdered ?? '—'}</td>
-                <td className="py-1">{s.purchasePrice != null ? `€${s.purchasePrice}` : '—'}</td>
+                <td className="py-1 pr-2">{s.quantity ?? '-'}</td>
+                <td className="py-1 pr-2">{s.quantityOrdered ?? '-'}</td>
+                <td className="py-1">{s.purchasePrice != null ? `EUR${s.purchasePrice}` : '-'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
 
-      {/* Row 6 — Push to channels */}
       <section className="border border-border rounded p-3 space-y-1.5 text-xs">
         <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Push to channels</h2>
         <table className="w-full">
@@ -433,38 +461,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
         </table>
       </section>
 
-      {/* Keyboard Layout Family */}
-      {p.variantSiblings?.length > 0 && (
-        <section className="border border-border rounded p-3 text-xs space-y-1.5">
-          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Keyboard Layout Family ({p.variantSiblings.length + 1} variants)</h2>
-          <table className="w-full">
-            <thead>
-              <tr className="text-muted-foreground">
-                <th className="text-left font-medium py-0.5 pr-2">SKU</th>
-                <th className="text-left font-medium py-0.5">Keyboard Layout</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t border-border bg-accent/30">
-                <td className="py-1 pr-2 font-mono">{p.id} <span className="text-muted-foreground">(this)</span></td>
-                <td className="py-1">
-                  {p.metafields?.find((m: any) => m.namespace === 'attributes' && m.key === 'keyboard_layout')?.value ?? '—'}
-                </td>
-              </tr>
-              {p.variantSiblings.map((s: any) => (
-                <tr key={s.sku} className="border-t border-border">
-                  <td className="py-1 pr-2 font-mono">
-                    <a href={`/products/${s.sku}`} className="text-primary hover:underline">{s.sku}</a>
-                  </td>
-                  <td className="py-1">{s.keyboardLayout ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {/* Variants */}
       {p.variants?.length > 0 && (
         <section className="border border-border rounded p-3 text-xs space-y-1.5">
           <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Variants ({p.variants.length})</h2>
@@ -481,16 +477,16 @@ export function ProductDetailPage({ sku }: { sku: string }) {
             <tbody>
               {p.variants.map((v: any) => (
                 <tr key={v.id} className="border-t border-border">
-                  <td className="py-1 pr-2 font-mono">{v.sku ?? '—'}</td>
-                  <td className="py-1 pr-2">{v.title ?? '—'}</td>
-                  <td className="py-1 pr-2">{v.price != null ? `€${v.price}` : '—'}</td>
-                  <td className="py-1 pr-2">{v.stock ?? '—'}</td>
+                  <td className="py-1 pr-2 font-mono">{v.sku ?? '-'}</td>
+                  <td className="py-1 pr-2">{v.title ?? '-'}</td>
+                  <td className="py-1 pr-2">{v.price != null ? `EUR${v.price}` : '-'}</td>
+                  <td className="py-1 pr-2">{v.stock ?? '-'}</td>
                   <td className="py-1">
                     {[
                       v.option1 ? `${v.optionName1 ?? 'Option 1'}: ${v.option1}` : null,
                       v.option2 ? `${v.optionName2 ?? 'Option 2'}: ${v.option2}` : null,
                       v.option3 ? `${v.optionName3 ?? 'Option 3'}: ${v.option3}` : null,
-                    ].filter(Boolean).join(' / ') || '—'}
+                    ].filter(Boolean).join(' / ') || '-'}
                   </td>
                 </tr>
               ))}
@@ -501,8 +497,6 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -540,8 +534,3 @@ function humanizeAttributeName(namespace: string, key: string): string {
 function capitalizeWords(value: string): string {
   return value.replace(/\b\w/g, (ch) => ch.toUpperCase())
 }
-
-
-
-
-

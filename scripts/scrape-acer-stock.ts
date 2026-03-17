@@ -240,6 +240,7 @@ interface Snapshot {
   quantity:         number
   sourceUrl:        string
   sourceName:       string
+  description:      string | null
   importPrice:      number | null
   importPromoPrice: number | null
 }
@@ -372,53 +373,16 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   // Convert to WarehouseStockSnapshot format
   const snapshots: Snapshot[] = allProducts.map(p => ({
     sku:              p.sku,
-    quantity:         2, // always 2 — presence in the catalogue means available
+    quantity:         p.inStock ? 2 : 0,
     sourceUrl:        p.url,
     sourceName:       p.name,
+    description:      p.description,
     importPrice:      p.price,
     importPromoPrice: p.promoPrice,
   }))
 
   log(`\n📤 Ingesting ${snapshots.length} snapshots into ${BASE_URL}...`)
   await ingestSnapshots(snapshots)
-
-  // Save descriptions — only for products that have one from this scan
-  // en-ie descriptions are stored as-is; foreign descriptions are stored but product gets archived
-  const withDesc = allProducts.filter(p => p.description)
-  if (withDesc.length > 0) {
-    log(`\n📝 Saving descriptions for ${withDesc.length} products...`)
-    let saved = 0, skipped = 0, foreign = 0
-    for (const p of withDesc) {
-      const isEnglish = p.descLocale === 'en-ie'
-      const body: Record<string, unknown> = {
-        fields: {
-          description: p.description,
-          ...(!isEnglish ? { status: 'archived' } : {}),
-        },
-        triggeredBy: 'agent',
-      }
-      const res = await fetch(`${BASE_URL}/api/products/${p.sku}/local`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${TOKEN}`,
-          ...getAccessHeaders(),
-        },
-        body: JSON.stringify(body),
-      })
-      if (res.ok) {
-        saved++
-        if (!isEnglish) {
-          foreign++
-          log(`  ⚠️  [needs-translation] ${p.sku}: ${p.descLocale} description saved — archived until translated`)
-        }
-      } else {
-        skipped++
-        log(`  ⚠️  Failed to save description for ${p.sku}: ${res.status}`)
-      }
-    }
-    log(`  ✅ ${saved} descriptions saved (${saved - foreign} English, ${foreign} foreign/archived), ${skipped} failed`)
-  }
 
   log('\n✅ Done')
 })()

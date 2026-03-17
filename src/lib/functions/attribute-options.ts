@@ -1,7 +1,8 @@
-﻿import { and, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { attributeAllowedValues } from '@/lib/db/schema'
 import { getAttributeOptions, type AttributeBrand, type AttributeCollection } from '@/lib/constants/product-attribute-options'
+import { getShortAttributeValue } from '@/lib/constants/attribute-short-values'
 import { generateId } from '@/lib/utils/id'
 
 export interface UpsertAttributeOptionsInput {
@@ -35,6 +36,10 @@ function dedupeValues(values: string[]): string[] {
   return out
 }
 
+function toCanonicalValue(collection: AttributeCollection, key: string, value: string): string {
+  return getShortAttributeValue(collection, key, value) ?? value.trim()
+}
+
 export async function getRuntimeAttributeOptions(
   collection: AttributeCollection,
   brand?: AttributeBrand
@@ -50,7 +55,7 @@ export async function getRuntimeAttributeOptions(
   for (const row of customRows) {
     const key = normalizeKey(row.key)
     const list = customByKey.get(key) ?? []
-    list.push(row.value)
+    list.push(row.valueShort ?? row.value)
     customByKey.set(key, list)
   }
 
@@ -60,6 +65,33 @@ export async function getRuntimeAttributeOptions(
   }
 
   return merged
+}
+
+export async function canonicalizeAttributeValue(
+  collection: AttributeCollection,
+  key: string,
+  rawValue: string,
+): Promise<string> {
+  const normalizedKey = normalizeKey(key)
+  const normalizedValue = normalizeValue(rawValue)
+
+  const customRows = await db.query.attributeAllowedValues.findMany({
+    where: and(
+      eq(attributeAllowedValues.collection, collection),
+      eq(attributeAllowedValues.key, normalizedKey),
+    ),
+  })
+
+  for (const row of customRows) {
+    if (row.valueNormalized === normalizedValue) return row.valueShort ?? row.value
+    if (row.valueShort && normalizeValue(row.valueShort) === normalizedValue) return row.valueShort
+  }
+
+  const allowed = getAttributeOptions(collection)[normalizedKey] ?? []
+  const baseMatch = allowed.find((value) => normalizeValue(value) === normalizedValue)
+  if (baseMatch) return baseMatch
+
+  return toCanonicalValue(collection, normalizedKey, rawValue)
 }
 
 export async function upsertRuntimeAttributeOptions(input: UpsertAttributeOptionsInput): Promise<void> {
@@ -75,6 +107,7 @@ export async function upsertRuntimeAttributeOptions(input: UpsertAttributeOption
 
   for (const value of values) {
     const normalized = normalizeValue(value)
+    const canonical = toCanonicalValue(input.collection, key, value)
     const exists = await db.query.attributeAllowedValues.findFirst({
       where: and(
         eq(attributeAllowedValues.collection, input.collection),
@@ -91,6 +124,7 @@ export async function upsertRuntimeAttributeOptions(input: UpsertAttributeOption
       collection: input.collection,
       key,
       value,
+      valueShort: canonical,
       valueNormalized: normalized,
       createdAt: new Date().toISOString(),
     })

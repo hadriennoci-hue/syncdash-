@@ -6,6 +6,7 @@ import { syncWarehouse } from '@/lib/functions/warehouses'
 import { db } from '@/lib/db/client'
 import { warehouses } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { requestRunnerWake } from '@/lib/functions/runner-signal'
 
 
 const postSchema = z.object({
@@ -27,6 +28,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
 
   try {
+    if (params.id === 'acer_store') {
+      await requestRunnerWake('acer-stock', 'manual warehouse sync')
+      return apiResponse({
+        warehouseId: 'acer_store',
+        productsUpdated: 0,
+        errors: [],
+        syncedAt: new Date().toISOString(),
+        queued: true,
+        message: 'ACER stock scan queued on local runner',
+      })
+    }
+
     const result = await syncWarehouse(params.id, parsed.data.triggeredBy)
     return apiResponse(result)
   } catch (err) {

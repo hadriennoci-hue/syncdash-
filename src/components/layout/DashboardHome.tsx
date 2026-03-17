@@ -10,6 +10,8 @@ interface WarehouseSyncResult {
   warehouseId: string
   productsUpdated: number
   errors: string[]
+  queued?: boolean
+  message?: string
 }
 
 interface ChannelSyncResult {
@@ -369,7 +371,7 @@ export function DashboardHome() {
                     {scanError && <p className="font-mono text-[10px] text-[#FF5C7A]">{scanError}</p>}
                     {scanResult?.map((r) => (
                       <p key={r.warehouseId} className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : 'text-[#35F2A1]'}`}>
-                        {r.warehouseId}: {r.errors[0] ?? `${r.productsUpdated} updated`}
+                        {r.warehouseId}: {r.errors[0] ?? r.message ?? `${r.productsUpdated} updated`}
                       </p>
                     ))}
                   </div>
@@ -413,10 +415,10 @@ export function DashboardHome() {
                     disabled={acerFill === 'sent'}
                     className="flex-1 rounded-[10px] border border-[#F2A135] bg-[#0D1830] px-3 py-2.5 text-[12px] font-semibold text-[#F2A135] transition duration-200 hover:-translate-y-px hover:shadow-[0_0_16px_rgba(242,161,53,0.3)] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none"
                   >
-                    {acerFill === 'sent' ? 'Signal sent ✓' : 'Fill Images'}
+                    {acerFill === 'sent' ? 'Signal sent ✓' : 'Fill Product Data'}
                   </button>
                 </div>
-                <p className="mt-1.5 font-mono text-[9px] text-[#8FA0C7]">Requires <span className="text-[#E6ECFF]">npm run runner:acer</span> running locally</p>
+                <p className="mt-1.5 font-mono text-[9px] text-[#8FA0C7]">Requires <span className="text-[#E6ECFF]">npm run runner:acer</span> running locally. Fills descriptions, attributes, collections, images, and tags.</p>
               </div>
 
               <div className="h-px bg-[#1E2A44]" />
@@ -465,4 +467,3 @@ export function DashboardHome() {
     </div>
   )
 }
-

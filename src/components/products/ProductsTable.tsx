@@ -10,7 +10,7 @@ const PLATFORMS = ['coincart2', 'shopify_komputerzz', 'ebay_ie', 'libre_market',
 
 interface FillResult {
   sku:     string
-  status:  'complete' | 'filled' | 'info'
+  status:  'complete' | 'filled' | 'info' | 'queued'
   filled:  string[]
   missing: string[]
   sources: string[]
@@ -123,10 +123,11 @@ export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
               <div key={r.sku} className="flex items-center gap-2">
                 <span className={
                   r.status === 'info'     ? 'text-destructive font-medium w-12' :
+                  r.status === 'queued'   ? 'text-amber-500 w-12' :
                   r.status === 'filled'   ? 'text-green-600 w-12' :
                   'text-muted-foreground w-12'
                 }>
-                  {r.status === 'info' ? 'INFO' : r.status === 'filled' ? 'filled' : 'ok'}
+                  {r.status === 'info' ? 'INFO' : r.status === 'queued' ? 'queued' : r.status === 'filled' ? 'filled' : 'ok'}
                 </span>
                 <Link href={`/products/${r.sku}`} className="font-mono hover:underline">{r.sku}</Link>
                 {r.filled.length > 0 && <span className="text-muted-foreground">+{r.filled.join(', ')}</span>}

@@ -9,6 +9,7 @@ const snapshotSchema = z.object({
   quantity:         z.number().int().min(0),
   sourceUrl:        z.string().url().optional(),
   sourceName:       z.string().optional(),
+  description:      z.string().nullable().optional(),
   importPrice:      z.number().positive().nullable().optional(),
   importPromoPrice: z.number().positive().nullable().optional(),
 })

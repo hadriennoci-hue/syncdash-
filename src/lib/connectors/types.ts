@@ -193,6 +193,7 @@ export interface WarehouseStockSnapshot {
   quantity: number
   sourceUrl?: string      // product page on the source site — used to scrape missing listings
   sourceName?: string     // product name as it appears on the source
+  description?: string | null
   importPrice?: number | null       // listed price scraped from source (e.g. ACER Store regular price)
   importPromoPrice?: number | null  // promo/discounted price scraped from source
 }

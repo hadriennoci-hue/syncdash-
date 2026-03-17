@@ -55,14 +55,11 @@ export async function applyWarehouseSnapshots(
   snapshots: WarehouseStockSnapshot[],
   triggeredBy: TriggeredBy = 'system',
 ): Promise<SyncResult> {
-  // For ireland: zero existing stock first (real stock — absence means out of stock).
-  // For acer_store: skip reset — quantity is always 2 if present; partial scans must
-  // not wipe stock for categories not covered in the current run.
-  if (warehouseId === 'ireland') {
-    await db.update(warehouseStock)
-      .set({ quantity: 0, updatedAt: new Date().toISOString() })
-      .where(eq(warehouseStock.warehouseId, warehouseId))
-  }
+  // A warehouse scan is treated as the full current truth for that warehouse.
+  // Reset all existing quantities to zero first, then upsert scanned snapshots.
+  await db.update(warehouseStock)
+    .set({ quantity: 0, updatedAt: new Date().toISOString() })
+    .where(eq(warehouseStock.warehouseId, warehouseId))
 
   const errors: string[] = []
   let productsUpdated = 0
@@ -107,6 +104,7 @@ export async function applyWarehouseSnapshots(
         .values({
           id: snap.sku,
           title: snap.sourceName ?? snap.sku,
+          description: snap.description ?? null,
           status: 'info',
           pendingReview: 1,
           ...(isAcerSource ? { supplierId: 'acer' } : {}),

@@ -3,6 +3,7 @@ import { categories, productCategories, productImages, productMetafields, produc
 import { and, eq } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
+import { canonicalizeAttributeValue } from './attribute-options'
 import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 import { generateId } from '@/lib/utils/id'
@@ -499,7 +500,10 @@ async function backfillMissingAttributes(
   const keys = Object.keys(extracted)
   if (keys.length === 0) return
 
+  const collection = state.isLaptop ? 'laptops' : 'monitor'
+
   for (const key of keys) {
+    const canonicalValue = await canonicalizeAttributeValue(collection, key, extracted[key])
     const existing = await db.query.productMetafields.findFirst({
       where: and(
         eq(productMetafields.productId, product.id),
@@ -511,7 +515,7 @@ async function backfillMissingAttributes(
 
     if (existing) {
       await db.update(productMetafields)
-        .set({ value: extracted[key] })
+        .set({ value: canonicalValue })
         .where(eq(productMetafields.id, existing.id))
       continue
     }
@@ -521,7 +525,7 @@ async function backfillMissingAttributes(
       productId: product.id,
       namespace: 'attributes',
       key,
-      value: extracted[key],
+      value: canonicalValue,
       type: 'single_line_text_field',
       createdAt: new Date().toISOString(),
     })
@@ -574,6 +578,17 @@ export async function fillMissingFields(
 
   const initial = await load()
   if (!initial) throw new Error(`Product ${sku} not found`)
+
+  if (initial.status === 'active') {
+    await logOperation({
+      productId: sku,
+      action: 'fill_missing',
+      status: 'success',
+      message: 'Skipped - active product',
+      triggeredBy,
+    })
+    return { sku, status: 'complete', filled: [], missing: [], sources: [] }
+  }
 
   const initialState = buildState(initial)
   if (isComplete(initialState)) {
@@ -651,4 +666,3 @@ export async function fillMissingFields(
   })
   return { sku, status: 'info', filled, missing, sources: [...new Set(sources)] }
 }
-
