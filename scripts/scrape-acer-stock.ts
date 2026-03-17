@@ -49,7 +49,26 @@ function getLocalePriority(url: string): number {
 }
 
 // Non-hardware items that appear on the store but are not physical products
-const BLOCKED_NAME_TOKENS = ['trouver', 'réparation', 'mcafee', 'garantie', 'recovery', 'service']
+const BLOCKED_NAME_TOKENS = [
+  // Services / repairs (existing)
+  'trouver', 'réparation', 'mcafee', 'garantie', 'recovery', 'service',
+  // Warranty / protection plans — "X years" variants across all scanned locales
+  // en
+  'year', 'years',
+  // es
+  'año', 'años',
+  // de
+  'jahr', 'jahre',
+  // fi
+  'vuotta', 'vuosi', 'vuoden',
+  // it
+  'anno', 'anni',
+  // nl
+  'jaar', 'jaren',
+  // fr (already covered by 'garantie'; adding 'ans' is too broad — skip)
+  // pt (not scanned but added for safety)
+  'anos',
+]
 
 function readDevVars(): Record<string, string> {
   // Walk up from cwd to find .dev.vars (handles worktree vs main repo)
