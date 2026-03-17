@@ -1027,6 +1027,27 @@ function normalizeSpecValue(key: string, raw: string): string {
     const m = v.match(/(\d+)/)
     return m ? m[1] : v
   }
+  // panel_type: normalize all locale variants → canonical English Acer panel names
+  // CineCrystal = Acer glossy IPS. ComfyView = Acer matte. Values differ per locale but
+  // describe the same physical panel. Map to English canonical strings.
+  if (key === 'panel_type') {
+    const lower = v.toLowerCase()
+    const isCineCrystal = lower.includes('cinecrystal')
+    const isComfyView   = lower.includes('comfyview')
+    const isTN          = lower.includes('tn') || lower.includes('twisted') || lower.includes('torsadé') || lower.includes('torsade')
+    const isEyesafe     = lower.includes('eyesafe') || lower.includes('silmäsuojaus')
+    const isOLED        = lower.includes('oled')
+    if (isOLED)        return 'OLED'
+    if (isCineCrystal) return isEyesafe ? 'CineCrystal IPS (Glossy) Eyesafe' : 'CineCrystal IPS (Glossy)'
+    if (isComfyView)   {
+      if (isTN)        return 'ComfyView TN (Matte)'
+      if (isEyesafe)   return 'ComfyView IPS (Matte) Eyesafe'
+      return 'ComfyView IPS (Matte)'
+    }
+    // Standalone IPS/TN descriptions (no Acer branding)
+    if (isTN)  return 'TN'
+    if (lower.includes('ips') || lower.includes('in-plane')) return 'IPS'
+  }
   // Boolean attributes (touchscreen etc.): normalise non-English Yes/No
   if (key === 'touchscreen' || key === 'curved') {
     const lower = v.toLowerCase()
@@ -1036,6 +1057,9 @@ function normalizeSpecValue(key: string, raw: string): string {
   // Color: translate non-English color names to English
   if (key === 'color') {
     const lower = v.toLowerCase()
+    // Normalize English spelling variants
+    if (lower === 'grey') return 'Gray'
+    if (lower === 'silveré' || lower === 'argente' || lower === 'argenté') return 'Silver'
     // Direct match (e.g. "Svart" → "Black")
     if (NON_EN_COLORS[lower]) return NON_EN_COLORS[lower]
     // Compound color (e.g. "Svart / Goud" → "Black / Gold")

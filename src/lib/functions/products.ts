@@ -213,6 +213,7 @@ interface UpdateProductInput {
     status?: 'active' | 'archived'
     isFeatured?: boolean
     categoryIds?: string[]
+    variantGroupId?: string | null
   }
   platforms?: Platform[]
   triggeredBy?: TriggeredBy
@@ -231,6 +232,7 @@ export async function updateProduct(
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
+  if ('variantGroupId' in input.fields)       d1Update.variantGroupId = input.fields.variantGroupId ?? null
 
   await db.update(products)
     .set(d1Update)

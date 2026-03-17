@@ -35,6 +35,7 @@ export const products = sqliteTable('products', {
   productType:          text('product_type'),
   isFeatured:           integer('is_featured').notNull().default(0),
   pendingReview:        integer('pending_review').notNull().default(0), // 1 = auto-created, needs user check
+  variantGroupId:       text('variant_group_id'), // shared UUID for keyboard-layout variant siblings
   supplierId:           text('supplier_id').references(() => suppliers.id),
   // Push status per channel: 'N' = don't push, '2push' = push on next run, 'done' = already pushed
   pushedCoincart2:          text('pushed_coincart2').notNull().default('N'),

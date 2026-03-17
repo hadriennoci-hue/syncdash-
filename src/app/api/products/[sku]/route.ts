@@ -72,7 +72,8 @@ const patchSchema = z.object({
     countryOfManufacture: z.string().optional(),
     weight:               z.number().positive().optional(),
     weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
-  }),
+  }).optional(),
+  variantGroupId: z.string().uuid().nullable().optional(),
   platforms:   z.array(z.string()).min(1).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
@@ -186,8 +187,9 @@ export async function PATCH(
 
   const results = await updateProduct(params.sku, {
     fields: {
-      ...parsed.data.fields,
-      categoryIds: parsed.data.fields.categoryIds ?? parsed.data.fields.collections,
+      ...(parsed.data.fields ?? {}),
+      categoryIds: parsed.data.fields?.categoryIds ?? parsed.data.fields?.collections,
+      variantGroupId: parsed.data.variantGroupId,
     },
     platforms:   (parsed.data.platforms ?? []) as Platform[],
     triggeredBy: parsed.data.triggeredBy,
