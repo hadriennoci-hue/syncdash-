@@ -902,7 +902,7 @@ async function main(): Promise<void> {
     const generatedTags = (category === 'monitor' || category === 'laptops')
       ? generateTags(
           category,
-          translatedAttrs.filter((attr): attr is { key: string; value: string } => typeof attr.value === 'string' && attr.value.length > 0),
+          translatedAttrs.filter((attr): attr is { key: string; value: string; type: string } => typeof attr.value === 'string' && attr.value.length > 0),
           nextTitle,
           nextDescription,
         )
