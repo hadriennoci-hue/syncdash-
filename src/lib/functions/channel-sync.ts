@@ -91,6 +91,7 @@ interface VariantGroupMember {
   priceRow: PriceRow | undefined
   totalStock: number
   keyboardLayout: string | null
+  color: string | null
 }
 
 interface SinglePushTarget {
@@ -315,6 +316,13 @@ function getKeyboardLayout(product: EligibleProduct): string | null {
   return metafield?.value?.trim() ?? null
 }
 
+function getColor(product: EligibleProduct): string | null {
+  const metafield = product.metafields.find((mf) =>
+    mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === 'color'
+  )
+  return metafield?.value?.trim() ?? null
+}
+
 function formatKeyboardLayout(layout: string | null, fallbackSku: string): string {
   if (!layout) return fallbackSku
   const normalized = layout.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
@@ -380,6 +388,7 @@ function buildPushTargets(eligible: EligibleProduct[], platform: Platform): Push
         priceRow: getProductPriceRow(member, platform),
         totalStock: getProductTotalStock(member),
         keyboardLayout: getKeyboardLayout(member),
+        color: getColor(member),
       }))
       .sort((a, b) => a.product.id.localeCompare(b.product.id))
 
@@ -622,19 +631,23 @@ async function pushPlatform(
                 }
           )
       const variantPayloads = target.kind === 'group'
-        ? target.members.map((member) => ({
-            title: formatKeyboardLayout(member.keyboardLayout, member.product.id),
+        ? target.members.map((member) => {
+            const layoutLabel = formatKeyboardLayout(member.keyboardLayout, member.product.id)
+            const colorLabel = member.color?.trim() || null
+            return {
+            title: colorLabel ? `${layoutLabel} / ${colorLabel}` : layoutLabel,
             sku: member.product.id,
             price: member.priceRow?.price ?? null,
             compareAt: member.priceRow?.compareAt ?? null,
             stock: member.totalStock,
             optionName1: 'Keyboard Layout',
-            option1: formatKeyboardLayout(member.keyboardLayout, member.product.id),
-            optionName2: null,
-            option2: null,
+            option1: layoutLabel,
+            optionName2: colorLabel ? 'Color' : null,
+            option2: colorLabel,
             optionName3: null,
             option3: null,
-          }))
+          }
+        })
         : buildVariantPayloads(primary, priceRow?.price ?? null, priceRow?.compareAt ?? null)
       const payloadWithVariants = {
         ...identityPatch,

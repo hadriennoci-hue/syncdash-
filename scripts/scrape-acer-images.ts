@@ -421,6 +421,11 @@ function detectKeyboardLayout(sourceUrl: string): string | null {
   return locale ? (KEYBOARD_LAYOUT_BY_LOCALE[locale] ?? null) : null
 }
 
+function isKeyboardInputDevice(sourceName: string, sourceUrl: string): boolean {
+  const text = `${sourceName} ${sourceUrl}`.toLowerCase()
+  return /keyboard|clavier|teclado|tastiera|tastatur|toetsenbord|klawiatura/.test(text)
+}
+
 // ---------------------------------------------------------------------------
 // Attribute label → key maps  (one block per language, same attribute keys)
 // To add a new language: copy a block, change the labels, add the locale key.
@@ -1431,6 +1436,31 @@ async function uploadProductInfo(
   if (!res.ok) throw new Error(`Product PATCH ${res.status}: ${await res.text()}`)
 }
 
+async function autoLinkVariantFamily(sku: string): Promise<{
+  linked: boolean
+  sourceSku?: string
+  siblingSkus?: string[]
+  reason?: string
+}> {
+  const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}/variant-family`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${TOKEN}`,
+      ...getAccessHeaders(),
+    },
+    body: JSON.stringify({ triggeredBy: 'agent' }),
+  })
+  if (!res.ok) throw new Error(`Variant family POST ${res.status}: ${await res.text()}`)
+  const json = await res.json() as { data?: { linked?: boolean; sourceSku?: string; siblingSkus?: string[]; reason?: string } }
+  return {
+    linked: !!json.data?.linked,
+    sourceSku: json.data?.sourceSku,
+    siblingSkus: json.data?.siblingSkus ?? [],
+    reason: json.data?.reason,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Process one product
 // ---------------------------------------------------------------------------
@@ -1498,6 +1528,7 @@ async function processProduct(
 
   const { images: imageRefs, specs: rawSpecs, description } = pageData
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
+  let linkedVariantFamily = false
 
   // ------------------------------------------------------------------
   // Step 3: Save description + flag product if translation is needed
@@ -1548,8 +1579,8 @@ async function processProduct(
       for (const u of unmappedLabels) log(`       ${u}`)
       log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${fetchLocale ?? '?'}] if needed.`)
     }
-    // For laptops: append keyboard_layout derived from source URL locale
-    if (category === 'laptops') {
+    // For laptops and keyboard accessories: append keyboard_layout derived from source URL locale.
+    if (category === 'laptops' || (category === 'input-device' && isKeyboardInputDevice(sourceName, sourceUrl))) {
       const layout = detectKeyboardLayout(sourceUrl)
       if (layout) {
         attributes.push({ key: 'keyboard_layout', value: layout })
@@ -1562,6 +1593,16 @@ async function processProduct(
       try {
         await uploadAttributes(sku, attributes)
         log(`  📋 ${attributes.length} attributes saved (${category}, locale=${fetchLocale ?? 'unknown'})`)
+
+        if (attributes.some((attr) => attr.key === 'keyboard_layout')) {
+          const family = await autoLinkVariantFamily(sku)
+          if (family.linked) {
+            linkedVariantFamily = true
+            log(`  🔗 Variant family linked via ${family.sourceSku ?? 'existing laptop'}${family.siblingSkus?.length ? ` (${family.siblingSkus.join(', ')})` : ''}`)
+          } else {
+            log(`  ℹ️  No variant family match (${family.reason ?? 'none'})`)
+          }
+        }
       } catch (err) {
         log(`  ⚠️  Attributes failed: ${err instanceof Error ? err.message : err}`)
       }
@@ -1573,7 +1614,9 @@ async function processProduct(
   // ------------------------------------------------------------------
   // Step 5: Assign shopify_tiktok collection (skip if already assigned)
   // ------------------------------------------------------------------
-  if (category && !existing.hasCategory) {
+  if (linkedVariantFamily) {
+    log(`  ℹ️  Collection inherited from linked variant family`)
+  } else if (category && !existing.hasCategory) {
     try {
       await assignCollection(sku, category)
     } catch (err) {
@@ -1642,7 +1685,7 @@ async function processProduct(
     // Re-run mapSpecs without warnings — pure function, cheap, no side effects.
     // Needed because attributes may have been skipped (existing.hasAttributes).
     const attrsForTags = mapSpecs(rawSpecs, category, fetchLocale)
-    if (category === 'laptops') {
+    if (category === 'laptops' || (category === 'input-device' && isKeyboardInputDevice(sourceName, sourceUrl))) {
       const layout = detectKeyboardLayout(sourceUrl)
       if (layout) attrsForTags.push({ key: 'keyboard_layout', value: layout })
     }

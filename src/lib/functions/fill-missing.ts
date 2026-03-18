@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { canonicalizeAttributeValue } from './attribute-options'
+import { autoLinkVariantFamily } from './variant-family'
 import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 import { generateId } from '@/lib/utils/id'
@@ -635,6 +636,14 @@ export async function fillMissingFields(
 
   await backfillMissingAttributes(workingProduct, workingState, firecrawlBudget, filled, sources)
   await backfillFromWarehouses(workingProduct, firecrawlBudget, filled, sources)
+
+  if (workingState.isLaptop) {
+    const familyResult = await autoLinkVariantFamily(workingProduct.id, triggeredBy)
+    if (familyResult.linked) {
+      filled.push('variant_family')
+      sources.push(`family:${familyResult.sourceSku ?? 'matched'}`)
+    }
+  }
 
   const finalProduct = await load()
   if (!finalProduct) throw new Error(`Product ${sku} not found after backfill`)
