@@ -317,32 +317,53 @@ export class ShopifyConnector implements PlatformConnector {
   // Online Store publication
   // -------------------------------------------------------------------------
 
-  private async resolveOnlineStorePublicationId(): Promise<string | null> {
+  private async resolveOnlineStorePublicationId(): Promise<string> {
     if (this.onlineStorePublicationId) return this.onlineStorePublicationId
     const data = await this.graphql<{
-      publications: { nodes: Array<{ id: string; name: string }> }
-    }>(`{ publications(first: 20) { nodes { id name } } }`)
-    const pub = data.publications.nodes.find((p) =>
-      p.name.toLowerCase().includes('online store')
+      publications: { nodes: Array<{ id: string; name: string; catalog: { __typename: string } | null }> }
+    }>(`{ publications(first: 20) { nodes { id name catalog { __typename } } } }`)
+    // Prefer the publication whose catalog is explicitly OnlineStoreCatalog,
+    // fall back to any publication whose name contains "online store".
+    const byType = data.publications.nodes.find(
+      (p) => p.catalog?.__typename === 'OnlineStoreCatalog'
     )
-    this.onlineStorePublicationId = pub?.id ?? null
+    const byName = data.publications.nodes.find(
+      (p) => p.name.toLowerCase().includes('online store')
+    )
+    const pub = byType ?? byName
+    if (!pub) {
+      throw new Error(
+        `Online Store publication not found. Available: ${data.publications.nodes.map((p) => `"${p.name}"(${p.catalog?.__typename ?? 'no-catalog'})`).join(', ')}`
+      )
+    }
+    this.onlineStorePublicationId = pub.id
     return this.onlineStorePublicationId
   }
 
   private async publishToOnlineStore(productGid: string): Promise<void> {
     const publicationId = await this.resolveOnlineStorePublicationId()
-    if (!publicationId) return
     const mutation = `
       mutation PublishProduct($id: ID!, $input: PublishablePublishInput!) {
         publishablePublish(id: $id, input: $input) {
+          publishable { ... on Product { publishedOnCurrentPublication } }
           userErrors { field message }
         }
       }
     `
-    await this.graphql(mutation, {
+    const result = await this.graphql<{
+      publishablePublish: {
+        publishable: { publishedOnCurrentPublication?: boolean } | null
+        userErrors: Array<{ field: string; message: string }>
+      }
+    }>(mutation, {
       id: productGid,
       input: { publicationIds: [publicationId] },
     })
+    if (result.publishablePublish.userErrors.length > 0) {
+      throw new Error(
+        `publishablePublish errors: ${result.publishablePublish.userErrors.map((e) => `${e.field}: ${e.message}`).join(', ')}`
+      )
+    }
   }
 
   private async createVariableProductViaGraphQL(data: ProductPayload): Promise<string> {
