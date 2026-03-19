@@ -7,6 +7,7 @@ import { requestRunnerWake } from '@/lib/functions/runner-signal'
 import { db } from '@/lib/db/client'
 import { salesChannels } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
+import { findUnsavedChannelRows } from '@/lib/functions/channel-unsaved'
 import type { Platform } from '@/types/platform'
 
 
@@ -23,6 +24,18 @@ export async function POST(req: NextRequest) {
   const body   = await req.json()
   const parsed = schema.safeParse(body)
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
+  const platforms = parsed.data.platforms as Platform[]
+
+  for (const platform of platforms) {
+    const issues = await findUnsavedChannelRows(platform)
+    if (issues.length > 0) {
+      return apiError(
+        'VALIDATION_ERROR',
+        `${platform} sale channel needs to be saved first (${issues.length} unsaved row(s), first SKU: ${issues[0].sku})`,
+        400
+      )
+    }
+  }
 
   // Wake local browser runner immediately when Push starts.
   // Runner itself processes only products currently marked 2push.
@@ -30,10 +43,10 @@ export async function POST(req: NextRequest) {
   const startedAt = new Date().toISOString()
   await db.update(salesChannels)
     .set({ lastPush: startedAt })
-    .where(inArray(salesChannels.id, parsed.data.platforms as Platform[]))
+    .where(inArray(salesChannels.id, platforms))
 
   const results = await syncChannelAvailability(
-    parsed.data.platforms as Platform[],
+    platforms,
     parsed.data.triggeredBy,
     { protectRecentChannelEditsHours: parsed.data.protectRecentChannelEditsHours }
   )
