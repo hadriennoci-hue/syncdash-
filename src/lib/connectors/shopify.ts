@@ -11,6 +11,7 @@ const SHOPIFY_ELECTRONICS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/el'
 
 export class ShopifyConnector implements PlatformConnector {
   private readonly baseUrl: string
+  private onlineStorePublicationId: string | null = null
 
   constructor(
     private readonly shop: string,
@@ -312,6 +313,38 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  // -------------------------------------------------------------------------
+  // Online Store publication
+  // -------------------------------------------------------------------------
+
+  private async resolveOnlineStorePublicationId(): Promise<string | null> {
+    if (this.onlineStorePublicationId) return this.onlineStorePublicationId
+    const data = await this.graphql<{
+      publications: { nodes: Array<{ id: string; name: string }> }
+    }>(`{ publications(first: 20) { nodes { id name } } }`)
+    const pub = data.publications.nodes.find((p) =>
+      p.name.toLowerCase().includes('online store')
+    )
+    this.onlineStorePublicationId = pub?.id ?? null
+    return this.onlineStorePublicationId
+  }
+
+  private async publishToOnlineStore(productGid: string): Promise<void> {
+    const publicationId = await this.resolveOnlineStorePublicationId()
+    if (!publicationId) return
+    const mutation = `
+      mutation PublishProduct($id: ID!, $input: PublishablePublishInput!) {
+        publishablePublish(id: $id, input: $input) {
+          userErrors { field message }
+        }
+      }
+    `
+    await this.graphql(mutation, {
+      id: productGid,
+      input: { publicationIds: [publicationId] },
+    })
+  }
+
   private async createVariableProductViaGraphQL(data: ProductPayload): Promise<string> {
     // Build option dimensions from variant payloads
     const optionBuckets = new Map<string, Set<string>>()
@@ -412,6 +445,7 @@ export class ShopifyConnector implements PlatformConnector {
       throw new Error(bulkResult.productVariantsBulkCreate.userErrors.map((e) => e.message).join(', '))
     }
 
+    await this.publishToOnlineStore(productId)
     return productId
   }
 
@@ -498,6 +532,7 @@ export class ShopifyConnector implements PlatformConnector {
       }).catch(() => {})
     }
 
+    await this.publishToOnlineStore(productId)
     return productId
   }
 
@@ -548,6 +583,8 @@ export class ShopifyConnector implements PlatformConnector {
         }).catch(() => {})
       }
     }
+
+    await this.publishToOnlineStore(platformId)
   }
 
   async updateProductForSku(platformId: string, _sku: string, data: Partial<ProductPayload>): Promise<void> {

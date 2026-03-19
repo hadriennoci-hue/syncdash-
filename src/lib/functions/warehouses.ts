@@ -107,7 +107,7 @@ export async function applyWarehouseSnapshots(
           description: snap.description ?? null,
           status: 'info',
           pendingReview: 1,
-          ...(isAcerSource ? { supplierId: 'acer' } : {}),
+          ...(isAcerSource ? { supplierId: 'acer', vendor: 'Acer' } : {}),
           ...(isAcerSource ? {
             pushedShopifyKomputerzz: '2push',
             pushedCoincart2:       '2push',
@@ -119,7 +119,7 @@ export async function applyWarehouseSnapshots(
 
       if (isAcerSource) {
         await db.update(products)
-          .set({ supplierId: 'acer' })
+          .set({ supplierId: 'acer', vendor: 'Acer' })
           .where(and(eq(products.id, snap.sku), isNull(products.supplierId)))
 
         // en-ie scans always update the product title to the English name.
