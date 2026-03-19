@@ -292,7 +292,7 @@ function checkBaseCompleteness(p: EligibleProduct): string[] {
 
   if (!p.title || p.title === p.id) missing.push('title')
   if (!p.description?.trim())        missing.push('description')
-  if (p.images.length < 2)           missing.push(`images (${p.images.length}/2)`)
+  if (p.images.length < 1)           missing.push(`images (${p.images.length}/1)`)
 
   return missing
 }
@@ -924,4 +924,3 @@ async function pushPlatform(
     incomplete: [],
   }
 }
-

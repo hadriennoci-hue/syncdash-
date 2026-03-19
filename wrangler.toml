@@ -36,7 +36,7 @@ COINCART_URL                       = "https://coincart.store"
 COINCART_API_URL                   = "https://coincart-api.hadrien-noci.workers.dev"
 SHOPIFY_KOMPUTERZZ_SHOP            = "ikw70s-fr.myshopify.com"
 SHOPIFY_TIKTOK_SHOP                = "qanjg5-0h.myshopify.com"
-SHOPIFY_TIKTOK_IRELAND_LOCATION_ID = "gid://shopify/Location/77845233826"
+SHOPIFY_TIKTOK_IRELAND_LOCATION_ID = "gid://shopify/Location/79861219490"
 R2_PUBLIC_URL                      = "https://images.wizhard.store"
 ACER_STORE_SCRAPE_URLS             = "https://store.acer.com/fr-fr/ecrans,https://store.acer.com/fr-fr/peripheriques,https://store.acer.com/fr-fr/accessoires"
 

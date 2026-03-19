@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { categories, productCategories, productImages, productMetafields, productPrices, products } from '@/lib/db/schema'
+import { categories, platformMappings, productCategories, productImages, productMetafields, productPrices, products } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
@@ -9,6 +9,8 @@ import { firecrawlSemaphore } from '@/lib/utils/rate-limiter'
 import FirecrawlApp from '@mendable/firecrawl-js'
 import { generateId } from '@/lib/utils/id'
 import { isUsablePlainTextDescription } from '@/lib/utils/description'
+import { createConnector } from '@/lib/connectors/registry'
+import type { RawCollection, RawImage, RawProduct } from '@/lib/connectors/types'
 
 export interface FillResult {
   sku: string
@@ -44,6 +46,33 @@ interface FirecrawlBudget {
 }
 
 const WIZHARD_COLLECTION_PLATFORM = 'shopify_komputerzz'
+const IRELAND_SOURCE_PLATFORM = 'shopify_tiktok'
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+}
+
+function toPlainTextLines(html: string): string {
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/\s*p\s*>/gi, '\n')
+    .replace(/<\/\s*div\s*>/gi, '\n')
+  const stripped = withBreaks.replace(/<[^>]+>/g, ' ')
+  const decoded = decodeHtmlEntities(stripped)
+  return decoded
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n\s+/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
 
 function normalizeText(input: string): string {
   return input
@@ -57,6 +86,52 @@ function inferCollectionSlugFromTitle(title: string): 'laptops' | 'displays' | n
   if (t.includes('ecran')) return 'displays'
   if (t.includes('ordinateur portable') || t.includes('convertible')) return 'laptops'
   return null
+}
+
+function normalizeCollectionSlug(slug: string | null, name: string): string {
+  const base = (slug ?? name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return base
+}
+
+function inferTagsFromShopify(raw: RawProduct): string[] {
+  const tags: string[] = []
+  const text = normalizeText(`${raw.title} ${toPlainTextLines(raw.description ?? '')}`)
+  const slugText = raw.collections.map((c) => normalizeCollectionSlug(c.slug ?? null, c.name)).join(' ')
+
+  const push = (value: string) => {
+    const tag = value.trim().toLowerCase()
+    if (!tag || /\s/.test(tag) || tags.includes(tag)) return
+    tags.push(tag)
+  }
+
+  if (text.includes('predator')) push('predator')
+  else if (text.includes('acer')) push('acer')
+
+  if (text.includes('backpack') || text.includes('bag')) push('backpack')
+  if (text.includes('mouse')) push('mouse')
+  if (text.includes('controller')) push('controller')
+  if (text.includes('docking')) push('docking')
+  if (text.includes('headset') || text.includes('galea')) push('headset')
+  if (text.includes('hotspot') || text.includes('5g')) push('hotspot')
+  if (text.includes('gaming')) push('gaming')
+  if (text.includes('smartphone')) push('smartphone')
+  if (text.includes('wireless')) push('wireless')
+  if (text.includes('urban')) push('urban')
+  if (text.includes('vertical')) push('vertical')
+
+  if (slugText.includes('laptops')) push('laptop')
+  if (slugText.includes('displays')) push('monitor')
+  if (slugText.includes('accessories')) push('accessories')
+  if (slugText.includes('gaming')) push('gaming')
+  if (slugText.includes('bags')) push('bag')
+  if (slugText.includes('cases')) push('case')
+  if (slugText.includes('lifestyle')) push('lifestyle')
+
+  return tags.slice(0, 6)
 }
 
 function parseTags(raw: string | null): string[] {
@@ -182,7 +257,7 @@ function buildState(product: {
     hasName: product.title.trim().length > 0 && product.title !== product.id,
     hasSku: product.id.trim().length > 0,
     hasDescription: isUsablePlainTextDescription(product.description),
-    hasImages: product.images.length >= 2,
+    hasImages: product.images.length >= 1,
     hasTags: tags.length > 0,
     hasPrice: priceRow?.price != null,
     hasCollection,
@@ -212,7 +287,7 @@ function getMissing(state: ProductState): string[] {
   if (!state.hasName) m.push('name')
   if (!state.hasSku) m.push('sku')
   if (!state.hasDescription) m.push('description')
-  if (!state.hasImages) m.push('images (min 2)')
+  if (!state.hasImages) m.push('images (min 1)')
   if (!state.hasTags) m.push('tags')
   if (!state.hasPrice) m.push('price')
   if (!state.hasCollection) m.push('collection')
@@ -405,6 +480,153 @@ async function backfillMissingImages(
 
   filled.push(`images(${images.length})`)
   sources.push(sourceRow.warehouseId)
+}
+
+async function upsertShopifyCollections(
+  sku: string,
+  collections: RawCollection[],
+  platform: typeof IRELAND_SOURCE_PLATFORM
+): Promise<number> {
+  if (collections.length === 0) return 0
+
+  const categoryIds = new Set<string>()
+  for (const col of collections) {
+    const normalizedSlug = normalizeCollectionSlug(col.slug ?? null, col.name)
+    if (!normalizedSlug) continue
+
+    const sourceCategoryId = `${platform}_${col.platformId}`
+    await db.insert(categories).values({
+      id: sourceCategoryId,
+      platform,
+      name: col.name,
+      slug: normalizedSlug,
+      collectionType: 'product',
+      createdAt: new Date().toISOString(),
+    }).onConflictDoUpdate({
+      target: categories.id,
+      set: { name: col.name, slug: normalizedSlug, platform, collectionType: 'product' },
+    })
+    categoryIds.add(sourceCategoryId)
+
+    const wizhardCategoryId = `wizhard_${normalizedSlug}`
+    await db.insert(categories).values({
+      id: wizhardCategoryId,
+      platform: WIZHARD_COLLECTION_PLATFORM,
+      name: col.name,
+      slug: normalizedSlug,
+      collectionType: 'product',
+      createdAt: new Date().toISOString(),
+    }).onConflictDoUpdate({
+      target: categories.id,
+      set: { name: col.name, slug: normalizedSlug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
+    })
+    categoryIds.add(wizhardCategoryId)
+  }
+
+  for (const categoryId of categoryIds) {
+    await db.insert(productCategories).values({ productId: sku, categoryId }).onConflictDoNothing()
+  }
+
+  return categoryIds.size
+}
+
+async function replaceImages(sku: string, images: RawImage[]): Promise<number> {
+  if (images.length === 0) return 0
+  await db.delete(productImages).where(eq(productImages.productId, sku))
+  await db.insert(productImages).values(
+    images.slice(0, 10).map((img, index) => ({
+      id: generateId(),
+      productId: sku,
+      url: img.url,
+      alt: img.alt,
+      position: img.position ?? index,
+      width: img.width,
+      height: img.height,
+      createdAt: new Date().toISOString(),
+    }))
+  )
+  return Math.min(images.length, 10)
+}
+
+async function backfillFromIrelandShopify(
+  product: {
+    id: string
+    title: string
+    description: string | null
+    tags: string | null
+    images: Array<unknown>
+    categories: Array<{ category?: { name: string; slug: string | null; platform: string } }>
+    warehouseStock: Array<{ warehouseId: string }>
+  },
+  state: ProductState,
+  filled: string[],
+  sources: string[]
+): Promise<void> {
+  const hasIrelandSource = product.warehouseStock.some((ws) => ws.warehouseId === 'ireland')
+  if (!hasIrelandSource) return
+
+  const needsDescription = !state.hasDescription
+  const needsImages = !state.hasImages
+  const needsCollection = !state.hasCollection
+  const needsTags = !state.hasTags
+  if (!needsDescription && !needsImages && !needsCollection && !needsTags) return
+
+  const connector = await createConnector(IRELAND_SOURCE_PLATFORM)
+  const platformId = await connector.findProductIdBySku?.(product.id)
+  if (!platformId) return
+
+  const raw = await connector.getProduct(platformId)
+  const now = new Date().toISOString()
+
+  if (needsDescription) {
+    const description = raw.description ? toPlainTextLines(raw.description) : null
+    if (isUsablePlainTextDescription(description)) {
+      await db.update(products)
+        .set({ description, updatedAt: now })
+        .where(eq(products.id, product.id))
+      filled.push('description')
+      sources.push(IRELAND_SOURCE_PLATFORM)
+    }
+  }
+
+  if (needsImages) {
+    const inserted = await replaceImages(product.id, raw.images)
+    if (inserted > 0) {
+      filled.push(`images(${inserted})`)
+      sources.push(IRELAND_SOURCE_PLATFORM)
+    }
+  }
+
+  if (needsCollection) {
+    const linked = await upsertShopifyCollections(product.id, raw.collections, IRELAND_SOURCE_PLATFORM)
+    if (linked > 0) {
+      filled.push('collection')
+      sources.push(IRELAND_SOURCE_PLATFORM)
+    }
+  }
+
+  if (needsTags) {
+    const tags = inferTagsFromShopify(raw)
+    if (tags.length > 0) {
+      await db.update(products)
+        .set({ tags: JSON.stringify(tags), updatedAt: now })
+        .where(eq(products.id, product.id))
+      filled.push('tags')
+      sources.push(IRELAND_SOURCE_PLATFORM)
+    }
+  }
+
+  await db.insert(platformMappings).values({
+    productId: product.id,
+    platform: IRELAND_SOURCE_PLATFORM,
+    platformId,
+    syncStatus: 'synced',
+    lastSynced: now,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: [platformMappings.productId, platformMappings.platform],
+    set: { platformId, syncStatus: 'synced', lastSynced: now, updatedAt: now },
+  })
 }
 
 async function backfillFromWarehouses(
@@ -632,6 +854,13 @@ export async function fillMissingFields(
   if (afterImageBackfill) {
     workingProduct = afterImageBackfill
     workingState = buildState(afterImageBackfill)
+  }
+
+  await backfillFromIrelandShopify(workingProduct, workingState, filled, sources)
+  const afterIrelandBackfill = await load()
+  if (afterIrelandBackfill) {
+    workingProduct = afterIrelandBackfill
+    workingState = buildState(afterIrelandBackfill)
   }
 
   await backfillMissingAttributes(workingProduct, workingState, firecrawlBudget, filled, sources)
