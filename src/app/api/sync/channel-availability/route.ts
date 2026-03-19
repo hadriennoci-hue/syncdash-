@@ -4,6 +4,9 @@ import { verifyBearer } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
 import { syncChannelAvailability } from '@/lib/functions/channel-sync'
 import { requestRunnerWake } from '@/lib/functions/runner-signal'
+import { db } from '@/lib/db/client'
+import { salesChannels } from '@/lib/db/schema'
+import { inArray } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
 
@@ -24,6 +27,10 @@ export async function POST(req: NextRequest) {
   // Wake local browser runner immediately when Push starts.
   // Runner itself processes only products currently marked 2push.
   await requestRunnerWake('browser', 'channel-availability push')
+  const startedAt = new Date().toISOString()
+  await db.update(salesChannels)
+    .set({ lastPush: startedAt })
+    .where(inArray(salesChannels.id, parsed.data.platforms as Platform[]))
 
   const results = await syncChannelAvailability(
     parsed.data.platforms as Platform[],

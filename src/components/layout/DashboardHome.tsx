@@ -42,6 +42,7 @@ interface DashboardSummary {
   readyToPush: { count: number }
   wizhard: { productsToFill: number }
   suppliers: { lastInvoiceDate: string | null }
+  lastPush: string | null
 }
 
 const WAREHOUSES = [
@@ -211,8 +212,11 @@ export function DashboardHome() {
 
   useEffect(() => {
     setLastScan(localStorage.getItem('lastStockScan'))
-    setLastPush(localStorage.getItem('lastChannelPush'))
   }, [])
+
+  useEffect(() => {
+    setLastPush(summary?.lastPush ?? null)
+  }, [summary?.lastPush])
 
   useEffect(() => {
     if (!pushing || !activePushPlatform) return
@@ -288,6 +292,8 @@ export function DashboardHome() {
     setPushing(true)
     setPushResult(null)
     setPushError(null)
+    const startedAt = new Date().toISOString()
+    setLastPush(startedAt)
     const selectedPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
     const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
     setActivePushPlatform(null)

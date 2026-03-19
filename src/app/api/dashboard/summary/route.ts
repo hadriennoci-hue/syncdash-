@@ -156,6 +156,12 @@ export async function GET(req: NextRequest) {
       createdAt: null,
     }))
 
+  const lastPush = channelRows.reduce<string | null>((latest, channel) => {
+    if (!channel.lastPush) return latest
+    if (!latest) return channel.lastPush
+    return channel.lastPush > latest ? channel.lastPush : latest
+  }, null)
+
   return apiResponse({
     warehouses: ACTIVE_WAREHOUSES.map((id) => ({
       id,
@@ -180,6 +186,6 @@ export async function GET(req: NextRequest) {
     suppliers: {
       lastInvoiceDate: lastInvoiceRows[0]?.lastInvoiceDate ?? null,
     },
+    lastPush,
   })
 }
-
