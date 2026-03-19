@@ -310,7 +310,65 @@ export function DashboardHome() {
         ])
       )
     )
+    let timeout: number | null = null
+    let currentActivePlatform: string | null = null
     try {
+      const controller = new AbortController()
+      timeout = window.setTimeout(() => controller.abort('Push timed out'), 15 * 60 * 1000)
+
+      const pollBrowserPlatform = async (platform: 'libre_market' | 'xmr_bazaar') => {
+        const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+
+        for (let attempt = 0; attempt < 120; attempt++) {
+          await new Promise((resolve) => window.setTimeout(resolve, 3000))
+          setPushBars((prev) => {
+            const current = prev[platform]
+            if (!current || current.status !== 'running') return prev
+            const nextProgress = Math.min(current.progress + 8, 94)
+            if (nextProgress === current.progress) return prev
+            return {
+              ...prev,
+              [platform]: { ...current, progress: nextProgress },
+            }
+          })
+
+          const res = await fetch(`/api/sync/logs?platform=${platform}&page=1&perPage=20`, { headers })
+          if (!res.ok) continue
+          const body = await res.json() as { data?: Array<{ action?: string; status?: string; message?: string; createdAt?: string }> }
+          const hit = (body.data ?? []).find((row) =>
+            row.action === 'browser_push_run'
+            && !!row.createdAt
+            && row.createdAt >= startedAt
+          )
+          if (!hit) continue
+
+          const isError = hit.status === 'error' || /failed=(?!0)\d+/.test(hit.message ?? '')
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: 100,
+              status: isError ? 'error' : 'success',
+              message: hit.message ?? (isError ? 'Browser push failed' : 'Browser push complete'),
+            },
+          }))
+          return
+        }
+
+        setPushBars((prev) => ({
+          ...prev,
+          [platform]: {
+            ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+            label: prev[platform]?.label ?? labels[platform],
+            progress: 100,
+            status: 'error',
+            message: 'No browser runner result found',
+          },
+        }))
+      }
+
       const headers: HeadersInit = {}
       const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
       if (token) headers.Authorization = `Bearer ${token}`
@@ -321,6 +379,7 @@ export function DashboardHome() {
           'Content-Type': 'application/json',
           ...headers,
         },
+        signal: controller.signal,
         body: JSON.stringify({
           platforms: selectedPlatforms,
           triggeredBy: 'human',
@@ -332,6 +391,7 @@ export function DashboardHome() {
       const decoder = new TextDecoder()
       let buf = ''
       let final: ChannelSyncResult[] | null = null
+      let browserPollingStarted = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -357,6 +417,7 @@ export function DashboardHome() {
           }
 
           if (name === 'platform_start' && parsed.platform) {
+            currentActivePlatform = parsed.platform
             setActivePushPlatform(parsed.platform)
             setPushBars((prev) => ({
               ...prev,
@@ -386,12 +447,37 @@ export function DashboardHome() {
                 message,
               },
             }))
+            currentActivePlatform = currentActivePlatform === parsed.platform ? null : currentActivePlatform
             setActivePushPlatform((current) => (current === parsed.platform ? null : current))
+          }
+
+          if (name === 'runner_wake' && !browserPollingStarted) {
+            browserPollingStarted = true
+            for (const platform of ['libre_market', 'xmr_bazaar'] as const) {
+              setPushBars((prev) => ({
+                ...prev,
+                [platform]: {
+                  ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+                  label: prev[platform]?.label ?? labels[platform],
+                  progress: Math.max(prev[platform]?.progress ?? 4, 18),
+                  status: 'running',
+                  message: 'Runner processing...',
+                },
+              }))
+              void pollBrowserPlatform(platform)
+            }
           }
 
           if (name === 'push_done') final = parsed.results ?? []
           if (name === 'stream_error') throw new Error(parsed.message ?? 'Unknown error')
         }
+      }
+
+      if (timeout != null) window.clearTimeout(timeout)
+      if (final == null) {
+        throw new Error(currentActivePlatform
+          ? `Push stream ended unexpectedly while processing ${currentActivePlatform}`
+          : 'Push stream ended unexpectedly before completion')
       }
 
       setPushResult(final ?? [])
@@ -400,18 +486,20 @@ export function DashboardHome() {
       setLastPush(now)
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
-      setPushError(err instanceof Error ? err.message : 'Unknown error')
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setPushError(message)
       setPushBars((prev) => Object.fromEntries(
         Object.entries(prev).map(([platform, bar]) => [
           platform,
           {
             ...bar,
             status: bar.status === 'success' ? 'success' : 'error',
-            message: bar.status === 'success' ? bar.message : 'Push failed',
+            message: bar.status === 'success' ? bar.message : message,
           },
         ])
       ))
     } finally {
+      if (timeout != null) window.clearTimeout(timeout)
       setActivePushPlatform(null)
       setPushing(false)
     }
