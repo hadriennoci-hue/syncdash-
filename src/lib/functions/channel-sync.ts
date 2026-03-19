@@ -173,7 +173,9 @@ function collectProductAttributeValues(
 function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
   const targets: Array<{ handle: string; type: 'laptops' | 'monitor' }> = []
   for (const pc of product.categories) {
-    if (!pc.category || pc.category.platform !== 'shopify_komputerzz') continue
+    if (!pc.category) continue
+    const platform = pc.category.platform
+    if (platform !== 'shopify_komputerzz' && platform !== 'shopify_tiktok') continue
     const name = normalizeText(pc.category.name ?? '')
     const slug = normalizeText(pc.category.slug ?? '')
     const handle = (pc.category.slug ?? slugifyHandle(pc.category.name)).trim()
@@ -232,12 +234,20 @@ function collectCoincartAttributeValues(product: EligibleProduct): Record<string
 const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   brand: 'brand',
   processor: 'processor',
+  processor_brand: 'processor_brand',
+  processor_model: 'processor_model',
   screen_size: 'screen_size',
   resolution: 'resolution',
   screen_resolution: 'max_resolution',
   gpu: 'graphic_card',
+  graphics: 'graphic_card',
   ram: 'ram_memory',
   storage: 'ssd_size',
+  storage_type: 'storage_type',
+  panel_type: 'panel_type',
+  refresh_rate: 'refresh_rate',
+  operating_system: 'operating_system',
+  touchscreen: 'touchscreen',
   category: 'usage',
 }
 
@@ -601,9 +611,18 @@ async function pushPlatform(
       ? getProductTotalStock(primary)
       : target.members.reduce((sum, member) => sum + member.totalStock, 0)
     const priceRow = getProductPriceRow(primary, platform)
-    const coincartAttributeValues = platform === 'coincart2'
+    const coincartAttributeValuesRaw = platform === 'coincart2'
       ? collectCoincartAttributeValues(primary)
       : {}
+    // For group targets, Color and Keyboard Layout are always variant option dimensions.
+    // They must NOT also appear in product-level attributes (causes Coincart 500).
+    const coincartAttributeValues = (target.kind === 'group' && platform === 'coincart2')
+      ? Object.fromEntries(
+          Object.entries(coincartAttributeValuesRaw).filter(([key]) =>
+            key !== 'color' && key !== 'keyboard_layout'
+          )
+        )
+      : coincartAttributeValuesRaw
 
     try {
       const identityPatch = target.kind === 'group'
@@ -635,19 +654,19 @@ async function pushPlatform(
             const layoutLabel = formatKeyboardLayout(member.keyboardLayout, member.product.id)
             const colorLabel = member.color?.trim() || null
             return {
-            title: colorLabel ? `${layoutLabel} / ${colorLabel}` : layoutLabel,
-            sku: member.product.id,
-            price: member.priceRow?.price ?? null,
-            compareAt: member.priceRow?.compareAt ?? null,
-            stock: member.totalStock,
-            optionName1: 'Keyboard Layout',
-            option1: layoutLabel,
-            optionName2: colorLabel ? 'Color' : null,
-            option2: colorLabel,
-            optionName3: null,
-            option3: null,
-          }
-        })
+              title: colorLabel ? `${layoutLabel} / ${colorLabel}` : layoutLabel,
+              sku: member.product.id,
+              price: member.priceRow?.price ?? null,
+              compareAt: member.priceRow?.compareAt ?? null,
+              stock: member.totalStock,
+              optionName1: 'Keyboard Layout',
+              option1: layoutLabel,
+              optionName2: colorLabel ? 'Color' : null,
+              option2: colorLabel,
+              optionName3: null,
+              option3: null,
+            }
+          })
         : buildVariantPayloads(primary, priceRow?.price ?? null, priceRow?.compareAt ?? null)
       const payloadWithVariants = {
         ...identityPatch,

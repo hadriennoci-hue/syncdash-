@@ -1,7 +1,7 @@
 import type { Platform } from '@/types/platform'
 import type { PlatformConnector, WarehouseConnector } from './types'
 import { ShopifyConnector, ShopifyWarehouseConnector } from './shopify'
-import { WooCommerceConnector } from './woocommerce'
+import { CoincartConnector } from './coincart'
 import { EbayConnector } from './ebay'
 import { getStoredToken } from '@/lib/functions/tokens'
 
@@ -13,7 +13,7 @@ import { getStoredToken } from '@/lib/functions/tokens'
 export function getConnector(platform: Platform, tokenOverride?: string): PlatformConnector {
   switch (platform) {
     case 'coincart2':
-      return new WooCommerceConnector(
+      return new CoincartConnector(
         process.env.COINCART_URL!,
         process.env.COINCART_KEY!,
         process.env.COINCART_SECRET!,

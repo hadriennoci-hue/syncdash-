@@ -1,11 +1,11 @@
-import { woocommerceLimiter } from '@/lib/utils/rate-limiter'
+import { coincartLimiter } from '@/lib/utils/rate-limiter'
 import type {
   PlatformConnector, RawProduct, RawVariant, RawImage, RawCollection,
   ProductPayload, HealthCheckResult,
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
-export class WooCommerceConnector implements PlatformConnector {
+export class CoincartConnector implements PlatformConnector {
   private readonly baseUrl: string
 
   constructor(
@@ -23,6 +23,13 @@ export class WooCommerceConnector implements PlatformConnector {
     }
 
     this.baseUrl = `${siteUrl.replace(/\/+$/, '')}/v1/connector`
+  }
+
+  // Coincart's backend errors on non-ASCII characters (®, ™, replacement chars, etc.).
+  // Keep only printable ASCII + standard whitespace.
+  private sanitizeText(text: string | null | undefined): string {
+    if (!text) return ''
+    return text.replace(/[^\x20-\x7E\r\n\t]/g, '').trim()
   }
 
   private extractPrimaryCollectionName(data: Partial<ProductPayload>): string | null {
@@ -141,7 +148,7 @@ export class WooCommerceConnector implements PlatformConnector {
     path: string,
     body?: Record<string, unknown>
   ): Promise<T> {
-    await woocommerceLimiter.throttle()
+    await coincartLimiter.throttle()
 
     // PUT and DELETE are blocked at the Apache level on coincart.store (406).
     // Tunnel them via POST using WooCommerce's _method query parameter.
@@ -161,7 +168,7 @@ export class WooCommerceConnector implements PlatformConnector {
       // DELETE via _method still needs a body for POST
       body: body ? JSON.stringify(body) : (method === 'DELETE' ? '{}' : undefined),
     })
-    if (!res.ok) throw new Error(`WooCommerce error: ${res.status} ${await res.text()}`)
+    if (!res.ok) throw new Error(`Coincart error: ${res.status} ${await res.text()}`)
     return res.json() as Promise<T>
   }
 
@@ -342,7 +349,7 @@ export class WooCommerceConnector implements PlatformConnector {
   async getProduct(platformId: string): Promise<RawProduct> {
     const p = await this.request<Record<string, unknown>>('GET', `/products/${platformId}`)
     const product = this.normalizeProduct(p)
-    if (!product) throw new Error(`Failed to normalize WooCommerce product ${platformId}`)
+    if (!product) throw new Error(`Failed to normalize Coincart product ${platformId}`)
     return product
   }
 
@@ -379,8 +386,8 @@ export class WooCommerceConnector implements PlatformConnector {
 
     const primaryCollection = this.extractPrimaryCollectionName(data)
     const body: Record<string, unknown> = {
-      name:          data.title,
-      description:   data.description ?? '',
+      name:          this.sanitizeText(data.title),
+      description:   this.sanitizeText(data.description),
       status:        data.status === 'active' ? 'publish' : 'private',
       type:          data.variants && data.variants.length > 1 ? 'variable' : 'simple',
       sku:           data.sku ?? '',
@@ -408,8 +415,8 @@ export class WooCommerceConnector implements PlatformConnector {
 
   async updateProduct(platformId: string, data: Partial<ProductPayload>): Promise<void> {
     const body: Record<string, unknown> = {}
-    if (data.title)                   body.name = data.title
-    if (data.description !== undefined) body.description = data.description ?? ''
+    if (data.title)                   body.name = this.sanitizeText(data.title)
+    if (data.description !== undefined) body.description = this.sanitizeText(data.description)
     if (data.status)                  body.status = data.status === 'active' ? 'publish' : 'private'
     if (data.sku)                     body.sku = data.sku
     const primaryCollection = this.extractPrimaryCollectionName(data)

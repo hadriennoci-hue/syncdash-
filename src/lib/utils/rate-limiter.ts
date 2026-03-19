@@ -26,7 +26,7 @@ export class RateLimiter {
 
 // Shared instances
 export const shopifyLimiter     = new RateLimiter(2) // 2 req/s
-export const woocommerceLimiter = new RateLimiter(5) // 5 req/s (conservative)
+export const coincartLimiter    = new RateLimiter(5) // 5 req/s (conservative)
 export const ebayLimiter        = new RateLimiter(4) // 4 req/s
 
 /**

@@ -68,51 +68,6 @@ export class ShopifyConnector implements PlatformConnector {
     return n
   }
 
-  private normalizeVariantOptionName(name: string | null | undefined, fallbackIndex: number): string {
-    const trimmed = (name ?? '').trim()
-    return trimmed || `Option ${fallbackIndex}`
-  }
-
-  private buildRestVariantCreatePayload(data: ProductPayload): {
-    options: Array<{ name: string; values: string[] }>
-    variants: Array<Record<string, unknown>>
-  } {
-    const optionBuckets = new Map<string, Set<string>>()
-    const variants = (data.variants ?? []).map((v) => {
-      const opt1Name = this.normalizeVariantOptionName(v.optionName1, 1)
-      const opt2Name = this.normalizeVariantOptionName(v.optionName2, 2)
-      const opt3Name = this.normalizeVariantOptionName(v.optionName3, 3)
-      const optPairs = [
-        { name: opt1Name, value: v.option1?.trim() || null },
-        { name: opt2Name, value: v.option2?.trim() || null },
-        { name: opt3Name, value: v.option3?.trim() || null },
-      ]
-      for (const pair of optPairs) {
-        if (!pair.value) continue
-        const set = optionBuckets.get(pair.name) ?? new Set<string>()
-        set.add(pair.value)
-        optionBuckets.set(pair.name, set)
-      }
-      const hasPromo = v.compareAt != null && v.compareAt > 0
-      const basePrice = v.price
-      const promoPrice = hasPromo ? v.compareAt : null
-      return {
-        ...(v.title ? { title: v.title } : {}),
-        ...(v.sku ? { sku: v.sku } : {}),
-        ...(v.option1 ? { option1: v.option1 } : {}),
-        ...(v.option2 ? { option2: v.option2 } : {}),
-        ...(v.option3 ? { option3: v.option3 } : {}),
-        ...(promoPrice != null ? { price: promoPrice.toString() } : (basePrice != null ? { price: basePrice.toString() } : {})),
-        ...(promoPrice != null ? { compare_at_price: (basePrice ?? promoPrice).toString() } : {}),
-        inventory_management: 'shopify',
-        inventory_quantity: v.stock ?? 0,
-      }
-    })
-    const options = Array.from(optionBuckets.entries())
-      .map(([name, values]) => ({ name, values: Array.from(values.values()) }))
-      .filter((o) => o.values.length > 0)
-    return { options, variants }
-  }
 
   // -------------------------------------------------------------------------
   // Import (paginated)
@@ -357,20 +312,112 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  private async createVariableProductViaGraphQL(data: ProductPayload): Promise<string> {
+    // Build option dimensions from variant payloads
+    const optionBuckets = new Map<string, Set<string>>()
+    for (const v of data.variants!) {
+      const pairs = [
+        { name: (v.optionName1 ?? '').trim() || 'Option 1', value: v.option1?.trim() || null },
+        { name: (v.optionName2 ?? '').trim() || 'Option 2', value: v.option2?.trim() || null },
+        { name: (v.optionName3 ?? '').trim() || 'Option 3', value: v.option3?.trim() || null },
+      ]
+      for (const pair of pairs) {
+        if (!pair.value) continue
+        const set = optionBuckets.get(pair.name) ?? new Set<string>()
+        set.add(pair.value)
+        optionBuckets.set(pair.name, set)
+      }
+    }
+    const productOptions = Array.from(optionBuckets.entries())
+      .filter(([, values]) => values.size > 0)
+      .map(([name, values]) => ({ name, values: Array.from(values).map((v) => ({ name: v })) }))
+
+    // Step 1: create product with option dimensions
+    const createMutation = `
+      mutation ProductCreate($product: ProductCreateInput!) {
+        productCreate(product: $product) {
+          product { id options { id name values } }
+          userErrors { field message }
+        }
+      }
+    `
+    const productInput: Record<string, unknown> = {
+      title:           data.title,
+      descriptionHtml: data.description ?? '',
+      status:          data.status.toUpperCase(),
+      category:        data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
+      productOptions,
+    }
+    if (data.vendor)      productInput.vendor = data.vendor
+    if (data.productType) productInput.productType = data.productType
+
+    const createResult = await this.graphql<{
+      productCreate: {
+        product: {
+          id: string
+          options: Array<{ id: string; name: string; values: string[] }>
+        } | null
+        userErrors: Array<{ message: string }>
+      }
+    }>(createMutation, { product: productInput })
+
+    if (createResult.productCreate.userErrors.length > 0) {
+      throw new Error(createResult.productCreate.userErrors.map((e) => e.message).join(', '))
+    }
+
+    const productId = createResult.productCreate.product!.id
+
+    // Step 2: create all variants, removing the auto-generated standalone default variant
+    const variantInputs = data.variants!.map((v) => {
+      const optionValues: Array<{ optionName: string; name: string }> = []
+      if (v.option1?.trim() && v.optionName1?.trim()) optionValues.push({ optionName: v.optionName1.trim(), name: v.option1.trim() })
+      if (v.option2?.trim() && v.optionName2?.trim()) optionValues.push({ optionName: v.optionName2.trim(), name: v.option2.trim() })
+      if (v.option3?.trim() && v.optionName3?.trim()) optionValues.push({ optionName: v.optionName3.trim(), name: v.option3.trim() })
+
+      const hasPromo = v.compareAt != null && v.compareAt > 0
+      const basePrice = v.price
+      const promoPrice = hasPromo ? v.compareAt : null
+
+      const inventoryItem: Record<string, unknown> = { tracked: true }
+      if (v.sku) inventoryItem.sku = v.sku
+      const input: Record<string, unknown> = {
+        optionValues,
+        inventoryItem,
+      }
+      if (promoPrice != null) {
+        input.price = promoPrice.toString()
+        input.compareAtPrice = (basePrice ?? promoPrice).toString()
+      } else if (basePrice != null) {
+        input.price = basePrice.toString()
+      }
+      return input
+    })
+
+    const bulkMutation = `
+      mutation ProductVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!, $strategy: ProductVariantsBulkCreateStrategy) {
+        productVariantsBulkCreate(productId: $productId, variants: $variants, strategy: $strategy) {
+          productVariants { id sku }
+          userErrors { field message }
+        }
+      }
+    `
+    const bulkResult = await this.graphql<{
+      productVariantsBulkCreate: {
+        productVariants: Array<{ id: string; sku: string }>
+        userErrors: Array<{ message: string }>
+      }
+    }>(bulkMutation, { productId, variants: variantInputs, strategy: 'REMOVE_STANDALONE_VARIANT' })
+
+    if (bulkResult.productVariantsBulkCreate.userErrors.length > 0) {
+      throw new Error(bulkResult.productVariantsBulkCreate.userErrors.map((e) => e.message).join(', '))
+    }
+
+    return productId
+  }
+
   async createProduct(data: ProductPayload): Promise<string> {
     if ((data.variants?.length ?? 0) > 1) {
-      const variantModel = this.buildRestVariantCreatePayload(data)
-      const body: Record<string, unknown> = {
-        title: data.title,
-        body_html: data.description ?? '',
-        status: data.status === 'active' ? 'active' : 'draft',
-        ...(data.vendor ? { vendor: data.vendor } : {}),
-        ...(data.productType ? { product_type: data.productType } : {}),
-        options: variantModel.options,
-        variants: variantModel.variants,
-      }
-      const created = await this.rest<{ product: { id: number } }>('POST', '/products.json', { product: body })
-      return `gid://shopify/Product/${created.product.id}`
+      return this.createVariableProductViaGraphQL(data)
     }
 
     // Shopify 2024-04+ new product API: ProductCreateInput
