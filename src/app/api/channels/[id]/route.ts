@@ -66,12 +66,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const { searchParams } = new URL(req.url)
   const page        = parseInt(searchParams.get('page') ?? '1')
-  const perPage     = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
+  const perPage     = Math.min(parseInt(searchParams.get('perPage') ?? '1000'), 1000)
   const offset      = (page - 1) * perPage
 
   const pushCol = getPushCol(platform)
 
   const pushStatusWhere = or(eq(pushCol, '2push'), eq(pushCol, 'done'), sql`${pushCol} LIKE 'FAIL:%'`)
+  const statusRows = await db.query.products.findMany({
+    where: pushStatusWhere,
+    columns: {
+      pushedCoincart2: true,
+      pushedShopifyKomputerzz: true,
+      pushedShopifyTiktok: true,
+      pushedEbayIe: true,
+      pushedXmrBazaar: true,
+      pushedLibreMarket: true,
+    },
+  })
   let rows: Array<{
     id: string
     title: string
@@ -171,7 +182,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   let synced = 0, pending = 0, failed = 0
-  for (const row of rows) {
+  for (const row of statusRows) {
     const v = getPushValue(row as Record<string, unknown>, platform)
     if (v === 'done')              synced++
     else if (v === '2push')        pending++
@@ -210,7 +221,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const responseBody: Record<string, unknown> = {
     ...channelMeta,
-    counts:   { synced, pending, failed, total: rows.length },
+    counts:   { synced, pending, failed, total: statusRows.length },
     products: data,
   }
   return apiResponse(responseBody, 200)

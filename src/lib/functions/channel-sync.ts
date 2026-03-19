@@ -464,38 +464,6 @@ export async function syncChannelAvailability(
     p.warehouseStock.some((ws) => ws.quantity > 0)
   ) as unknown as EligibleProduct[]
 
-  const incompleteMap = new Map<string, string[]>()
-  for (const platform of platforms) {
-    for (const target of buildPushTargets(eligible, platform)) {
-      for (const issue of checkTargetCompleteness(target, platform)) {
-        const prev = incompleteMap.get(issue.sku) ?? []
-        if (issue.missing.length > 0) {
-          incompleteMap.set(issue.sku, [...new Set([...prev, ...issue.missing])])
-        }
-      }
-    }
-  }
-
-  if (incompleteMap.size > 0) {
-    const incomplete = Array.from(incompleteMap.entries()).map(([sku, missing]) => ({ sku, missing }))
-    const earlyResults = platforms.map((platform) => ({
-      platform,
-      statusUpdated: 0,
-      newProductsCreated: 0,
-      zeroedOutOfStock: 0,
-      skippedRecentEdits: 0,
-      newSkus: [],
-      errors: [],
-      incomplete,
-    }))
-    for (let index = 0; index < earlyResults.length; index++) {
-      const result = earlyResults[index]
-      await options.onPlatformStart?.({ platform: result.platform, index: index + 1, total: earlyResults.length })
-      await options.onPlatformComplete?.({ platform: result.platform, index: index + 1, total: earlyResults.length, result })
-    }
-    return earlyResults
-  }
-
   const results: ChannelSyncResult[] = []
   for (let index = 0; index < platforms.length; index++) {
     const platform = platforms[index]
@@ -531,6 +499,7 @@ async function pushPlatform(
   const connector = await createConnector(platform)
   const errors: string[] = []
   const newSkus: string[] = []
+  const incomplete: Array<{ sku: string; missing: string[] }> = []
   const touchedPlatformIds = new Set<string>()
   let statusUpdated = 0
 
@@ -616,6 +585,18 @@ async function pushPlatform(
       ? [target.primary.id]
       : target.members.map((member) => member.product.id)
     const primary = target.primary
+    const completenessIssues = checkTargetCompleteness(target, platform)
+    if (completenessIssues.length > 0) {
+      incomplete.push(...completenessIssues)
+      const issueSummary = completenessIssues
+        .map((issue) => `${issue.sku}: ${issue.missing.join(', ')}`)
+        .join(' | ')
+      const failMessage = `Incomplete for ${platform}: ${issueSummary}`.slice(0, 200)
+      await markPushStatus(productIds, `FAIL: ${failMessage}`)
+      await logPushResult(productIds, 'error', failMessage)
+      errors.push(issueSummary)
+      continue
+    }
     const mapping = primary.platformMappings.find((m) => m.platform === platform)
     if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
 
@@ -933,6 +914,6 @@ async function pushPlatform(
     skippedRecentEdits,
     newSkus,
     errors,
-    incomplete: [],
+    incomplete,
   }
 }

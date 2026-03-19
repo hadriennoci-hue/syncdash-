@@ -69,7 +69,7 @@ function handleCopyCmd() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['channel', params.id],
-    queryFn:  () => apiFetch(`/api/channels/${params.id}`),
+    queryFn:  () => apiFetch(`/api/channels/${params.id}?page=1&perPage=1000`),
   })
 
   const products: Product[] = useMemo(
