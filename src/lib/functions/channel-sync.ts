@@ -21,6 +21,8 @@ interface ChannelSyncOptions {
   // Optional protection window: when > 0, stock-zero is skipped for channel products
   // whose own updated_at is newer than now - windowHours.
   protectRecentChannelEditsHours?: number
+  onPlatformStart?: (info: { platform: Platform; index: number; total: number }) => void | Promise<void>
+  onPlatformComplete?: (info: { platform: Platform; index: number; total: number; result: ChannelSyncResult }) => void | Promise<void>
 }
 
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
@@ -476,7 +478,7 @@ export async function syncChannelAvailability(
 
   if (incompleteMap.size > 0) {
     const incomplete = Array.from(incompleteMap.entries()).map(([sku, missing]) => ({ sku, missing }))
-    return platforms.map((platform) => ({
+    const earlyResults = platforms.map((platform) => ({
       platform,
       statusUpdated: 0,
       newProductsCreated: 0,
@@ -486,11 +488,21 @@ export async function syncChannelAvailability(
       errors: [],
       incomplete,
     }))
+    for (let index = 0; index < earlyResults.length; index++) {
+      const result = earlyResults[index]
+      await options.onPlatformStart?.({ platform: result.platform, index: index + 1, total: earlyResults.length })
+      await options.onPlatformComplete?.({ platform: result.platform, index: index + 1, total: earlyResults.length, result })
+    }
+    return earlyResults
   }
 
   const results: ChannelSyncResult[] = []
-  for (const platform of platforms) {
-    results.push(await pushPlatform(platform, eligible, triggeredBy, options))
+  for (let index = 0; index < platforms.length; index++) {
+    const platform = platforms[index]
+    await options.onPlatformStart?.({ platform, index: index + 1, total: platforms.length })
+    const result = await pushPlatform(platform, eligible, triggeredBy, options)
+    results.push(result)
+    await options.onPlatformComplete?.({ platform, index: index + 1, total: platforms.length, result })
   }
   return results
 }

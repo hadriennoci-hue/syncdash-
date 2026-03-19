@@ -20,6 +20,14 @@ interface ChannelSyncResult {
   newProductsCreated: number
   zeroedOutOfStock: number
   errors: string[]
+  incomplete?: Array<{ sku: string; missing: string[] }>
+}
+
+interface PushBarState {
+  label: string
+  progress: number
+  status: 'idle' | 'running' | 'success' | 'error'
+  message: string
 }
 
 interface DashboardSummary {
@@ -192,6 +200,8 @@ export function DashboardHome() {
   const [pushing, setPushing] = useState(false)
   const [pushResult, setPushResult] = useState<ChannelSyncResult[] | null>(null)
   const [pushError, setPushError] = useState<string | null>(null)
+  const [pushBars, setPushBars] = useState<Record<string, PushBarState>>({})
+  const [activePushPlatform, setActivePushPlatform] = useState<string | null>(null)
 
   const [acerStock, setAcerStock] = useState<'idle' | 'sent'>('idle')
   const [acerFill,  setAcerFill]  = useState<'idle' | 'sent'>('idle')
@@ -203,6 +213,23 @@ export function DashboardHome() {
     setLastScan(localStorage.getItem('lastStockScan'))
     setLastPush(localStorage.getItem('lastChannelPush'))
   }, [])
+
+  useEffect(() => {
+    if (!pushing || !activePushPlatform) return
+    const timer = window.setInterval(() => {
+      setPushBars((prev) => {
+        const current = prev[activePushPlatform]
+        if (!current || current.status !== 'running') return prev
+        const nextProgress = Math.min(current.progress + 6, 92)
+        if (nextProgress === current.progress) return prev
+        return {
+          ...prev,
+          [activePushPlatform]: { ...current, progress: nextProgress },
+        }
+      })
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [pushing, activePushPlatform])
 
   async function handleScan() {
     setScanning(true)
@@ -261,19 +288,125 @@ export function DashboardHome() {
     setPushing(true)
     setPushResult(null)
     setPushError(null)
+    const selectedPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
+    const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
+    setActivePushPlatform(null)
+    setPushBars(
+      Object.fromEntries(
+        selectedPlatforms.map((platform) => [
+          platform,
+          {
+            label: labels[platform] ?? platform,
+            progress: 4,
+            status: 'idle' as const,
+            message: 'Waiting',
+          },
+        ])
+      )
+    )
     try {
-      const res = await apiPost('/api/sync/channel-availability', {
-        platforms: ['shopify_komputerzz', 'coincart2', 'ebay_ie'],
-        triggeredBy: 'human',
+      const headers: HeadersInit = {}
+      const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
+      if (token) headers.Authorization = `Bearer ${token}`
+
+      const res = await fetch('/api/sync/channel-availability/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({
+          platforms: selectedPlatforms,
+          triggeredBy: 'human',
+        }),
       })
-      setPushResult((res as { data: ChannelSyncResult[] }).data)
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      let final: ChannelSyncResult[] | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let b = buf.indexOf('\n\n')
+        while (b >= 0) {
+          const chunk = buf.slice(0, b)
+          buf = buf.slice(b + 2)
+          b = buf.indexOf('\n\n')
+          let name = 'message'
+          let data = ''
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('event:')) name = line.slice(6).trim()
+            if (line.startsWith('data:')) data += line.slice(5).trim()
+          }
+          if (!data) continue
+          const parsed = JSON.parse(data) as {
+            platform?: string
+            result?: ChannelSyncResult
+            results?: ChannelSyncResult[]
+            message?: string
+          }
+
+          if (name === 'platform_start' && parsed.platform) {
+            setActivePushPlatform(parsed.platform)
+            setPushBars((prev) => ({
+              ...prev,
+              [parsed.platform!]: {
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
+                progress: Math.max(prev[parsed.platform!]?.progress ?? 4, 12),
+                status: 'running',
+                message: 'Pushing...',
+              },
+            }))
+          }
+
+          if (name === 'platform_result' && parsed.platform && parsed.result) {
+            const hasError = parsed.result.errors.length > 0 || (parsed.result.incomplete?.length ?? 0) > 0
+            const message = parsed.result.errors[0]
+              ?? (parsed.result.incomplete?.[0]
+                ? `Incomplete: ${parsed.result.incomplete[0].sku}`
+                : `${parsed.result.statusUpdated} upd - ${parsed.result.newProductsCreated} new - ${parsed.result.zeroedOutOfStock} zeroed`)
+            setPushBars((prev) => ({
+              ...prev,
+              [parsed.platform!]: {
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
+                progress: 100,
+                status: hasError ? 'error' : 'success',
+                message,
+              },
+            }))
+            setActivePushPlatform((current) => (current === parsed.platform ? null : current))
+          }
+
+          if (name === 'push_done') final = parsed.results ?? []
+          if (name === 'stream_error') throw new Error(parsed.message ?? 'Unknown error')
+        }
+      }
+
+      setPushResult(final ?? [])
       const now = new Date().toISOString()
       localStorage.setItem('lastChannelPush', now)
       setLastPush(now)
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       setPushError(err instanceof Error ? err.message : 'Unknown error')
+      setPushBars((prev) => Object.fromEntries(
+        Object.entries(prev).map(([platform, bar]) => [
+          platform,
+          {
+            ...bar,
+            status: bar.status === 'success' ? 'success' : 'error',
+            message: bar.status === 'success' ? bar.message : 'Push failed',
+          },
+        ])
+      ))
     } finally {
+      setActivePushPlatform(null)
       setPushing(false)
     }
   }
@@ -393,6 +526,38 @@ export function DashboardHome() {
                       <p key={r.platform} className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : 'text-[#35F2A1]'}`}>
                         {r.platform}: {r.errors[0] ?? `${r.statusUpdated} upd - ${r.newProductsCreated} new - ${r.zeroedOutOfStock} zeroed`}
                       </p>
+                    ))}
+                  </div>
+                )}
+                {Object.keys(pushBars).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {Object.entries(pushBars).map(([platform, bar]) => (
+                      <div key={platform}>
+                        <div className="mb-1 flex items-center justify-between gap-3">
+                          <p className="font-mono text-[10px] text-[#E6ECFF]">{bar.label}</p>
+                          <p className={`font-mono text-[10px] ${
+                            bar.status === 'error'
+                              ? 'text-[#FF5C7A]'
+                              : bar.status === 'success'
+                                ? 'text-[#35F2A1]'
+                                : 'text-[#8FA0C7]'
+                          }`}>
+                            {bar.message}
+                          </p>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-[#1E2A44]">
+                          <div
+                            className={`h-full transition-[width] duration-500 ${
+                              bar.status === 'error'
+                                ? 'bg-[#FF5C7A]'
+                                : bar.status === 'success'
+                                  ? 'bg-[#35F2A1]'
+                                  : 'bg-[#35A7FF]'
+                            }`}
+                            style={{ width: `${bar.progress}%` }}
+                          />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
