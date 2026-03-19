@@ -11,7 +11,6 @@ const SHOPIFY_ELECTRONICS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/el'
 
 export class ShopifyConnector implements PlatformConnector {
   private readonly baseUrl: string
-  private onlineStorePublicationId: string | null = null
 
   constructor(
     private readonly shop: string,
@@ -317,53 +316,14 @@ export class ShopifyConnector implements PlatformConnector {
   // Online Store publication
   // -------------------------------------------------------------------------
 
-  private async resolveOnlineStorePublicationId(): Promise<string> {
-    if (this.onlineStorePublicationId) return this.onlineStorePublicationId
-    const data = await this.graphql<{
-      publications: { nodes: Array<{ id: string; name: string; catalog: { __typename: string } | null }> }
-    }>(`{ publications(first: 20) { nodes { id name catalog { __typename } } } }`)
-    // Prefer the publication whose catalog is explicitly OnlineStoreCatalog,
-    // fall back to any publication whose name contains "online store".
-    const byType = data.publications.nodes.find(
-      (p) => p.catalog?.__typename === 'OnlineStoreCatalog'
-    )
-    const byName = data.publications.nodes.find(
-      (p) => p.name.toLowerCase().includes('online store')
-    )
-    const pub = byType ?? byName
-    if (!pub) {
-      throw new Error(
-        `Online Store publication not found. Available: ${data.publications.nodes.map((p) => `"${p.name}"(${p.catalog?.__typename ?? 'no-catalog'})`).join(', ')}`
-      )
-    }
-    this.onlineStorePublicationId = pub.id
-    return this.onlineStorePublicationId
-  }
-
+  // Publish a product to the Online Store channel via REST.
+  // GraphQL publishablePublish requires read_publications scope which custom
+  // app tokens may not have. REST PUT with published:true only needs write_products.
   private async publishToOnlineStore(productGid: string): Promise<void> {
-    const publicationId = await this.resolveOnlineStorePublicationId()
-    const mutation = `
-      mutation PublishProduct($id: ID!, $input: PublishablePublishInput!) {
-        publishablePublish(id: $id, input: $input) {
-          publishable { ... on Product { publishedOnCurrentPublication } }
-          userErrors { field message }
-        }
-      }
-    `
-    const result = await this.graphql<{
-      publishablePublish: {
-        publishable: { publishedOnCurrentPublication?: boolean } | null
-        userErrors: Array<{ field: string; message: string }>
-      }
-    }>(mutation, {
-      id: productGid,
-      input: { publicationIds: [publicationId] },
+    const numericId = this.gidToNumericId(productGid)
+    await this.rest('PUT', `/products/${numericId}.json`, {
+      product: { id: numericId, published: true },
     })
-    if (result.publishablePublish.userErrors.length > 0) {
-      throw new Error(
-        `publishablePublish errors: ${result.publishablePublish.userErrors.map((e) => `${e.field}: ${e.message}`).join(', ')}`
-      )
-    }
   }
 
   private async createVariableProductViaGraphQL(data: ProductPayload): Promise<string> {
