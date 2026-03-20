@@ -53,7 +53,6 @@ export default function ChannelPage({ params }: { params: { id: string } }) {
   const [errors,      setErrors]      = useState<string[]>([])
   const [showCmd,     setShowCmd]     = useState(false)
   const [cmdCopied,   setCmdCopied]   = useState(false)
-  const [blockedPromoSkus, setBlockedPromoSkus] = useState<Set<string>>(new Set())
 
 function handleCopyCmd() {
     navigator.clipboard.writeText(BROWSER_PUSH_CMD).then(() => {
@@ -77,17 +76,8 @@ function handleCopyCmd() {
     [data]
   )
 
-  useEffect(() => {
-    const key = `wizhard:${params.id}:blockedPromoSkus`
-    try {
-      const raw = localStorage.getItem(key)
-      if (raw) setBlockedPromoSkus(new Set(JSON.parse(raw) as string[]))
-    } catch {
-      setBlockedPromoSkus(new Set())
-    }
-  }, [params.id])
-
-  // Pre-fill dirty state with import prices for products that have no saved channel price
+  // Pre-fill dirty state with import prices for products that have no saved channel price.
+  // Promo price is channel-specific, so imported promo stays informational only.
   useEffect(() => {
     if (!products.length) return
     setDirty((prev) => {
@@ -98,14 +88,10 @@ function handleCopyCmd() {
           next[p.sku] = { ...next[p.sku], price: String(p.importPrice) }
           changed = true
         }
-        if ((next[p.sku]?.compareAt === undefined) && p.compareAt === null && p.importPromoPrice !== null && !blockedPromoSkus.has(p.sku)) {
-          next[p.sku] = { ...next[p.sku], compareAt: String(p.importPromoPrice) }
-          changed = true
-        }
       }
       return changed ? next : prev
     })
-  }, [products, blockedPromoSkus]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [products]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirtyCount = Object.values(dirty).reduce((n, m) =>
     n + (m.price !== undefined ? 1 : 0) + (m.compareAt !== undefined ? 1 : 0), 0)
@@ -160,22 +146,6 @@ function handleCopyCmd() {
 
     if (errs.length === 0) {
       setDirty({})
-      const clearedPromoSkus = Object.entries(dirty)
-        .filter(([, fields]) => fields.compareAt !== undefined && fields.compareAt.trim() === '')
-        .map(([sku]) => sku)
-      if (clearedPromoSkus.length > 0) {
-        setBlockedPromoSkus((prev) => {
-          const next = new Set(prev)
-          for (const sku of clearedPromoSkus) next.add(sku)
-          try {
-            localStorage.setItem(
-              `wizhard:${params.id}:blockedPromoSkus`,
-              JSON.stringify(Array.from(next))
-            )
-          } catch {}
-          return next
-        })
-      }
       qc.invalidateQueries({ queryKey: ['channel', params.id] })
     } else {
       setErrors([...new Set(errs)])

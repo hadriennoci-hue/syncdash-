@@ -30,7 +30,12 @@ export async function updateProductPrice(
   triggeredBy: TriggeredBy = 'human'
 ): Promise<SyncResult[]> {
   const results: SyncResult[] = []
-  const platforms = Object.keys(prices) as Platform[]
+  const platforms = Array.from(
+    new Set([
+      ...Object.keys(prices),
+      ...Object.keys(compareAtPrices),
+    ])
+  ) as Platform[]
 
   for (const platform of platforms) {
     const price = prices[platform] ?? null
