@@ -186,6 +186,24 @@ async function postRunReport(report: BrowserRunReport, token: string, base: stri
   }, token, base).catch(() => {})
 }
 
+async function postProductProgress(
+  productId: string,
+  platform: 'libre_market' | 'xmr_bazaar',
+  status: 'success' | 'error',
+  message: string,
+  token: string,
+  base: string
+): Promise<void> {
+  await apiFetch('POST', '/api/sync/logs', {
+    productId,
+    platform,
+    action: 'push_product',
+    status,
+    message: message.slice(0, 4900),
+    triggeredBy: 'agent',
+  }, token, base).catch(() => {})
+}
+
 // ---------------------------------------------------------------------------
 // Image helpers
 // ---------------------------------------------------------------------------
@@ -1055,11 +1073,21 @@ async function processPlatform(
         }
         await markDone(product.id, platform, platformId, isNew || createdOrRemapped, token, apiBase)
         report.processed++
+        await postProductProgress(
+          product.id,
+          platform,
+          'success',
+          createdOrRemapped ? `created ${platformId}` : `updated ${platformId}`,
+          token,
+          apiBase
+        )
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`    âŒ Failed: ${msg}`)
         report.failed++
         report.errors.push(`${product.id}: ${msg}`)
+        report.processed++
+        await postProductProgress(product.id, platform, 'error', msg, token, apiBase)
         await page.screenshot({
           path: path.join(process.cwd(), 'scripts', `error-${platform}-${product.id}.png`),
           fullPage: true,

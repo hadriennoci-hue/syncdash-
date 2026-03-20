@@ -28,6 +28,9 @@ interface PushBarState {
   progress: number
   status: 'idle' | 'running' | 'success' | 'error'
   message: string
+  total?: number
+  processed?: number
+  failed?: number
 }
 
 interface DashboardSummary {
@@ -218,23 +221,6 @@ export function DashboardHome() {
     setLastPush(summary?.lastPush ?? null)
   }, [summary?.lastPush])
 
-  useEffect(() => {
-    if (!pushing || !activePushPlatform) return
-    const timer = window.setInterval(() => {
-      setPushBars((prev) => {
-        const current = prev[activePushPlatform]
-        if (!current || current.status !== 'running') return prev
-        const nextProgress = Math.min(current.progress + 6, 92)
-        if (nextProgress === current.progress) return prev
-        return {
-          ...prev,
-          [activePushPlatform]: { ...current, progress: nextProgress },
-        }
-      })
-    }, 500)
-    return () => window.clearInterval(timer)
-  }, [pushing, activePushPlatform])
-
   async function handleScan() {
     setScanning(true)
     setScanResult(null)
@@ -295,7 +281,18 @@ export function DashboardHome() {
     const startedAt = new Date().toISOString()
     setLastPush(startedAt)
     const selectedPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
+    const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
     const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
+    const browserTotalsEntries = await Promise.all(
+      (['libre_market', 'xmr_bazaar'] as const).map(async (platform) => {
+        const res = await fetch(`/api/products?pushedPlatform=${platform}&perPage=1000`, { headers })
+        if (!res.ok) return [platform, 0] as const
+        const body = await res.json() as { data?: Array<{ id: string }> }
+        return [platform, body.data?.length ?? 0] as const
+      })
+    )
+    const browserTotals = Object.fromEntries(browserTotalsEntries) as Record<'libre_market' | 'xmr_bazaar', number>
     setActivePushPlatform(null)
     setPushBars(
       Object.fromEntries(
@@ -303,17 +300,18 @@ export function DashboardHome() {
           platform,
           {
             label: labels[platform] ?? platform,
-            progress: 4,
+            progress: 0,
             status: 'idle' as const,
             message: 'Waiting',
+            total: platform === 'libre_market' || platform === 'xmr_bazaar' ? browserTotals[platform] : undefined,
+            processed: 0,
+            failed: 0,
           },
         ])
       )
     )
     let timeout: number | null = null
     let currentActivePlatform: string | null = null
-    const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
-    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
 
     const fetchPushLogs = async (platform: string) => {
       const res = await fetch(`/api/sync/logs?platform=${platform}&page=1&perPage=500`, { headers })
@@ -346,29 +344,39 @@ export function DashboardHome() {
           else idlePolls = 0
           lastCount = processed
 
-          setPushBars((prev) => ({
-            ...prev,
-            [platform]: {
-              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
-              label: prev[platform]?.label ?? labels[platform],
-              progress: Math.min(94, Math.max(prev[platform]?.progress ?? 4, 16 + processed)),
-              status: 'running',
-              message: latest?.message
-                ? `${latest.message} (${processed} processed${errorCount ? `, ${errorCount} errors` : ''})`
-                : `Processing from logs (${processed}${errorCount ? `, ${errorCount} errors` : ''})`,
-            },
-          }))
+          setPushBars((prev) => {
+            const total = prev[platform]?.total ?? 0
+            const progress = total > 0 ? Math.round((processed / total) * 100) : (processed > 0 ? 1 : 0)
+            return {
+              ...prev,
+              [platform]: {
+                ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+                label: prev[platform]?.label ?? labels[platform],
+                progress,
+                status: 'running',
+                message: latest?.message
+                  ? `${latest.message} (${processed}/${total || '?'})`
+                  : `Processing from logs (${processed}/${total || '?'})`,
+                total,
+                processed,
+                failed: errorCount,
+              },
+            }
+          })
         }
 
         if (hadActivity && idlePolls >= 6) {
           setPushBars((prev) => ({
             ...prev,
             [platform]: {
-              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
               label: prev[platform]?.label ?? labels[platform],
               progress: 100,
               status: errorCount > 0 ? 'error' : 'success',
               message: `${processed} processed${errorCount ? `, ${errorCount} errors` : ''}`,
+              total: prev[platform]?.total,
+              processed,
+              failed: errorCount,
             },
           }))
           return
@@ -381,11 +389,14 @@ export function DashboardHome() {
         setPushBars((prev) => ({
           ...prev,
           [platform]: {
-            ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+            ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
             label: prev[platform]?.label ?? labels[platform],
             progress: 100,
             status: errorCount > 0 ? 'error' : 'success',
             message: `${rows.length} processed${errorCount ? `, ${errorCount} errors` : ''}`,
+            total: prev[platform]?.total,
+            processed: rows.length,
+            failed: errorCount,
           },
         }))
         return
@@ -394,11 +405,14 @@ export function DashboardHome() {
       setPushBars((prev) => ({
         ...prev,
         [platform]: {
-          ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+          ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
           label: prev[platform]?.label ?? labels[platform],
           progress: 100,
           status: 'error',
           message: 'No backend push logs found',
+          total: prev[platform]?.total,
+          processed: prev[platform]?.processed,
+          failed: prev[platform]?.failed,
         },
       }))
     }
@@ -409,23 +423,36 @@ export function DashboardHome() {
       const pollBrowserPlatform = async (platform: 'libre_market' | 'xmr_bazaar') => {
         const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
         const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+        const total = browserTotals[platform] ?? 0
 
         for (let attempt = 0; attempt < 120; attempt++) {
           await new Promise((resolve) => window.setTimeout(resolve, 3000))
-          setPushBars((prev) => {
-            const current = prev[platform]
-            if (!current || current.status !== 'running') return prev
-            const nextProgress = Math.min(current.progress + 8, 94)
-            if (nextProgress === current.progress) return prev
-            return {
-              ...prev,
-              [platform]: { ...current, progress: nextProgress },
-            }
-          })
-
-          const res = await fetch(`/api/sync/logs?platform=${platform}&page=1&perPage=20`, { headers })
+          const res = await fetch(`/api/sync/logs?platform=${platform}&page=1&perPage=500`, { headers })
           if (!res.ok) continue
           const body = await res.json() as { data?: Array<{ action?: string; status?: string; message?: string; createdAt?: string }> }
+          const rows = (body.data ?? []).filter((row) =>
+            row.action === 'push_product'
+            && !!row.createdAt
+            && row.createdAt >= startedAt
+          )
+          const processed = rows.length
+          const errorCount = rows.filter((row) => row.status === 'error').length
+          const latest = rows[0]
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: total > 0 ? Math.round((processed / total) * 100) : 0,
+              status: 'running',
+              message: latest?.message
+                ? `${latest.message} (${processed}/${total || '?'})`
+                : `Runner processing... (${processed}/${total || '?'})`,
+              total,
+              processed,
+              failed: errorCount,
+            },
+          }))
           const hit = (body.data ?? []).find((row) =>
             row.action === 'browser_push_run'
             && !!row.createdAt
@@ -437,11 +464,14 @@ export function DashboardHome() {
           setPushBars((prev) => ({
             ...prev,
             [platform]: {
-              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
               label: prev[platform]?.label ?? labels[platform],
               progress: 100,
               status: isError ? 'error' : 'success',
               message: hit.message ?? (isError ? 'Browser push failed' : 'Browser push complete'),
+              total,
+              processed,
+              failed: errorCount,
             },
           }))
           return
@@ -450,11 +480,14 @@ export function DashboardHome() {
         setPushBars((prev) => ({
           ...prev,
           [platform]: {
-            ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+            ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
             label: prev[platform]?.label ?? labels[platform],
             progress: 100,
             status: 'error',
             message: 'No browser runner result found',
+            total,
+            processed: prev[platform]?.processed,
+            failed: prev[platform]?.failed,
           },
         }))
       }
@@ -511,29 +544,36 @@ export function DashboardHome() {
             setPushBars((prev) => ({
               ...prev,
               [parsed.platform!]: {
-                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 0 }),
                 label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
-                progress: Math.max(prev[parsed.platform!]?.progress ?? 4, 12),
+                progress: prev[parsed.platform!]?.progress ?? 0,
                 status: 'running',
                 message: 'Pushing...',
+                total: prev[parsed.platform!]?.total,
+                processed: prev[parsed.platform!]?.processed ?? 0,
+                failed: prev[parsed.platform!]?.failed ?? 0,
               },
             }))
           }
 
           if (name === 'platform_result' && parsed.platform && parsed.result) {
-            const hasError = parsed.result.errors.length > 0 || (parsed.result.incomplete?.length ?? 0) > 0
-            const message = parsed.result.errors[0]
-              ?? (parsed.result.incomplete?.[0]
-                ? `Incomplete: ${parsed.result.incomplete[0].sku}`
-                : `${parsed.result.statusUpdated} upd - ${parsed.result.newProductsCreated} new - ${parsed.result.zeroedOutOfStock} zeroed`)
+            const result = parsed.result
+            const hasError = result.errors.length > 0 || (result.incomplete?.length ?? 0) > 0
+            const message = result.errors[0]
+              ?? (result.incomplete?.[0]
+                ? `Incomplete: ${result.incomplete[0].sku}`
+                : `${result.statusUpdated} upd - ${result.newProductsCreated} new - ${result.zeroedOutOfStock} zeroed`)
             setPushBars((prev) => ({
               ...prev,
               [parsed.platform!]: {
-                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 0 }),
                 label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
                 progress: 100,
                 status: hasError ? 'error' : 'success',
                 message,
+                total: prev[parsed.platform!]?.total,
+                processed: prev[parsed.platform!]?.processed,
+                failed: result.errors.length + (result.incomplete?.length ?? 0),
               },
             }))
             currentActivePlatform = currentActivePlatform === parsed.platform ? null : currentActivePlatform
@@ -543,18 +583,19 @@ export function DashboardHome() {
           if (name === 'platform_progress' && parsed.platform) {
             const processedTargets = parsed.processedTargets ?? 0
             const totalTargets = parsed.totalTargets ?? 0
-            const computedProgress = totalTargets > 0
-              ? Math.min(96, Math.max(16, Math.round((processedTargets / totalTargets) * 96)))
-              : 16
+            const computedProgress = totalTargets > 0 ? Math.round((processedTargets / totalTargets) * 100) : 0
             const suffix = totalTargets > 0 ? `(${processedTargets}/${totalTargets})` : ''
             setPushBars((prev) => ({
               ...prev,
               [parsed.platform!]: {
-                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 0 }),
                 label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
-                progress: Math.max(prev[parsed.platform!]?.progress ?? 4, computedProgress),
+                progress: computedProgress,
                 status: 'running',
                 message: parsed.message ? `${parsed.message} ${suffix}`.trim() : `Pushing... ${suffix}`.trim(),
+                total: totalTargets,
+                processed: processedTargets,
+                failed: prev[parsed.platform!]?.failed ?? 0,
               },
             }))
           }
@@ -565,11 +606,14 @@ export function DashboardHome() {
               setPushBars((prev) => ({
                 ...prev,
                 [platform]: {
-                  ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+                  ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
                   label: prev[platform]?.label ?? labels[platform],
-                  progress: Math.max(prev[platform]?.progress ?? 4, 18),
+                  progress: prev[platform]?.progress ?? 0,
                   status: 'running',
                   message: 'Runner processing...',
+                  total: prev[platform]?.total ?? browserTotals[platform],
+                  processed: prev[platform]?.processed ?? 0,
+                  failed: prev[platform]?.failed ?? 0,
                 },
               }))
               void pollBrowserPlatform(platform)
