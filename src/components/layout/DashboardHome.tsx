@@ -312,6 +312,96 @@ export function DashboardHome() {
     )
     let timeout: number | null = null
     let currentActivePlatform: string | null = null
+    const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+
+    const fetchPushLogs = async (platform: string) => {
+      const res = await fetch(`/api/sync/logs?platform=${platform}&page=1&perPage=500`, { headers })
+      if (!res.ok) return []
+      const body = await res.json() as {
+        data?: Array<{ action?: string; status?: string; message?: string; createdAt?: string; productId?: string }>
+      }
+      return (body.data ?? []).filter((row) =>
+        row.action === 'push_product'
+        && !!row.createdAt
+        && row.createdAt >= startedAt
+      )
+    }
+
+    const pollBackendPlatform = async (platform: 'shopify_komputerzz' | 'coincart2') => {
+      let lastCount = 0
+      let idlePolls = 0
+      let hadActivity = false
+
+      for (let attempt = 0; attempt < 180; attempt++) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5000))
+        const rows = await fetchPushLogs(platform)
+        const processed = rows.length
+        const errorCount = rows.filter((row) => row.status === 'error').length
+        const latest = rows[0]
+
+        if (processed > 0) {
+          hadActivity = true
+          if (processed === lastCount) idlePolls += 1
+          else idlePolls = 0
+          lastCount = processed
+
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: Math.min(94, Math.max(prev[platform]?.progress ?? 4, 16 + processed)),
+              status: 'running',
+              message: latest?.message
+                ? `${latest.message} (${processed} processed${errorCount ? `, ${errorCount} errors` : ''})`
+                : `Processing from logs (${processed}${errorCount ? `, ${errorCount} errors` : ''})`,
+            },
+          }))
+        }
+
+        if (hadActivity && idlePolls >= 6) {
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: 100,
+              status: errorCount > 0 ? 'error' : 'success',
+              message: `${processed} processed${errorCount ? `, ${errorCount} errors` : ''}`,
+            },
+          }))
+          return
+        }
+      }
+
+      if (hadActivity) {
+        const rows = await fetchPushLogs(platform)
+        const errorCount = rows.filter((row) => row.status === 'error').length
+        setPushBars((prev) => ({
+          ...prev,
+          [platform]: {
+            ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+            label: prev[platform]?.label ?? labels[platform],
+            progress: 100,
+            status: errorCount > 0 ? 'error' : 'success',
+            message: `${rows.length} processed${errorCount ? `, ${errorCount} errors` : ''}`,
+          },
+        }))
+        return
+      }
+
+      setPushBars((prev) => ({
+        ...prev,
+        [platform]: {
+          ...(prev[platform] ?? { label: labels[platform], progress: 4 }),
+          label: prev[platform]?.label ?? labels[platform],
+          progress: 100,
+          status: 'error',
+          message: 'No backend push logs found',
+        },
+      }))
+    }
     try {
       const controller = new AbortController()
       timeout = window.setTimeout(() => controller.abort('Push timed out'), 60 * 60 * 1000)
@@ -368,10 +458,6 @@ export function DashboardHome() {
           },
         }))
       }
-
-      const headers: HeadersInit = {}
-      const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
-      if (token) headers.Authorization = `Bearer ${token}`
 
       const res = await fetch('/api/sync/channel-availability/stream', {
         method: 'POST',
@@ -509,17 +595,30 @@ export function DashboardHome() {
       qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
-      setPushError(message)
-      setPushBars((prev) => Object.fromEntries(
-        Object.entries(prev).map(([platform, bar]) => [
-          platform,
-          {
-            ...bar,
-            status: bar.status === 'success' ? 'success' : 'error',
-            message: bar.status === 'success' ? bar.message : message,
-          },
+      const shouldFallbackToLogs =
+        message.includes('BodyStreamBuffer')
+        || message.includes('stream ended unexpectedly')
+        || message.includes('aborted')
+
+      if (shouldFallbackToLogs) {
+        setPushError('Live stream disconnected. Tracking progress from logs...')
+        await Promise.all([
+          pollBackendPlatform('shopify_komputerzz'),
+          pollBackendPlatform('coincart2'),
         ])
-      ))
+      } else {
+        setPushError(message)
+        setPushBars((prev) => Object.fromEntries(
+          Object.entries(prev).map(([platform, bar]) => [
+            platform,
+            {
+              ...bar,
+              status: bar.status === 'success' ? 'success' : 'error',
+              message: bar.status === 'success' ? bar.message : message,
+            },
+          ])
+        ))
+      }
     } finally {
       if (timeout != null) window.clearTimeout(timeout)
       setActivePushPlatform(null)
