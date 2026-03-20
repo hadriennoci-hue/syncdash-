@@ -11,6 +11,7 @@ import { generateId } from '@/lib/utils/id'
 import { isUsablePlainTextDescription } from '@/lib/utils/description'
 import { createConnector } from '@/lib/connectors/registry'
 import type { RawCollection, RawImage, RawProduct } from '@/lib/connectors/types'
+import { inferProductCollection, type ProductCollectionSlug } from '@/lib/utils/product-collection'
 
 export interface FillResult {
   sku: string
@@ -79,13 +80,6 @@ function normalizeText(input: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-}
-
-function inferCollectionSlugFromTitle(title: string): 'laptops' | 'displays' | null {
-  const t = normalizeText(title)
-  if (t.includes('ecran')) return 'displays'
-  if (t.includes('ordinateur portable') || t.includes('convertible')) return 'laptops'
-  return null
 }
 
 function normalizeCollectionSlug(slug: string | null, name: string): string {
@@ -399,6 +393,34 @@ function dedupeImageUrls(images: Array<{ url: string; alt: string | null }>): Ar
   return out
 }
 
+function scorePrimaryImageCandidate(image: { url: string; alt: string | null }, index: number): number {
+  const text = `${image.url} ${image.alt ?? ''}`.toLowerCase()
+  let score = 0
+
+  if (index === 0) score += 4
+  if (/transparent|packshot|studio|isolated|white|black/.test(text)) score += 6
+  if (/front|main|primary|hero/.test(text)) score += 4
+  if (/thumbnail|thumb|icon|logo|banner|swatch/.test(text)) score -= 8
+  if (/lifestyle|ambient|room|desk|setup|scene/.test(text)) score -= 6
+
+  return score
+}
+
+function prioritizeUnifiedBackgroundImage(
+  images: Array<{ url: string; alt: string | null }>
+): Array<{ url: string; alt: string | null }> {
+  if (images.length <= 1) return images
+
+  return [...images]
+    .map((image, index) => ({ image, index, score: scorePrimaryImageCandidate(image, index) }))
+    .sort((a, b) => {
+      const scoreDiff = b.score - a.score
+      if (scoreDiff !== 0) return scoreDiff
+      return a.index - b.index
+    })
+    .map((entry) => entry.image)
+}
+
 async function scrapeImagesFromSourceUrl(sourceUrl: string, budget: FirecrawlBudget): Promise<Array<{ url: string; alt: string | null }>> {
   if (budget.imageCallsRemaining <= 0) return []
   budget.imageCallsRemaining -= 1
@@ -412,7 +434,10 @@ async function scrapeImagesFromSourceUrl(sourceUrl: string, budget: FirecrawlBud
       prompt:
         'Extract ONLY high-quality product image URLs from this product page. ' +
         'Return only full-size images suitable for product gallery usage. ' +
-        'Do NOT return tiny thumbnails, logos, icons, placeholders, or non-product assets.',
+        'Order the images so image #1 is the best primary product shot with a unified background when available. ' +
+        'Unified background means the background is mostly a single plain color or transparent, with no room scene, desk, texture, or lifestyle setting. ' +
+        'Prefer clean studio packshots first, then additional product angles. ' +
+        'Do NOT return tiny thumbnails, logos, icons, placeholders, banners, or non-product assets.',
       schema: {
         type: 'object',
         properties: {
@@ -439,7 +464,7 @@ async function scrapeImagesFromSourceUrl(sourceUrl: string, budget: FirecrawlBud
     .filter((img): img is { url: string; alt?: string } => typeof img?.url === 'string' && img.url.trim().length > 0)
     .map((img) => ({ url: img.url.trim(), alt: (img.alt ?? '').trim() || null }))
 
-  return dedupeImageUrls(raw).slice(0, budget.maxImagesPerCall)
+  return prioritizeUnifiedBackgroundImage(dedupeImageUrls(raw)).slice(0, budget.maxImagesPerCall)
 }
 
 async function backfillMissingImages(
@@ -760,21 +785,31 @@ async function backfillMissingAttributes(
 
 async function assignInferredCollection(
   productId: string,
-  slug: 'laptops' | 'displays'
+  slug: ProductCollectionSlug
 ): Promise<void> {
-  const name = slug === 'laptops' ? 'Laptops' : 'Displays'
+  const nameBySlug: Record<ProductCollectionSlug, string> = {
+    laptops: 'Laptops',
+    displays: 'Displays',
+    tablets: 'Tablets',
+    desktops: 'Desktops',
+    audio: 'Audio',
+    gpu: 'GPU',
+    'input-devices': 'Input Devices',
+    cases: 'Cases',
+    lifestyle: 'Lifestyle',
+  }
   const categoryId = `wizhard_${slug}`
 
   await db.insert(categories).values({
     id: categoryId,
     platform: WIZHARD_COLLECTION_PLATFORM,
-    name,
+    name: nameBySlug[slug],
     slug,
     collectionType: 'product',
     createdAt: new Date().toISOString(),
   }).onConflictDoUpdate({
     target: categories.id,
-    set: { name, slug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
+    set: { name: nameBySlug[slug], slug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
   })
 
   await db.insert(productCategories).values({
@@ -836,11 +871,21 @@ export async function fillMissingFields(
   let workingState = initialState
 
   if (!workingState.hasCollection) {
-    const inferredSlug = inferCollectionSlugFromTitle(workingProduct.title)
-    if (inferredSlug) {
-      await assignInferredCollection(workingProduct.id, inferredSlug)
+    const price = workingProduct.warehouseStock.find((row) => row.importPromoPrice != null)?.importPromoPrice
+      ?? workingProduct.warehouseStock.find((row) => row.importPrice != null)?.importPrice
+      ?? workingProduct.prices.find((row) => row.platform === 'coincart2')?.price
+      ?? null
+    const sourceRow = workingProduct.warehouseStock.find((row) => row.sourceName || row.sourceUrl)
+    const inferredCollection = inferProductCollection({
+      title: workingProduct.title,
+      sourceName: sourceRow?.sourceName ?? null,
+      sourceUrl: sourceRow?.sourceUrl ?? null,
+      price,
+    })
+    if (inferredCollection) {
+      await assignInferredCollection(workingProduct.id, inferredCollection.slug)
       filled.push('collection')
-      sources.push('inferred:title')
+      sources.push(`inferred:${inferredCollection.reason}`)
       const reloaded = await load()
       if (reloaded) {
         workingProduct = reloaded

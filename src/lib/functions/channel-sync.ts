@@ -22,6 +22,16 @@ interface ChannelSyncOptions {
   // whose own updated_at is newer than now - windowHours.
   protectRecentChannelEditsHours?: number
   onPlatformStart?: (info: { platform: Platform; index: number; total: number }) => void | Promise<void>
+  onPlatformProgress?: (info: {
+    platform: Platform
+    index: number
+    total: number
+    processedTargets: number
+    totalTargets: number
+    lastProductIds: string[]
+    lastStatus: 'success' | 'error'
+    message: string
+  }) => void | Promise<void>
   onPlatformComplete?: (info: { platform: Platform; index: number; total: number; result: ChannelSyncResult }) => void | Promise<void>
 }
 
@@ -468,7 +478,7 @@ export async function syncChannelAvailability(
   for (let index = 0; index < platforms.length; index++) {
     const platform = platforms[index]
     await options.onPlatformStart?.({ platform, index: index + 1, total: platforms.length })
-    const result = await pushPlatform(platform, eligible, triggeredBy, options)
+    const result = await pushPlatform(platform, eligible, triggeredBy, options, { index: index + 1, total: platforms.length })
     results.push(result)
     await options.onPlatformComplete?.({ platform, index: index + 1, total: platforms.length, result })
   }
@@ -479,7 +489,8 @@ async function pushPlatform(
   platform: Platform,
   eligible: EligibleProduct[],
   triggeredBy: TriggeredBy,
-  _options: ChannelSyncOptions
+  options: ChannelSyncOptions,
+  progressContext: { index: number; total: number }
 ): Promise<ChannelSyncResult> {
   if (BROWSER_PLATFORMS.includes(platform)) {
     const count = eligible.filter((p) => isPushable(p, platform)).length
@@ -497,11 +508,30 @@ async function pushPlatform(
 
   const toPush    = buildPushTargets(eligible, platform)
   const connector = await createConnector(platform)
+  let processedTargets = 0
+  const totalTargets = toPush.length
   const errors: string[] = []
   const newSkus: string[] = []
   const incomplete: Array<{ sku: string; missing: string[] }> = []
   const touchedPlatformIds = new Set<string>()
   let statusUpdated = 0
+
+  const emitProgress = async (
+    lastProductIds: string[],
+    lastStatus: 'success' | 'error',
+    message: string,
+  ): Promise<void> => {
+    await options.onPlatformProgress?.({
+      platform,
+      index: progressContext.index,
+      total: progressContext.total,
+      processedTargets,
+      totalTargets,
+      lastProductIds,
+      lastStatus,
+      message,
+    })
+  }
 
   const buildVariantPayloads = (product: EligibleProduct, fallbackPrice: number | null, fallbackCompareAt: number | null) => {
     if (!product.variants.length) return undefined
@@ -595,6 +625,8 @@ async function pushPlatform(
       await markPushStatus(productIds, `FAIL: ${failMessage}`)
       await logPushResult(productIds, 'error', failMessage)
       errors.push(issueSummary)
+      processedTargets += 1
+      await emitProgress(productIds, 'error', `Incomplete: ${primary.id}`)
       continue
     }
     const mapping = primary.platformMappings.find((m) => m.platform === platform)
@@ -861,11 +893,15 @@ async function pushPlatform(
 
       await markPushStatus(productIds, 'done')
       await logPushResult(productIds, 'success', successMessage)
+      processedTargets += 1
+      await emitProgress(productIds, 'success', `${primary.id}: ${successMessage}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       errors.push(`${primary.id}: ${msg}`)
       await markPushStatus(productIds, `FAIL: ${msg.slice(0, 200)}`)
       await logPushResult(productIds, 'error', msg)
+      processedTargets += 1
+      await emitProgress(productIds, 'error', `${primary.id}: ${msg}`)
     }
   }
 

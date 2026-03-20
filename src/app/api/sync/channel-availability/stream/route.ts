@@ -71,6 +71,18 @@ export async function POST(req: NextRequest) {
             onPlatformStart: ({ platform, index, total }) => {
               push('platform_start', { platform, index, total })
             },
+            onPlatformProgress: ({ platform, index, total, processedTargets, totalTargets, lastProductIds, lastStatus, message }) => {
+              push('platform_progress', {
+                platform,
+                index,
+                total,
+                processedTargets,
+                totalTargets,
+                lastProductIds,
+                lastStatus,
+                message,
+              })
+            },
             onPlatformComplete: ({ platform, index, total, result }) => {
               results.push(result)
               push('platform_result', { platform, index, total, result })

@@ -11,12 +11,12 @@ const imageSchema = z.object({
     z.object({ type: z.literal('url'), url: z.string().url(), alt: z.string().optional() }),
     z.object({ type: z.literal('file'), data: z.any(), filename: z.string(), mimeType: z.string() }),
   ])),
-  platforms:   z.array(z.string()).min(1),
+  platforms:   z.array(z.string()).default([]),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
 
 const deleteSchema = z.object({
-  platforms:   z.array(z.string()).min(1),
+  platforms:   z.array(z.string()).default([]),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
 })
 

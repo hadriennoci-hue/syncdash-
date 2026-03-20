@@ -17,6 +17,7 @@ import { chromium, type Browser, type BrowserContext } from 'playwright'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { inferProductCollection } from '@/lib/utils/product-collection'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -283,6 +284,15 @@ type ProductCategory = 'monitor' | 'laptops' | 'tablets' | 'desktops' | 'audio' 
 const ATTRIBUTE_SCAN_CATEGORIES = new Set<ProductCategory>(['monitor', 'laptops'])
 
 function detectCategory(sourceName: string, sourceUrl: string): ProductCategory {
+  const inferred = inferProductCollection({
+    title: sourceName,
+    sourceName,
+    sourceUrl,
+  })?.slug ?? 'lifestyle'
+  if (inferred === 'displays') return 'monitor'
+  if (inferred === 'input-devices') return 'input-device'
+  return inferred
+
   const n = sourceName.toLowerCase()
   const u = sourceUrl.toLowerCase()
 

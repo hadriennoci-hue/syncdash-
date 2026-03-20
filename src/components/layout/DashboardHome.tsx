@@ -314,7 +314,7 @@ export function DashboardHome() {
     let currentActivePlatform: string | null = null
     try {
       const controller = new AbortController()
-      timeout = window.setTimeout(() => controller.abort('Push timed out'), 15 * 60 * 1000)
+      timeout = window.setTimeout(() => controller.abort('Push timed out'), 60 * 60 * 1000)
 
       const pollBrowserPlatform = async (platform: 'libre_market' | 'xmr_bazaar') => {
         const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
@@ -411,6 +411,9 @@ export function DashboardHome() {
           if (!data) continue
           const parsed = JSON.parse(data) as {
             platform?: string
+            processedTargets?: number
+            totalTargets?: number
+            lastStatus?: 'success' | 'error'
             result?: ChannelSyncResult
             results?: ChannelSyncResult[]
             message?: string
@@ -449,6 +452,25 @@ export function DashboardHome() {
             }))
             currentActivePlatform = currentActivePlatform === parsed.platform ? null : currentActivePlatform
             setActivePushPlatform((current) => (current === parsed.platform ? null : current))
+          }
+
+          if (name === 'platform_progress' && parsed.platform) {
+            const processedTargets = parsed.processedTargets ?? 0
+            const totalTargets = parsed.totalTargets ?? 0
+            const computedProgress = totalTargets > 0
+              ? Math.min(96, Math.max(16, Math.round((processedTargets / totalTargets) * 96)))
+              : 16
+            const suffix = totalTargets > 0 ? `(${processedTargets}/${totalTargets})` : ''
+            setPushBars((prev) => ({
+              ...prev,
+              [parsed.platform!]: {
+                ...(prev[parsed.platform!] ?? { label: parsed.platform!, progress: 4 }),
+                label: prev[parsed.platform!]?.label ?? labels[parsed.platform!] ?? parsed.platform!,
+                progress: Math.max(prev[parsed.platform!]?.progress ?? 4, computedProgress),
+                status: 'running',
+                message: parsed.message ? `${parsed.message} ${suffix}`.trim() : `Pushing... ${suffix}`.trim(),
+              },
+            }))
           }
 
           if (name === 'runner_wake' && !browserPollingStarted) {
