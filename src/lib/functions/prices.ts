@@ -25,8 +25,8 @@ function getPushStatusUpdate(platform: Platform): Record<string, string> {
 
 export async function updateProductPrice(
   sku: string,
-  prices: Partial<Record<Platform, number | null>>,
-  compareAtPrices: Partial<Record<Platform, number | null>> = {},
+  prices: Partial<Record<Platform, number | null | undefined>>,
+  compareAtPrices: Partial<Record<Platform, number | null | undefined>> = {},
   triggeredBy: TriggeredBy = 'human'
 ): Promise<SyncResult[]> {
   const results: SyncResult[] = []
@@ -38,8 +38,13 @@ export async function updateProductPrice(
   ) as Platform[]
 
   for (const platform of platforms) {
-    const price = prices[platform] ?? null
-    const compareAt = compareAtPrices[platform] ?? null
+    const existingRow = await db.query.productPrices.findFirst({
+      where: and(eq(productPrices.productId, sku), eq(productPrices.platform, platform)),
+    })
+    const hasPriceUpdate = Object.prototype.hasOwnProperty.call(prices, platform)
+    const hasCompareAtUpdate = Object.prototype.hasOwnProperty.call(compareAtPrices, platform)
+    const price = hasPriceUpdate ? (prices[platform] ?? null) : (existingRow?.price ?? null)
+    const compareAt = hasCompareAtUpdate ? (compareAtPrices[platform] ?? null) : (existingRow?.compareAt ?? null)
 
     // Update D1
     const now = new Date().toISOString()

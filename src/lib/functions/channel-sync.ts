@@ -3,6 +3,7 @@ import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
 import { eq, or, gt } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
+import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 
@@ -323,6 +324,25 @@ function supportsGroupedVariants(platform: Platform): boolean {
   return GROUPED_VARIANT_PLATFORMS.has(platform)
 }
 
+function isShopifyPlatform(platform: Platform): platform is ShopifyPlatform {
+  return platform === 'shopify_komputerzz' || platform === 'shopify_tiktok'
+}
+
+function isShopifyAuthError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return (
+    message.includes('Shopify REST error: 401')
+    || message.includes('Shopify REST error: 403')
+    || message.includes('Shopify GraphQL error: 401')
+    || message.includes('Shopify GraphQL error: 403')
+    || message.includes('Invalid API key or access token')
+    || message.includes('Invalid API key or token')
+    || message.includes('Access denied')
+    || message.includes('Unauthorized')
+    || message.includes('Forbidden')
+  )
+}
+
 function getProductTotalStock(product: EligibleProduct): number {
   return product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
 }
@@ -507,7 +527,8 @@ async function pushPlatform(
   }
 
   const toPush    = buildPushTargets(eligible, platform)
-  const connector = await createConnector(platform)
+  let connector = await createConnector(platform)
+  let shopifyAuthRetried = false
   let processedTargets = 0
   const totalTargets = toPush.length
   const errors: string[] = []
@@ -531,6 +552,23 @@ async function pushPlatform(
       lastStatus,
       message,
     })
+  }
+
+  const callWithShopifyAuthRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+    try {
+      return await operation()
+    } catch (err) {
+      if (!isShopifyPlatform(platform) || shopifyAuthRetried || !isShopifyAuthError(err)) {
+        throw err
+      }
+      shopifyAuthRetried = true
+      const tokenResult = await refreshShopifyToken(platform)
+      if (!tokenResult.ok) {
+        throw new Error(`Shopify auth failed, token refresh also failed: ${tokenResult.error ?? 'unknown error'}`)
+      }
+      connector = await createConnector(platform)
+      return operation()
+    }
   }
 
   const buildVariantPayloads = (product: EligibleProduct, fallbackPrice: number | null, fallbackCompareAt: number | null) => {
@@ -601,10 +639,14 @@ async function pushPlatform(
 
   const findPlatformIdForTarget = async (target: PushTarget): Promise<string | null> => {
     if (target.kind === 'single') {
-      return connector.findProductIdBySku?.(target.primary.id) ?? null
+      return (connector.findProductIdBySku
+        ? await callWithShopifyAuthRetry(() => connector.findProductIdBySku!(target.primary.id))
+        : null) ?? null
     }
     for (const member of target.members) {
-      const hit = await connector.findProductIdBySku?.(member.product.id)
+      const hit = (connector.findProductIdBySku
+        ? await callWithShopifyAuthRetry(() => connector.findProductIdBySku!(member.product.id))
+        : null) ?? null
       if (hit) return hit
     }
     return null
@@ -732,42 +774,44 @@ async function pushPlatform(
 
       const updateExisting = async (platformId: string): Promise<void> => {
         if (target.kind === 'group') {
-          await connector.updateProduct(platformId, platform === 'coincart2' ? payloadWithVariants : {
+          await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, platform === 'coincart2' ? payloadWithVariants : {
             ...identityPatch,
             title: primary.title,
             description: primary.description,
             status: 'active',
             vendor: primary.vendor,
             productType: primary.productType,
-          })
+          }))
           if (!isWooSkuAware(connector)) {
             throw new Error(`Grouped variant updates are not supported for ${platform}`)
           }
+          const skuAwareConnector = connector
           for (const member of target.members) {
-            await connector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null)
-            await connector.updateStockForSku(platformId, member.product.id, member.totalStock)
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
           }
-          await connector.toggleStatus(platformId, 'active')
+          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           return
         }
 
         if (platform === 'coincart2' && isWooSkuAware(connector)) {
+          const skuAwareConnector = connector
           if (variantPayloads?.length) {
-            await connector.updateProduct(platformId, payloadWithVariants)
-            await connector.toggleStatus(platformId, 'active')
+            await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, payloadWithVariants))
+            await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           } else {
-            await connector.updateProductForSku(platformId, primary.id, identityPatch)
-            await connector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-            await connector.updateStockForSku(platformId, primary.id, totalStock)
-            await connector.toggleStatusForSku(platformId, primary.id, 'active')
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updateProductForSku(platformId, primary.id, identityPatch))
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null))
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, primary.id, totalStock))
+            await callWithShopifyAuthRetry(() => skuAwareConnector.toggleStatusForSku(platformId, primary.id, 'active'))
           }
           return
         }
 
-        await connector.updateProduct(platformId, payloadWithVariants)
-        await connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null)
-        await connector.updateStock(platformId, totalStock)
-        await connector.toggleStatus(platformId, 'active')
+        await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, payloadWithVariants))
+        await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
+        await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
+        await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
       }
 
       const createNew = async (): Promise<string> => {
@@ -775,7 +819,7 @@ async function pushPlatform(
         const categoryIds = collectCategoryIds(primary)
         const collections = collectCollections(primary)
 
-        const platformId = await connector.createProduct({
+        const platformId = await callWithShopifyAuthRetry(() => connector.createProduct({
           sku: target.kind === 'group' ? target.parentSku : primary.id,
           ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
           title: primary.title,
@@ -793,19 +837,20 @@ async function pushPlatform(
           ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
             ? { attributeValues: coincartAttributeValues }
             : {}),
-        })
+        }))
 
-        if (images.length > 0) await connector.setImages(platformId, images)
+        if (images.length > 0) await callWithShopifyAuthRetry(() => connector.setImages(platformId, images))
         if (target.kind === 'group') {
           if (!isWooSkuAware(connector)) {
             throw new Error(`Grouped variant stock updates are not supported for ${platform}`)
           }
+          const skuAwareConnector = connector
           for (const member of target.members) {
-            await connector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null)
-            await connector.updateStockForSku(platformId, member.product.id, member.totalStock)
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
           }
         } else {
-          await connector.updateStock(platformId, totalStock)
+          await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
         }
         return platformId
       }
@@ -866,14 +911,14 @@ async function pushPlatform(
           }))
           .filter((c) => c.handle.length > 0)
         if (tikCats.length > 0 && typeof (connector as any).syncCollectionsToProduct === 'function') {
-          await (connector as any).syncCollectionsToProduct(finalPlatformId!, tikCats)
+          await callWithShopifyAuthRetry(() => (connector as any).syncCollectionsToProduct(finalPlatformId!, tikCats))
         }
       }
 
       if (platform === 'shopify_komputerzz' && typeof (connector as any).syncProductAttributeMetafields === 'function' && finalPlatformId) {
         const productMetafields = collectShopifyProductMetafieldsFromAttributes(primary)
         if (Object.keys(productMetafields).length > 0) {
-          await (connector as any).syncProductAttributeMetafields(finalPlatformId, productMetafields)
+          await callWithShopifyAuthRetry(() => (connector as any).syncProductAttributeMetafields(finalPlatformId, productMetafields))
         }
       }
 
@@ -887,7 +932,7 @@ async function pushPlatform(
             target.type === 'laptops' ? laptopKeys : displayKeys
           )
           if (Object.keys(attrs).length === 0) continue
-          await (connector as any).syncCollectionAttributeValues(target.handle, attrs)
+          await callWithShopifyAuthRetry(() => (connector as any).syncCollectionAttributeValues(target.handle, attrs))
         }
       }
 
