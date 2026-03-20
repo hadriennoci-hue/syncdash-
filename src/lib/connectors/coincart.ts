@@ -32,6 +32,16 @@ export class CoincartConnector implements PlatformConnector {
     return text.replace(/[^\x20-\x7E\r\n\t]/g, '').trim()
   }
 
+  private slugify(text: string | null | undefined): string {
+    return (text ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+  }
+
   private extractPrimaryCollectionName(data: Partial<ProductPayload>): string | null {
     const fromCollections = data.collections?.find((c) => c.name?.trim())?.name?.trim() ?? null
     if (fromCollections) return fromCollections
@@ -371,6 +381,28 @@ export class CoincartConnector implements PlatformConnector {
       `/products?search=${encodeURIComponent(sku)}&per_page=20&status=any`
     )
     return search[0]?.id ? String(search[0].id) : null
+  }
+
+  async findProductIdBySlugOrTitle(title: string): Promise<string | null> {
+    const slug = this.slugify(title)
+    if (!slug) return null
+
+    const bySlug = await this.request<Array<{ id: number; slug?: string | null }>>(
+      'GET',
+      `/products?slug=${encodeURIComponent(slug)}&per_page=20&status=any`
+    )
+    const exactSlug = bySlug.find((item) => (item.slug ?? '').trim() === slug)
+    if (exactSlug?.id) return String(exactSlug.id)
+    if (bySlug[0]?.id) return String(bySlug[0].id)
+
+    const byTitle = await this.request<Array<{ id: number; slug?: string | null; name?: string | null }>>(
+      'GET',
+      `/products?search=${encodeURIComponent(title)}&per_page=20&status=any`
+    )
+    const exactTitle = byTitle.find((item) => this.slugify(item.name) === slug || (item.slug ?? '').trim() === slug)
+    if (exactTitle?.id) return String(exactTitle.id)
+
+    return null
   }
 
   // -------------------------------------------------------------------------

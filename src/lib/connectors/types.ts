@@ -157,6 +157,9 @@ export interface PlatformConnector {
   // Resolve a platform-native product ID from SKU when no mapping exists yet.
   // Returns null when the SKU is not found on that platform.
   findProductIdBySku?(sku: string): Promise<string | null>
+  // Optional secondary recovery path for platforms that can rediscover an
+  // existing product by title/slug when SKU mappings are missing.
+  findProductIdBySlugOrTitle?(title: string): Promise<string | null>
   createProduct(data: ProductPayload): Promise<string>  // returns platformId
   updateProduct(platformId: string, data: Partial<ProductPayload>): Promise<void>
   deleteProduct(platformId: string): Promise<void>

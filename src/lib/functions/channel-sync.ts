@@ -69,6 +69,14 @@ function isWooSkuAware(connector: unknown): connector is WooSkuAware {
     && typeof (connector as WooSkuAware).bulkSetStockForSkus === 'function'
 }
 
+type SlugTitleRecoverable = {
+  findProductIdBySlugOrTitle: (title: string) => Promise<string | null>
+}
+
+function isSlugTitleRecoverable(connector: unknown): connector is SlugTitleRecoverable {
+  return !!connector && typeof (connector as SlugTitleRecoverable).findProductIdBySlugOrTitle === 'function'
+}
+
 interface EligibleProduct {
   id:                      string
   title:                   string
@@ -684,6 +692,31 @@ async function pushPlatform(
     return null
   }
 
+  const findRecoveryPlatformIdForTarget = async (target: PushTarget): Promise<string | null> => {
+    const skuHit = await findPlatformIdForTarget(target)
+    if (skuHit) return skuHit
+
+    if (platform !== 'coincart2' || !isSlugTitleRecoverable(connector)) return null
+
+    const titleCandidates = Array.from(new Set(
+      [
+        target.primary.title,
+        ...(target.kind === 'group'
+          ? target.members.map((member) => member.product.title)
+          : []),
+      ]
+        .map((title) => title.trim())
+        .filter((title) => title.length > 0)
+    ))
+
+    for (const title of titleCandidates) {
+      const hit = await connector.findProductIdBySlugOrTitle(title)
+      if (hit) return hit
+    }
+
+    return null
+  }
+
   for (const target of toPush) {
     const productIds = target.kind === 'single'
       ? [target.primary.id]
@@ -924,28 +957,44 @@ async function pushPlatform(
           finalPlatformId = mappedId
           successMessage = 'updated by mapping'
         } catch (mappedErr) {
-          const skuHit = await findPlatformIdForTarget(target)
-          if (skuHit) {
-            await upsertMappings(skuHit)
-            await updateExisting(skuHit)
-            finalPlatformId = skuHit
-            successMessage = skuHit === mappedId ? 'updated by mapping after retry' : 'updated by SKU remap'
+          const recoveredHit = await findRecoveryPlatformIdForTarget(target)
+          if (recoveredHit) {
+            await upsertMappings(recoveredHit)
+            await updateExisting(recoveredHit)
+            finalPlatformId = recoveredHit
+            successMessage = recoveredHit === mappedId ? 'updated by mapping after retry' : 'updated by remap'
           } else {
-            const createdId = await createNew()
-            await upsertMappings(createdId)
-            finalPlatformId = createdId
-            newSkus.push(...productIds)
-            successMessage = 'created after missing mapped ID'
+            let createdId: string | null = null
+            try {
+              createdId = await createNew()
+            } catch (createErr) {
+              const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
+              if (!isCoincartSlugConflict(createMessage)) throw createErr
+              const recoveredId = await findRecoveryPlatformIdForTarget(target)
+              if (!recoveredId) throw createErr
+              await upsertMappings(recoveredId)
+              await updateExisting(recoveredId)
+              finalPlatformId = recoveredId
+              successMessage = 'updated after slug-conflict remap'
+            }
+            if (!createdId) {
+              if (!finalPlatformId) throw mappedErr
+            } else {
+              await upsertMappings(createdId)
+              finalPlatformId = createdId
+              newSkus.push(...productIds)
+              successMessage = 'created after missing mapped ID'
+            }
           }
           if (!finalPlatformId) throw mappedErr
         }
       } else {
-        const skuHit = await findPlatformIdForTarget(target)
-        if (skuHit) {
-          await upsertMappings(skuHit)
-          await updateExisting(skuHit)
-          finalPlatformId = skuHit
-          successMessage = 'updated by SKU'
+        const recoveredHit = await findRecoveryPlatformIdForTarget(target)
+        if (recoveredHit) {
+          await upsertMappings(recoveredHit)
+          await updateExisting(recoveredHit)
+          finalPlatformId = recoveredHit
+          successMessage = platform === 'coincart2' ? 'updated by recovery' : 'updated by SKU'
         } else {
           try {
             const createdId = await createNew()
@@ -956,7 +1005,7 @@ async function pushPlatform(
           } catch (createErr) {
             const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
             if (!isCoincartSlugConflict(createMessage)) throw createErr
-            const recoveredId = await findPlatformIdForTarget(target)
+            const recoveredId = await findRecoveryPlatformIdForTarget(target)
             if (!recoveredId) throw createErr
             await upsertMappings(recoveredId)
             await updateExisting(recoveredId)

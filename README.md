@@ -15,6 +15,7 @@ Rules and patterns for AI assistants working on this codebase.
   - workers.dev: `syncdash.hadrien-noci.workers.dev`
   - D1 binding: `DB` (`syncdash-db`)
   - R2 binding: `R2_IMAGES` (`syncdash-images`)
+- This shell has working GitHub access via `gh` with `repo` and `workflow` scopes, so inspect Actions runs, deployments, and failures directly; same for Cloudflare access.
 
 ## 2) Core Business Model
 
