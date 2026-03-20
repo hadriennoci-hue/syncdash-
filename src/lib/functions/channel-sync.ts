@@ -6,6 +6,7 @@ import { logOperation } from './log'
 import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
+import { deriveLaptopVariantAxes } from '@/lib/utils/laptop-variant-axes'
 
 export interface ChannelSyncResult {
   platform:           Platform
@@ -38,7 +39,11 @@ interface ChannelSyncOptions {
 
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
 interface CatRow     { category: { id: string; platform: string; name: string; slug: string | null } }
-interface StockRow   { quantity: number }
+interface StockRow   {
+  quantity: number
+  sourceUrl?: string | null
+  sourceName?: string | null
+}
 interface MappingRow {
   platform: string
   platformId: string
@@ -355,14 +360,26 @@ function getKeyboardLayout(product: EligibleProduct): string | null {
   const metafield = product.metafields.find((mf) =>
     mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === 'keyboard_layout'
   )
-  return metafield?.value?.trim() ?? null
+  const derived = deriveLaptopVariantAxes({
+    sourceUrl: product.warehouseStock.find((row) => row.sourceUrl)?.sourceUrl ?? null,
+    sourceName: product.warehouseStock.find((row) => row.sourceName)?.sourceName ?? null,
+    title: product.title,
+    keyboardLayout: metafield?.value?.trim() ?? null,
+  })
+  return derived.keyboardLayout
 }
 
 function getColor(product: EligibleProduct): string | null {
   const metafield = product.metafields.find((mf) =>
     mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === 'color'
   )
-  return metafield?.value?.trim() ?? null
+  const derived = deriveLaptopVariantAxes({
+    sourceUrl: product.warehouseStock.find((row) => row.sourceUrl)?.sourceUrl ?? null,
+    sourceName: product.warehouseStock.find((row) => row.sourceName)?.sourceName ?? null,
+    title: product.title,
+    color: metafield?.value?.trim() ?? null,
+  })
+  return derived.color
 }
 
 function formatKeyboardLayout(layout: string | null, fallbackSku: string): string {
