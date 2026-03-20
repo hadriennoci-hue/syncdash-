@@ -13,7 +13,7 @@ const schema = z.object({
 
 // POST /api/sales/import
 // Incrementally imports orders/refunds/transactions/fulfillments for API channels
-// (WooCommerce + both Shopify channels) into raw + normalized sales tables.
+// (Coincart + both Shopify channels) into raw + normalized sales tables.
 export async function POST(req: NextRequest) {
   const auth = verifyBearer(req)
   if (auth) return auth

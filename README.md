@@ -1,4 +1,4 @@
-# CLAUDE.md
+# README.md
 
 Rules and patterns for AI assistants working on this codebase.
 
@@ -21,6 +21,7 @@ Rules and patterns for AI assistants working on this codebase.
 - D1 is source of truth after initial import.
 - SKU is universal key: `products.id` is SKU.
 - Platform-native IDs live in `platform_mappings`.
+- Coincart is a custom PostgreSQL sales channel; keep any `woocommerce` aliases only for backward compatibility.
 - Komputerzz is a destination channel after initial import, not master.
 
 ## 3) Non-Negotiable Rules
@@ -93,7 +94,7 @@ For Firecrawl / ACER Store extraction prompts:
 ## 4) Channel Runtime Notes
 
 ### API channels
-- `woocommerce`
+- `coincart2`
 - `shopify_komputerzz`
 - `shopify_tiktok`
 - `ebay_ie`
@@ -125,7 +126,7 @@ Production uses Cloudflare Worker vars/secrets.
 AGENT_BEARER_TOKEN=
 NEXT_PUBLIC_AGENT_BEARER_TOKEN=
 
-# Coincart (WooCommerce)
+# Coincart
 COINCART_URL=
 COINCART_API_URL=
 COINCART_KEY=

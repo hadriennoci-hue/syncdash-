@@ -191,7 +191,7 @@ async function fetchWooOrders(since: string | null, limitPerChannel: number): Pr
   const siteUrl = process.env.COINCART_URL
   const ck = process.env.COINCART_KEY
   const cs = process.env.COINCART_SECRET
-  if (!siteUrl || !ck || !cs) throw new Error('Missing WooCommerce credentials')
+  if (!siteUrl || !ck || !cs) throw new Error('Missing Coincart credentials')
 
   const collected: any[] = []
   let page = 1
@@ -214,7 +214,7 @@ async function fetchWooOrders(since: string | null, limitPerChannel: number): Pr
       },
     })
     if (!res.ok) {
-      throw new Error(`WooCommerce orders fetch failed: ${res.status} ${await res.text()}`)
+      throw new Error(`Coincart orders fetch failed: ${res.status} ${await res.text()}`)
     }
     const batch = await res.json() as any[]
     collected.push(...batch)
