@@ -14,6 +14,7 @@ interface ProductFamilyCandidate {
   variantGroupId: string | null
   categories: Array<{ categoryId: string; slug: string | null }>
   metafields: AttrRow[]
+  warehouseStock: Array<{ warehouseId: string; sourceUrl: string | null; sourceName: string | null }>
 }
 
 const VARIANT_CAPABLE_COLLECTIONS = new Set(['laptops', 'input-devices'])
@@ -93,6 +94,24 @@ function normalizeFamilyTitle(title: string, collectionSlug: 'laptops' | 'input-
   return normalizeWhitespace(title)
 }
 
+function extractLaptopModelKey(input: string | null | undefined): string | null {
+  if (!input) return null
+  const upper = input.toUpperCase()
+  const match = upper.match(/\b([A-Z]{2,}\d+[A-Z0-9]*-\d+[A-Z0-9]*)\b/)
+  return match?.[1] ?? null
+}
+
+function getLaptopFamilyKey(candidate: ProductFamilyCandidate): string | null {
+  for (const stockRow of candidate.warehouseStock) {
+    if (stockRow.warehouseId !== 'acer_store') continue
+    const fromSourceName = extractLaptopModelKey(stockRow.sourceName)
+    if (fromSourceName) return fromSourceName
+    const fromSourceUrl = extractLaptopModelKey(stockRow.sourceUrl)
+    if (fromSourceUrl) return fromSourceUrl
+  }
+  return extractLaptopModelKey(candidate.title)
+}
+
 function mapsEqual(a: Map<string, string>, b: Map<string, string>): boolean {
   if (a.size !== b.size) return false
   for (const [key, value] of a.entries()) {
@@ -150,6 +169,9 @@ export async function autoLinkVariantFamily(
       categories: {
         with: { category: { columns: { slug: true } } },
       },
+      warehouseStock: {
+        columns: { warehouseId: true, sourceUrl: true, sourceName: true },
+      },
       metafields: {
         where: eq(productMetafields.namespace, 'attributes'),
         columns: { key: true, value: true },
@@ -182,6 +204,17 @@ export async function autoLinkVariantFamily(
 
   const currentComparable = comparableAttrs(currentAttrMap, currentVariantCollection)
   if (currentComparable.size === 0) return { linked: false, reason: 'missing_comparable_attributes' }
+  const currentLaptopFamilyKey = currentVariantCollection === 'laptops'
+    ? getLaptopFamilyKey({
+        id: current.id,
+        title: current.title,
+        description: current.description,
+        variantGroupId: current.variantGroupId ?? null,
+        categories: current.categories.map((row) => ({ categoryId: row.categoryId, slug: row.category?.slug ?? null })),
+        metafields: current.metafields,
+        warehouseStock: current.warehouseStock,
+      })
+    : null
 
   const candidates = await db.query.products.findMany({
     where: ne(products.id, sku),
@@ -189,6 +222,9 @@ export async function autoLinkVariantFamily(
     with: {
       categories: {
         with: { category: { columns: { slug: true } } },
+      },
+      warehouseStock: {
+        columns: { warehouseId: true, sourceUrl: true, sourceName: true },
       },
       metafields: {
         where: eq(productMetafields.namespace, 'attributes'),
@@ -206,6 +242,7 @@ export async function autoLinkVariantFamily(
       variantGroupId: candidate.variantGroupId ?? null,
       categories: candidate.categories.map((row) => ({ categoryId: row.categoryId, slug: row.category?.slug ?? null })),
       metafields: candidate.metafields,
+      warehouseStock: candidate.warehouseStock,
     }))
     .filter((candidate) => {
       const candidateSlugs = new Set(
@@ -217,6 +254,12 @@ export async function autoLinkVariantFamily(
       if (!candidateCollection || candidateCollection !== currentVariantCollection) return false
 
       const attrMap = toAttrMap(candidate.metafields)
+      if (currentVariantCollection === 'laptops') {
+        const candidateLaptopFamilyKey = getLaptopFamilyKey(candidate)
+        if (!currentLaptopFamilyKey || !candidateLaptopFamilyKey || candidateLaptopFamilyKey !== currentLaptopFamilyKey) {
+          return false
+        }
+      }
       const keyboardLayout = attrMap.get('keyboard_layout') ?? null
       const color = attrMap.get('color') ?? null
       if (currentVariantCollection === 'laptops') {

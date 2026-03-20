@@ -8,6 +8,7 @@ import { db } from '@/lib/db/client'
 import { salesChannels } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
 import { findUnsavedChannelRows } from '@/lib/functions/channel-unsaved'
+import { ensureFreshShopifyToken } from '@/lib/functions/tokens'
 import type { Platform } from '@/types/platform'
 
 
@@ -33,6 +34,17 @@ export async function POST(req: NextRequest) {
         'VALIDATION_ERROR',
         `${platform} sale channel needs to be saved first (${issues.length} unsaved row(s), first SKU: ${issues[0].sku})`,
         400
+      )
+    }
+  }
+
+  if (platforms.includes('shopify_komputerzz')) {
+    const tokenResult = await ensureFreshShopifyToken('shopify_komputerzz', 24)
+    if (!tokenResult.ok) {
+      return apiError(
+        'TOKEN_REFRESH_ERROR',
+        `shopify_komputerzz token refresh failed: ${tokenResult.error ?? 'unknown error'}`,
+        500
       )
     }
   }

@@ -8,6 +8,7 @@ export interface TokenRefreshResult {
   platform: ShopifyPlatform
   ok: boolean
   expiresAt?: string
+  refreshed?: boolean
   error?: string
 }
 
@@ -81,7 +82,8 @@ async function refreshOne(platform: ShopifyPlatform): Promise<TokenRefreshResult
 }
 
 export async function refreshShopifyToken(platform: ShopifyPlatform): Promise<TokenRefreshResult> {
-  return refreshOne(platform)
+  const result = await refreshOne(platform)
+  return result.ok ? { ...result, refreshed: true } : result
 }
 
 /** Refreshes Shopify OAuth tokens for both shops and stores them in D1. */
@@ -90,6 +92,29 @@ export async function refreshShopifyTokens(): Promise<TokenRefreshResult[]> {
     refreshOne('shopify_komputerzz'),
     refreshOne('shopify_tiktok'),
   ])
+}
+
+export async function ensureFreshShopifyToken(
+  platform: ShopifyPlatform,
+  maxAgeHours = 24,
+): Promise<TokenRefreshResult> {
+  try {
+    const row = await db.query.platformTokens.findFirst({
+      where: eq(platformTokens.platform, platform),
+    })
+
+    if (row) {
+      const refreshedAtMs = new Date(row.refreshedAt).getTime()
+      const maxAgeMs = maxAgeHours * 60 * 60 * 1000
+      if (Number.isFinite(refreshedAtMs) && (Date.now() - refreshedAtMs) < maxAgeMs) {
+        return { platform, ok: true, expiresAt: row.expiresAt, refreshed: false }
+      }
+    }
+  } catch {
+    // Fall through to an explicit refresh attempt.
+  }
+
+  return refreshShopifyToken(platform)
 }
 
 /**
