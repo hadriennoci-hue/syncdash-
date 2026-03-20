@@ -12,6 +12,72 @@ export interface TokenRefreshResult {
   error?: string
 }
 
+function getCloudflareSecretTargets(platform: ShopifyPlatform): Array<{ workerName: string; secretName: string }> {
+  if (platform !== 'shopify_komputerzz') return []
+
+  const targets = [
+    process.env.SYNCDASH_WORKER_NAME || 'syncdash',
+    process.env.KOMPUTERZZ_API_WORKER_NAME || 'komputerzz-api',
+  ]
+
+  return Array.from(new Set(targets.filter(Boolean))).map((workerName) => ({
+    workerName,
+    secretName: 'SHOPIFY_ADMIN_TOKEN',
+  }))
+}
+
+async function updateWorkerSecret(
+  accountId: string,
+  apiToken: string,
+  workerName: string,
+  secretName: string,
+  secretValue: string,
+): Promise<void> {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(workerName)}/secrets`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: secretName,
+        text: secretValue,
+        type: 'secret_text',
+      }),
+    }
+  )
+
+  if (!res.ok) {
+    throw new Error(`${workerName}:${secretName} ${res.status} ${await res.text()}`)
+  }
+}
+
+async function propagateShopifyAdminToken(platform: ShopifyPlatform, accessToken: string): Promise<void> {
+  const targets = getCloudflareSecretTargets(platform)
+  if (!targets.length) return
+
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+  if (!accountId || !apiToken) {
+    throw new Error('Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for worker secret propagation')
+  }
+
+  const failures: string[] = []
+  for (const target of targets) {
+    try {
+      await updateWorkerSecret(accountId, apiToken, target.workerName, target.secretName, accessToken)
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : `${target.workerName}:${target.secretName} unknown error`)
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Failed to propagate SHOPIFY_ADMIN_TOKEN: ${failures.join(' | ')}`)
+  }
+}
+
 function getOAuthConfig(platform: ShopifyPlatform): {
   shop: string
   clientId: string
@@ -70,6 +136,8 @@ async function refreshOne(platform: ShopifyPlatform): Promise<TokenRefreshResult
         target: platformTokens.platform,
         set:    { accessToken: data.access_token, expiresAt, refreshedAt },
       })
+
+    await propagateShopifyAdminToken(platform, data.access_token)
 
     return { platform, ok: true, expiresAt }
   } catch (err) {

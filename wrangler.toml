@@ -39,6 +39,9 @@ SHOPIFY_TIKTOK_SHOP                = "qanjg5-0h.myshopify.com"
 SHOPIFY_TIKTOK_IRELAND_LOCATION_ID = "gid://shopify/Location/79861219490"
 R2_PUBLIC_URL                      = "https://images.wizhard.store"
 ACER_STORE_SCRAPE_URLS             = "https://store.acer.com/fr-fr/ecrans,https://store.acer.com/fr-fr/peripheriques,https://store.acer.com/fr-fr/accessoires"
+CLOUDFLARE_ACCOUNT_ID              = "22289f45fec4c8545c8a47f6d768cad9"
+SYNCDASH_WORKER_NAME               = "syncdash"
+KOMPUTERZZ_API_WORKER_NAME         = "komputerzz-api"
 
 [triggers]
 crons = ["*/10 * * * *", "0 4 * * *", "0 6 * * *"]
