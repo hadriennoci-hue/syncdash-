@@ -637,12 +637,27 @@ async function pushPlatform(
     }
   }
 
+  const getMappedPlatformIdForTarget = (target: PushTarget): string | null => {
+    if (target.kind === 'single') {
+      return target.primary.platformMappings.find((m) => m.platform === platform)?.platformId ?? null
+    }
+    for (const member of target.members) {
+      const hit = member.product.platformMappings.find((m) => m.platform === platform)?.platformId ?? null
+      if (hit) return hit
+    }
+    return null
+  }
+
   const findPlatformIdForTarget = async (target: PushTarget): Promise<string | null> => {
     if (target.kind === 'single') {
       return (connector.findProductIdBySku
         ? await callWithShopifyAuthRetry(() => connector.findProductIdBySku!(target.primary.id))
         : null) ?? null
     }
+    const parentHit = (connector.findProductIdBySku
+      ? await callWithShopifyAuthRetry(() => connector.findProductIdBySku!(target.parentSku))
+      : null) ?? null
+    if (parentHit) return parentHit
     for (const member of target.members) {
       const hit = (connector.findProductIdBySku
         ? await callWithShopifyAuthRetry(() => connector.findProductIdBySku!(member.product.id))
@@ -671,7 +686,8 @@ async function pushPlatform(
       await emitProgress(productIds, 'error', `Incomplete: ${primary.id}`)
       continue
     }
-    const mapping = primary.platformMappings.find((m) => m.platform === platform)
+    const mappingPlatformId = getMappedPlatformIdForTarget(target)
+    const mapping = mappingPlatformId ? { platformId: mappingPlatformId } : null
     if (mapping?.platformId) touchedPlatformIds.add(mapping.platformId)
 
     const totalStock = target.kind === 'single'
@@ -774,6 +790,19 @@ async function pushPlatform(
 
       const updateExisting = async (platformId: string): Promise<void> => {
         if (target.kind === 'group') {
+          if (platform === 'shopify_komputerzz') {
+            if (!isWooSkuAware(connector)) {
+              throw new Error(`Grouped variant updates are not supported for ${platform}`)
+            }
+            const skuAwareConnector = connector
+            for (const member of target.members) {
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+            }
+            await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
+            return
+          }
+
           await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, platform === 'coincart2' ? payloadWithVariants : {
             ...identityPatch,
             title: primary.title,
@@ -805,6 +834,13 @@ async function pushPlatform(
             await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, primary.id, totalStock))
             await callWithShopifyAuthRetry(() => skuAwareConnector.toggleStatusForSku(platformId, primary.id, 'active'))
           }
+          return
+        }
+
+        if (platform === 'shopify_komputerzz') {
+          await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
+          await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
+          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           return
         }
 
@@ -855,6 +891,12 @@ async function pushPlatform(
         return platformId
       }
 
+      const isCoincartSlugConflict = (message: string): boolean => (
+        platform === 'coincart2'
+        && message.includes('Coincart error: 409')
+        && message.includes('slug already exists')
+      )
+
       let finalPlatformId: string | null = null
       let successMessage = 'created'
       const mappedId = mapping?.platformId ?? null
@@ -888,11 +930,22 @@ async function pushPlatform(
           finalPlatformId = skuHit
           successMessage = 'updated by SKU'
         } else {
-          const createdId = await createNew()
-          await upsertMappings(createdId)
-          finalPlatformId = createdId
-          newSkus.push(...productIds)
-          successMessage = 'created'
+          try {
+            const createdId = await createNew()
+            await upsertMappings(createdId)
+            finalPlatformId = createdId
+            newSkus.push(...productIds)
+            successMessage = 'created'
+          } catch (createErr) {
+            const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
+            if (!isCoincartSlugConflict(createMessage)) throw createErr
+            const recoveredId = await findPlatformIdForTarget(target)
+            if (!recoveredId) throw createErr
+            await upsertMappings(recoveredId)
+            await updateExisting(recoveredId)
+            finalPlatformId = recoveredId
+            successMessage = 'updated after slug-conflict remap'
+          }
         }
       }
 

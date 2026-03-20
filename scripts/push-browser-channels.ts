@@ -543,7 +543,7 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   throw new Error('Could not extract Libre Market product ID after creation')
 }
 
-async function lmEdit(page: Page, platformId: string, product: ProductDetail): Promise<void> {
+async function lmEdit(page: Page, platformId: string, product: ProductDetail, status: 'active' | 'archived' = 'active'): Promise<void> {
   const price = product.prices.libre_market?.price
   const stock = getTotalStock(product)
   const listingId = normalizeLmPlatformId(platformId)
@@ -567,6 +567,22 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail): P
           .catch(() => {})
       }
     })
+  const statusSelect = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[2]/div/div[4]/div[2]/select').first()
+  if (await statusSelect.count() > 0) {
+    if (status === 'active') {
+      await statusSelect.selectOption({ label: 'Actif' }).catch(async () => {
+        await statusSelect.selectOption({ value: 'active' }).catch(async () => {
+          await statusSelect.selectOption({ value: 'published' }).catch(() => {})
+        })
+      })
+    } else {
+      await statusSelect.selectOption({ label: 'Archivé' }).catch(async () => {
+        await statusSelect.selectOption({ value: 'archived' }).catch(async () => {
+          await statusSelect.selectOption({ value: 'draft' }).catch(() => {})
+        })
+      })
+    }
+  }
   await page.locator('xpath=/html/body/div[2]/div/main/div/form/div[4]/div/div[1]/input')
     .first()
     .fill(String(stock))
@@ -591,7 +607,7 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail): P
   }
 }
 
-async function lmSetStockOnly(page: Page, platformId: string, stock: number): Promise<void> {
+async function lmSetArchived(page: Page, platformId: string): Promise<void> {
   const listingId = normalizeLmPlatformId(platformId)
   await page.goto(`https://libre-market.com/m/coincart/admin/products/${listingId}/edit`)
   await page.waitForLoadState('networkidle').catch(() => {})
@@ -603,15 +619,13 @@ async function lmSetStockOnly(page: Page, platformId: string, stock: number): Pr
     if (txt.includes('produit non trouv')) throw new Error('LM_LISTING_NOT_FOUND')
   }
 
-  await page.locator('xpath=/html/body/div[2]/div/main/div/form/div[4]/div/div[1]/input')
-    .first()
-    .fill(String(stock))
-    .catch(async () => {
-      await page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input')
-        .first()
-        .fill(String(stock))
-        .catch(() => {})
+  const statusSelect = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[2]/div/div[4]/div[2]/select').first()
+  if (await statusSelect.count() === 0) throw new Error(`LM_STATUS_SELECT_NOT_FOUND: ${platformId}`)
+  await statusSelect.selectOption({ label: 'Archivé' }).catch(async () => {
+    await statusSelect.selectOption({ value: 'archived' }).catch(async () => {
+      await statusSelect.selectOption({ value: 'draft' }).catch(() => {})
     })
+  })
 
   const saveBtn = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[8]/button').first()
   if (await saveBtn.count() > 0) {
@@ -992,6 +1006,8 @@ async function processPlatform(
 
       const mapping = product.platforms[platform]
       const isNew   = !mapping?.platformId
+      const desiredXmrStatus = getTotalStock(product) > 0 ? 'active' : 'out_of_stock'
+      const desiredLmStatus = getTotalStock(product) > 0 ? 'active' : 'archived'
 
       try {
         let platformId: string
@@ -1002,7 +1018,7 @@ async function processPlatform(
             ? await lmCreate(page, product, imagePaths)
             : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, xmrSubmitState)
           if (platform === 'libre_market' && getTotalStock(product) === 0) {
-            await lmEdit(page, platformId, product)
+            await lmEdit(page, platformId, product, 'archived')
           }
           console.log(`    âœ… Created â†’ ${platformId}`)
           openedPlatformIds.add(platformId)
@@ -1012,8 +1028,8 @@ async function processPlatform(
           platformId = mapping!.platformId
           console.log(`    Editing existing listing ${platformId}...`)
           try {
-            if (platform === 'libre_market') await lmEdit(page, platformId, product)
-            else await xmrEdit(page, platformId, product, 'active', xmrSubmitState)
+            if (platform === 'libre_market') await lmEdit(page, platformId, product, desiredLmStatus)
+            else await xmrEdit(page, platformId, product, desiredXmrStatus, xmrSubmitState)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             const missingMappedListing = msg.includes('LM_LISTING_NOT_FOUND') || msg.includes('XMR_LISTING_NOT_FOUND')
@@ -1023,7 +1039,10 @@ async function processPlatform(
               ? await lmCreate(page, product, imagePaths)
               : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, xmrSubmitState)
             if (platform === 'libre_market' && getTotalStock(product) === 0) {
-              await lmEdit(page, platformId, product)
+              await lmEdit(page, platformId, product, 'archived')
+            }
+            if (platform === 'xmr_bazaar' && getTotalStock(product) === 0) {
+              await xmrEdit(page, platformId, product, 'out_of_stock', xmrSubmitState)
             }
             console.log(`    âœ… Recreated â†’ ${platformId}`)
             createdOrRemapped = true
@@ -1118,14 +1137,14 @@ async function processPlatform(
 
       for (const row of staleListings) {
         const mappedId = row.platformId!
-        console.log(`  â†’ ${row.sku}: set stock=0 (${mappedId})`)
+        console.log(`  â†’ ${row.sku}: set Archivé (${mappedId})`)
         try {
-          await lmSetStockOnly(page, mappedId, 0)
-          console.log('    âœ… Stock set to 0')
+          await lmSetArchived(page, mappedId)
+          console.log('    âœ… Archivé saved')
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           if (msg.includes('LM_LISTING_NOT_FOUND')) {
-            console.log('    Mapped listing missing â€” recreating then forcing stock=0...')
+            console.log('    Mapped listing missing â€” recreating then forcing Archivé...')
             try {
               const detail = await getProductDetail(row.sku, token, apiBase)
               const sorted = [...detail.images].sort((a, b) => a.position - b.position)
@@ -1135,16 +1154,16 @@ async function processPlatform(
                 if (p) imagePaths.push(p)
               }
               const newId = await lmCreate(page, detail, imagePaths)
-              await lmSetStockOnly(page, newId, 0)
+              await lmSetArchived(page, newId)
               await markDone(detail.id, 'libre_market', newId, true, token, apiBase)
               for (const p of imagePaths) fs.unlink(p, () => {})
-              console.log(`    âœ… Recreated and zeroed (${newId})`)
+              console.log(`    âœ… Recreated and archived (${newId})`)
             } catch (inner) {
               const innerMsg = inner instanceof Error ? inner.message : String(inner)
-              console.log(`    âš ï¸  Failed to recreate+zero: ${innerMsg}`)
+              console.log(`    âš ï¸  Failed to recreate+archive: ${innerMsg}`)
             }
           } else {
-            console.log(`    âš ï¸  Failed to set stock=0: ${msg}`)
+            console.log(`    âš ï¸  Failed to set Archivé: ${msg}`)
           }
         }
       }

@@ -362,9 +362,15 @@ export class CoincartConnector implements PlatformConnector {
   async findProductIdBySku(sku: string): Promise<string | null> {
     const items = await this.request<Array<{ id: number }>>(
       'GET',
-      `/products?sku=${encodeURIComponent(sku)}&per_page=1`
+      `/products?sku=${encodeURIComponent(sku)}&per_page=1&status=any`
     )
-    return items[0] ? String(items[0].id) : null
+    if (items[0]?.id) return String(items[0].id)
+
+    const search = await this.request<Array<{ id: number }>>(
+      'GET',
+      `/products?search=${encodeURIComponent(sku)}&per_page=20&status=any`
+    )
+    return search[0]?.id ? String(search[0].id) : null
   }
 
   // -------------------------------------------------------------------------
