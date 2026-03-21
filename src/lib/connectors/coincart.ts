@@ -88,8 +88,8 @@ export class CoincartConnector implements PlatformConnector {
 
       return {
         ...(v.sku ? { sku: v.sku } : {}),
-        ...(promoPrice != null ? { regular_price: promoPrice.toString() } : (basePrice != null ? { regular_price: basePrice.toString() } : {})),
-        ...(promoPrice != null && basePrice != null ? { sale_price: basePrice.toString() } : {}),
+        ...(basePrice != null ? { regular_price: basePrice.toString() } : {}),
+        ...(promoPrice != null ? { sale_price: promoPrice.toString() } : {}),
         stock_quantity: v.stock ?? 0,
         ...(attrs.length ? { attributes: attrs } : {}),
       }
@@ -271,7 +271,7 @@ export class CoincartConnector implements PlatformConnector {
           sku:           (p.sku as string) ?? null,
           price:         p.price ? parseFloat(p.price as string) : null,
           compareAtPrice: p.regular_price && p.sale_price
-            ? parseFloat(p.regular_price as string)
+            ? parseFloat(p.sale_price as string)
             : null,
           stock:         (p.stock_quantity as number) ?? 0,
           position:      0,
@@ -290,7 +290,7 @@ export class CoincartConnector implements PlatformConnector {
           sku:           (p.sku as string) ?? null,
           price:         p.price ? parseFloat(p.price as string) : null,
           compareAtPrice: p.regular_price && p.sale_price
-            ? parseFloat(p.regular_price as string)
+            ? parseFloat(p.sale_price as string)
             : null,
           stock:         (p.stock_quantity as number) ?? 0,
           position:      0,
@@ -343,7 +343,7 @@ export class CoincartConnector implements PlatformConnector {
         prices: {
           price:     p.price ? parseFloat(p.price as string) : null,
           compareAt: p.regular_price && p.sale_price
-            ? parseFloat(p.regular_price as string)
+            ? parseFloat(p.sale_price as string)
             : null,
         },
       }
@@ -438,8 +438,8 @@ export class CoincartConnector implements PlatformConnector {
       status:        data.status === 'active' ? 'publish' : 'private',
       type:          data.variants && data.variants.length > 1 ? 'variable' : 'simple',
       sku:           data.sku ?? '',
-      regular_price: data.compareAt ? data.compareAt.toString() : (data.price?.toString() ?? ''),
-      sale_price:    data.compareAt && data.price ? data.price.toString() : '',
+      regular_price: data.price?.toString() ?? '',
+      sale_price:    data.compareAt ? data.compareAt.toString() : '',
       ...(primaryCollection ? { category: primaryCollection } : {}),
       // Stock: mark as 'instock' at creation — no specific quantity.
       // Actual warehouse quantities (Ireland, Poland) are synced later by the cron via updateStock().
@@ -526,8 +526,8 @@ export class CoincartConnector implements PlatformConnector {
 
   async updatePrice(platformId: string, price: number | null, compareAt?: number | null): Promise<void> {
     await this.request('PUT', `/products/${platformId}`, {
-      regular_price: compareAt ? compareAt.toString() : (price?.toString() ?? ''),
-      sale_price:    compareAt && price ? price.toString() : '',
+      regular_price: price?.toString() ?? '',
+      sale_price:    compareAt ? compareAt.toString() : '',
     })
   }
 
@@ -538,8 +538,8 @@ export class CoincartConnector implements PlatformConnector {
       return
     }
     await this.request('PUT', `/products/${ctx.parentId}/variations/${ctx.variationId}`, {
-      regular_price: compareAt ? compareAt.toString() : (price?.toString() ?? ''),
-      sale_price:    compareAt && price ? price.toString() : '',
+      regular_price: price?.toString() ?? '',
+      sale_price:    compareAt ? compareAt.toString() : '',
     })
   }
 
