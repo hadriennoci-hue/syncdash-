@@ -494,7 +494,7 @@ function buildPushTargets(eligible: EligibleProduct[], platform: Platform): Push
       if ((titleCount.get(t.primary.title) ?? 0) <= 1) continue
       const suffix = t.kind === 'group'
         ? t.groupId.replace(/-/g, '').slice(0, 6)
-        : (t.primary.id.split('.').pop() ?? t.primary.id)
+        : t.primary.id
       t.titleOverride = `${t.primary.title} (${suffix})`
     }
   }
