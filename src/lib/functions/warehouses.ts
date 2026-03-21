@@ -10,6 +10,18 @@ const isBlockedAcerSku = (sku: string) =>
 import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
 import { eq, and, inArray, isNull } from 'drizzle-orm'
+import type { Platform } from '@/types/platform'
+
+// Map from platform to the corresponding pushed_* column in the products table.
+// Only platforms that have a pushed column are listed here.
+const PLATFORM_PUSHED_FIELD: Partial<Record<Platform, keyof typeof products.$inferInsert>> = {
+  coincart2:          'pushedCoincart2',
+  shopify_komputerzz: 'pushedShopifyKomputerzz',
+  shopify_tiktok:     'pushedShopifyTiktok',
+  ebay_ie:            'pushedEbayIe',
+  xmr_bazaar:         'pushedXmrBazaar',
+  libre_market:       'pushedLibreMarket',
+}
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
 import type { WarehouseStockProgress, WarehouseStockSnapshot } from '@/lib/connectors/types'
 import { logOperation } from './log'
@@ -75,15 +87,42 @@ export async function applyWarehouseSnapshots(
   // URL priority logic without N extra DB reads in the loop.
   // D1 has a ~100 bound-parameter limit per query, so chunk the inArray.
   const skusInBatch = snapshots.map(s => s.sku).filter(Boolean)
+  const PREFETCH_CHUNK = 80 // stay safely under D1's variable limit
   const existingStockMap = new Map<string, { sourceUrl: string | null }>()
   if (isAcerSource && skusInBatch.length > 0) {
-    const PREFETCH_CHUNK = 80 // stay safely under D1's variable limit
     for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
       const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
       const rows = await db.select({ productId: warehouseStock.productId, sourceUrl: warehouseStock.sourceUrl })
         .from(warehouseStock)
         .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
       for (const row of rows) existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
+    }
+  }
+
+  // Pre-fetch which SKUs already exist in Wizhard and which platforms they are
+  // mapped to, so that after the stock update we can mark those channels 2push.
+  const existingProductIds = new Set<string>()
+  if (skusInBatch.length > 0) {
+    for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
+      const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
+      const rows = await db.select({ id: products.id }).from(products).where(inArray(products.id, chunk))
+      for (const row of rows) existingProductIds.add(row.id)
+    }
+  }
+  // SKU → set of platforms it is already mapped to
+  const existingSkuMappedPlatforms = new Map<string, Set<Platform>>()
+  const existingSkus = skusInBatch.filter(s => existingProductIds.has(s))
+  if (existingSkus.length > 0) {
+    for (let i = 0; i < existingSkus.length; i += PREFETCH_CHUNK) {
+      const chunk = existingSkus.slice(i, i + PREFETCH_CHUNK)
+      const rows = await db.select({ productId: platformMappings.productId, platform: platformMappings.platform })
+        .from(platformMappings)
+        .where(inArray(platformMappings.productId, chunk))
+      for (const row of rows) {
+        const set = existingSkuMappedPlatforms.get(row.productId) ?? new Set<Platform>()
+        set.add(row.platform as Platform)
+        existingSkuMappedPlatforms.set(row.productId, set)
+      }
     }
   }
 
@@ -160,6 +199,23 @@ export async function applyWarehouseSnapshots(
       productsUpdated++
     } catch (err) {
       errors.push(`${snap.sku}: ${err instanceof Error ? err.message : 'Unknown'}`)
+    }
+  }
+
+  // For each platform, mark existing mapped products as 2push so the channel
+  // sync picks up the updated stock on the next push run.
+  if (existingSkuMappedPlatforms.size > 0) {
+    for (const [platform, field] of Object.entries(PLATFORM_PUSHED_FIELD) as [Platform, keyof typeof products.$inferInsert][]) {
+      const skusToMark = [...existingSkuMappedPlatforms.entries()]
+        .filter(([, platforms]) => platforms.has(platform))
+        .map(([sku]) => sku)
+      if (skusToMark.length === 0) continue
+      for (let i = 0; i < skusToMark.length; i += PREFETCH_CHUNK) {
+        const chunk = skusToMark.slice(i, i + PREFETCH_CHUNK)
+        await db.update(products)
+          .set({ [field]: '2push' } as Partial<typeof products.$inferInsert>)
+          .where(inArray(products.id, chunk))
+      }
     }
   }
 
