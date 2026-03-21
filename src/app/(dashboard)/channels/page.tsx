@@ -256,7 +256,8 @@ function ChannelPriceCell({ platform, product }: { platform?: PlatformData; prod
   const compareAt = Number(platform.compareAt)
 
   if (!Number.isFinite(price)) {
-    return <span className="text-muted-foreground">-</span>
+    // Mapped but no price (browser channels like xmr_bazaar / libre_market)
+    return <span className={colorClass}>✓</span>
   }
 
   if (Number.isFinite(compareAt) && compareAt > price) {

@@ -189,31 +189,42 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (skus.length === 0) {
       rows = []
     } else {
-      const placeholders = skus.map(() => '?').join(',')
-      const [pricesRes, stockRes, mappingsRes] = await Promise.all([
-        binding.prepare(`SELECT * FROM product_prices WHERE product_id IN (${placeholders})`).bind(...skus).all(),
-        binding.prepare(`SELECT * FROM warehouse_stock WHERE product_id IN (${placeholders})`).bind(...skus).all(),
-        binding.prepare(`SELECT * FROM platform_mappings WHERE product_id IN (${placeholders})`).bind(...skus).all(),
+      // D1 limits prepared-statement parameters to 100; chunk to stay within that.
+      const CHUNK = 99
+      async function fetchChunked(table: string) {
+        const out: Record<string, unknown>[] = []
+        for (let i = 0; i < skus.length; i += CHUNK) {
+          const chunk = skus.slice(i, i + CHUNK)
+          const ph = chunk.map(() => '?').join(',')
+          const res = await binding!.prepare(`SELECT * FROM ${table} WHERE product_id IN (${ph})`).bind(...chunk).all()
+          out.push(...((res.results ?? []) as Record<string, unknown>[]))
+        }
+        return out
+      }
+      const [priceRaw, stockRaw, mappingsRaw] = await Promise.all([
+        fetchChunked('product_prices'),
+        fetchChunked('warehouse_stock'),
+        fetchChunked('platform_mappings'),
       ])
 
-      const priceRows = (pricesRes.results ?? []).map((r) => ({
-        productId: String((r as any).product_id),
-        platform:  String((r as any).platform),
-        price:     (r as any).price ?? null,
-        compareAt: (r as any).compare_at ?? null,
+      const priceRows = priceRaw.map((r) => ({
+        productId: String(r.product_id),
+        platform:  String(r.platform),
+        price:     (r.price as number | null) ?? null,
+        compareAt: (r.compare_at as number | null) ?? null,
       }))
-      const stockRows = (stockRes.results ?? []).map((r) => ({
-        productId:        String((r as any).product_id),
-        warehouseId:      String((r as any).warehouse_id),
-        quantity:         (r as any).quantity ?? null,
-        importPrice:      (r as any).import_price ?? null,
-        importPromoPrice: (r as any).import_promo_price ?? null,
+      const stockRows = stockRaw.map((r) => ({
+        productId:        String(r.product_id),
+        warehouseId:      String(r.warehouse_id),
+        quantity:         (r.quantity as number | null) ?? null,
+        importPrice:      (r.import_price as number | null) ?? null,
+        importPromoPrice: (r.import_promo_price as number | null) ?? null,
       }))
-      const mappingRows = (mappingsRes.results ?? []).map((r) => ({
-        productId:  String((r as any).product_id),
-        platform:   String((r as any).platform),
-        platformId: String((r as any).platform_id),
-        syncStatus: String((r as any).sync_status),
+      const mappingRows = mappingsRaw.map((r) => ({
+        productId:  String(r.product_id),
+        platform:   String(r.platform),
+        platformId: String(r.platform_id),
+        syncStatus: String(r.sync_status),
       }))
 
       rows = baseProducts.map((p) => ({
