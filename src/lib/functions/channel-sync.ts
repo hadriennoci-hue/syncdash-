@@ -950,6 +950,29 @@ async function pushPlatform(
         && message.includes('slug already exists')
       )
 
+      // Coincart ignores our explicit `slug` field for variable products and always
+      // auto-generates it from title + variant option values.  Two variant groups that
+      // share the same title and options (different keyboard-layout batches of the same
+      // model) will therefore always produce a slug collision.  The correct resolution is
+      // to merge the second group's variants into the Coincart product already created by
+      // the first group (replaceVariants: false = ADD, not overwrite).
+      const mergeGroupVariantsIntoExisting = async (platformId: string): Promise<void> => {
+        if (target.kind !== 'group') return
+        if (!isWooSkuAware(connector)) throw new Error(`Grouped variant merge not supported for ${platform}`)
+        if (variantPayloads?.length) {
+          await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, {
+            variants: variantPayloads,
+            replaceVariants: false,
+          }))
+        }
+        const skuAwareConnector = connector
+        for (const member of target.members) {
+          await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+          await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+        }
+        await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
+      }
+
       let finalPlatformId: string | null = null
       let successMessage = 'created'
       const mappedId = mapping?.platformId ?? null
@@ -979,6 +1002,17 @@ async function pushPlatform(
                 await updateExisting(recoveredId)
                 finalPlatformId = recoveredId
                 successMessage = 'updated after slug-conflict remap'
+              } else if (platform === 'coincart2' && target.kind === 'group' && isSlugTitleRecoverable(connector)) {
+                const mergeId = await connector.findProductIdBySlugOrTitle(primary.title)
+                if (mergeId) {
+                  await upsertMappings(mergeId)
+                  await mergeGroupVariantsIntoExisting(mergeId)
+                  finalPlatformId = mergeId
+                  successMessage = 'merged into existing by slug conflict'
+                } else {
+                  createdId = await createNew(buildCoincartConflictSlug(primary.title, target.parentSku))
+                  successMessage = 'created with deterministic conflict slug'
+                }
               } else {
                 createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
                 successMessage = 'created with deterministic conflict slug'
@@ -1018,6 +1052,20 @@ async function pushPlatform(
               await updateExisting(recoveredId)
               finalPlatformId = recoveredId
               successMessage = 'updated after slug-conflict remap'
+            } else if (platform === 'coincart2' && target.kind === 'group' && isSlugTitleRecoverable(connector)) {
+              const mergeId = await connector.findProductIdBySlugOrTitle(primary.title)
+              if (mergeId) {
+                await upsertMappings(mergeId)
+                await mergeGroupVariantsIntoExisting(mergeId)
+                finalPlatformId = mergeId
+                successMessage = 'merged into existing by slug conflict'
+              } else {
+                const createdId = await createNew(buildCoincartConflictSlug(primary.title, target.parentSku))
+                await upsertMappings(createdId)
+                finalPlatformId = createdId
+                newSkus.push(...productIds)
+                successMessage = 'created with deterministic conflict slug'
+              }
             } else {
               const createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
               await upsertMappings(createdId)
