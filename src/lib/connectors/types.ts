@@ -93,6 +93,8 @@ export interface RawMetafield {
 export interface ProductPayload {
   // Internal canonical SKU (product.id). Must be pushed as platform SKU when possible.
   sku?: string
+  // Optional explicit slug/handle override for platforms that support it.
+  slug?: string | null
   // EAN/GTIN barcode. Optional; skip push when empty.
   ean?: string | null
   title: string

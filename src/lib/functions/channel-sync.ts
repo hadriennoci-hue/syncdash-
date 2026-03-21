@@ -404,6 +404,16 @@ function buildVariantGroupParentSku(groupId: string): string {
   return `VG-${groupId.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 24)}`
 }
 
+function buildCoincartConflictSlug(title: string, sku: string): string {
+  const base = slugifyHandle(
+    title
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+  )
+  const skuSuffix = slugifyHandle(sku)
+  return [base, skuSuffix].filter((part) => part.length > 0).join('-')
+}
+
 function choosePrimaryProduct(productsInGroup: EligibleProduct[]): EligibleProduct {
   return [...productsInGroup].sort((a, b) => {
     const imageDiff = b.images.length - a.images.length
@@ -900,13 +910,15 @@ async function pushPlatform(
         await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
       }
 
-      const createNew = async (): Promise<string> => {
+      const createNew = async (slugOverride?: string | null): Promise<string> => {
         const images = buildImages(primary)
         const categoryIds = collectCategoryIds(primary)
         const collections = collectCollections(primary)
+        const canonicalSku = target.kind === 'group' ? target.parentSku : primary.id
 
         const platformId = await callWithShopifyAuthRetry(() => connector.createProduct({
-          sku: target.kind === 'group' ? target.parentSku : primary.id,
+          sku: canonicalSku,
+          slug: slugOverride ?? null,
           ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
           title: primary.title,
           description: primary.description,
@@ -971,11 +983,15 @@ async function pushPlatform(
               const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
               if (!isCoincartSlugConflict(createMessage)) throw createErr
               const recoveredId = await findRecoveryPlatformIdForTarget(target)
-              if (!recoveredId) throw createErr
-              await upsertMappings(recoveredId)
-              await updateExisting(recoveredId)
-              finalPlatformId = recoveredId
-              successMessage = 'updated after slug-conflict remap'
+              if (recoveredId) {
+                await upsertMappings(recoveredId)
+                await updateExisting(recoveredId)
+                finalPlatformId = recoveredId
+                successMessage = 'updated after slug-conflict remap'
+              } else {
+                createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
+                successMessage = 'created with deterministic conflict slug'
+              }
             }
             if (!createdId) {
               if (!finalPlatformId) throw mappedErr
@@ -1006,11 +1022,18 @@ async function pushPlatform(
             const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
             if (!isCoincartSlugConflict(createMessage)) throw createErr
             const recoveredId = await findRecoveryPlatformIdForTarget(target)
-            if (!recoveredId) throw createErr
-            await upsertMappings(recoveredId)
-            await updateExisting(recoveredId)
-            finalPlatformId = recoveredId
-            successMessage = 'updated after slug-conflict remap'
+            if (recoveredId) {
+              await upsertMappings(recoveredId)
+              await updateExisting(recoveredId)
+              finalPlatformId = recoveredId
+              successMessage = 'updated after slug-conflict remap'
+            } else {
+              const createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
+              await upsertMappings(createdId)
+              finalPlatformId = createdId
+              newSkus.push(...productIds)
+              successMessage = 'created with deterministic conflict slug'
+            }
           }
         }
       }

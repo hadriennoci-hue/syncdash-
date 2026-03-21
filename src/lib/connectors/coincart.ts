@@ -437,6 +437,8 @@ export class CoincartConnector implements PlatformConnector {
       stock_status:  'instock',
       attributes,
     }
+    const explicitSlug = this.slugify(data.slug)
+    if (explicitSlug) body.slug = explicitSlug
     const variantPayload = this.buildVariantWritePayload(data)
     if (variantPayload.options) body.options = variantPayload.options
     if (variantPayload.variants) body.variants = variantPayload.variants
