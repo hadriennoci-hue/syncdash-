@@ -17,6 +17,7 @@ const patchSchema = z.object({
   hypothesis: z.string().max(500).optional(),
   variantLabel: z.string().max(120).optional(),
   experimentGroup: z.string().max(120).optional(),
+  quoteTweetId: z.string().regex(/^\d+$/).nullable().optional(),
 })
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -61,6 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     hypothesis: parsed.data.hypothesis ?? undefined,
     variantLabel: parsed.data.variantLabel ?? undefined,
     experimentGroup: parsed.data.experimentGroup ?? undefined,
+    quoteTweetId: parsed.data.quoteTweetId !== undefined ? parsed.data.quoteTweetId : undefined,
     publishedAt: parsed.data.status === undefined ? undefined : (parsed.data.status === 'published' ? now : null),
     updatedAt: now,
   }).where(eq(socialMediaPosts.postPk, postPk))

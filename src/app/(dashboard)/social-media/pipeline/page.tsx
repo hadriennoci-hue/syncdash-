@@ -22,6 +22,15 @@ interface SocialPost {
   scheduledFor: string
   status: PostStatus
   publishedAt?: string | null
+  quoteTweetId?: string | null
+}
+
+interface QuotedTweetData {
+  id: string
+  text: string
+  createdAt: string | null
+  authorName: string | null
+  authorUsername: string | null
 }
 
 function formatDate(iso: string): string {
@@ -52,7 +61,6 @@ function PlatformLogo({ platform }: { platform: string }) {
       </span>
     )
   }
-
   return (
     <span
       className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-300 text-[10px] font-bold"
@@ -61,6 +69,49 @@ function PlatformLogo({ platform }: { platform: string }) {
     >
       {platform.slice(0, 1).toUpperCase()}
     </span>
+  )
+}
+
+function QuotedTweetBlock({ tweetId }: { tweetId: string }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['quoted-tweet', tweetId],
+    queryFn: () => apiFetch<{ data: QuotedTweetData }>(`/api/social/tweet/${tweetId}`),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 rounded border border-gray-300 bg-white/60 p-1.5 text-[10px] text-muted-foreground">
+        Loading original tweet…
+      </div>
+    )
+  }
+
+  if (isError || !data?.data) {
+    return (
+      <div className="mt-2 rounded border border-gray-300 bg-white/60 p-1.5 text-[10px] text-muted-foreground">
+        Could not load original tweet
+      </div>
+    )
+  }
+
+  const t = data.data
+  return (
+    <div className="mt-2 rounded border border-gray-400 bg-white/70 p-1.5 space-y-0.5">
+      <div className="flex items-center gap-1">
+        <span className="inline-flex h-3 w-3 items-center justify-center rounded-full bg-black text-white text-[8px] font-bold">X</span>
+        {t.authorName && (
+          <span className="text-[10px] font-medium truncate">{t.authorName}</span>
+        )}
+        {t.authorUsername && (
+          <span className="text-[10px] text-muted-foreground truncate">@{t.authorUsername}</span>
+        )}
+        {t.createdAt && (
+          <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{formatDate(t.createdAt)}</span>
+        )}
+      </div>
+      <p className="text-[10px] line-clamp-3 text-gray-700">{t.text}</p>
+    </div>
   )
 }
 
@@ -97,6 +148,73 @@ export default function SocialMediaPage() {
 
   function toggleImages(postPk: number) {
     setExpandedImages((prev) => ({ ...prev, [postPk]: !prev[postPk] }))
+  }
+
+  function renderPostCard(p: SocialPost, isPublished: boolean) {
+    const cardClass = isPublished
+      ? 'min-w-[170px] max-w-[170px] border border-blue-300 bg-blue-100 rounded p-2'
+      : `min-w-[170px] max-w-[170px] border rounded p-2 ${leftCardClass(p.status)}`
+
+    return (
+      <article key={p.postPk} className={cardClass}>
+        {(p.images?.[0] ?? p.imageUrl) && (
+          <div className="w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
+            <img
+              src={(p.images?.[0] ?? p.imageUrl)!}
+              alt=""
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          </div>
+        )}
+        <p className="text-[11px] line-clamp-4">{p.content}</p>
+        {p.quoteTweetId && <QuotedTweetBlock tweetId={p.quoteTweetId} />}
+        <p className="text-[10px] text-muted-foreground mt-1">
+          {isPublished ? `Published ${formatDate(p.publishedAt ?? p.scheduledFor)}` : formatDate(p.scheduledFor)}
+        </p>
+        {!!p.images && p.images.length > 1 && (
+          <div className="mt-1">
+            <button
+              className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-white/70"
+              onClick={() => toggleImages(p.postPk)}
+            >
+              {expandedImages[p.postPk] ? 'Hide images' : `See ${p.images.length - 1} more image(s)`}
+            </button>
+            {expandedImages[p.postPk] && (
+              <div className="mt-1 grid grid-cols-3 gap-1">
+                {p.images.slice(1, 4).map((img, idx) => (
+                  <div key={`${p.postPk}-${idx}`} className="h-10 rounded overflow-hidden bg-white/80">
+                    <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {!isPublished && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            <button
+              className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 bg-green-200"
+              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'validated' })}
+            >
+              Validate
+            </button>
+            <button
+              className="text-[10px] px-1.5 py-0.5 rounded border border-red-400 bg-red-200"
+              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'canceled' })}
+            >
+              Cancel
+            </button>
+            <button
+              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 bg-gray-200"
+              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'suggested' })}
+            >
+              Suggest
+            </button>
+          </div>
+        )}
+      </article>
+    )
   }
 
   return (
@@ -143,64 +261,7 @@ export default function SocialMediaPage() {
                     {unpublished.length === 0 ? (
                       <span className="text-xs text-muted-foreground">No planned posts</span>
                     ) : (
-                      unpublished.map((p) => (
-                        <article
-                          key={p.postPk}
-                          className={`min-w-[170px] max-w-[170px] border rounded p-2 ${leftCardClass(p.status)}`}
-                        >
-                          {(p.images?.[0] ?? p.imageUrl) && (
-                            <div className="w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                              <img
-                                src={(p.images?.[0] ?? p.imageUrl)!}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            </div>
-                          )}
-                          <p className="text-[11px] line-clamp-4">{p.content}</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">{formatDate(p.scheduledFor)}</p>
-                          {!!p.images && p.images.length > 1 && (
-                            <div className="mt-1">
-                              <button
-                                className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-white/70"
-                                onClick={() => toggleImages(p.postPk)}
-                              >
-                                {expandedImages[p.postPk] ? 'Hide images' : `See ${p.images.length - 1} more image(s)`}
-                              </button>
-                              {expandedImages[p.postPk] && (
-                                <div className="mt-1 grid grid-cols-3 gap-1">
-                                  {p.images.slice(1, 4).map((img, idx) => (
-                                    <div key={`${p.postPk}-${idx}`} className="h-10 rounded overflow-hidden bg-white/80">
-                                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            <button
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 bg-green-200"
-                              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'validated' })}
-                            >
-                              Validate
-                            </button>
-                            <button
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-red-400 bg-red-200"
-                              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'canceled' })}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 bg-gray-200"
-                              onClick={() => updateStatus.mutate({ postPk: p.postPk, status: 'suggested' })}
-                            >
-                              Suggest
-                            </button>
-                          </div>
-                        </article>
-                      ))
+                      unpublished.map((p) => renderPostCard(p, false))
                     )}
                   </div>
                 </div>
@@ -211,41 +272,7 @@ export default function SocialMediaPage() {
                     {published.length === 0 ? (
                       <span className="text-xs text-muted-foreground">No published posts</span>
                     ) : (
-                      published.map((p) => (
-                        <article key={p.postPk} className="min-w-[170px] max-w-[170px] border border-blue-300 bg-blue-100 rounded p-2">
-                          {(p.images?.[0] ?? p.imageUrl) && (
-                            <div className="w-full h-20 mb-2 rounded overflow-hidden bg-white/70">
-                              <img
-                                src={(p.images?.[0] ?? p.imageUrl)!}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            </div>
-                          )}
-                          <p className="text-[11px] line-clamp-4">{p.content}</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">Published {formatDate(p.publishedAt ?? p.scheduledFor)}</p>
-                          {!!p.images && p.images.length > 1 && (
-                            <div className="mt-1">
-                              <button
-                                className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 bg-white/70"
-                                onClick={() => toggleImages(p.postPk)}
-                              >
-                                {expandedImages[p.postPk] ? 'Hide images' : `See ${p.images.length - 1} more image(s)`}
-                              </button>
-                              {expandedImages[p.postPk] && (
-                                <div className="mt-1 grid grid-cols-3 gap-1">
-                                  {p.images.slice(1, 4).map((img, idx) => (
-                                    <div key={`${p.postPk}-pub-${idx}`} className="h-10 rounded overflow-hidden bg-white/80">
-                                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </article>
-                      ))
+                      published.map((p) => renderPostCard(p, true))
                     )}
                   </div>
                 </div>
