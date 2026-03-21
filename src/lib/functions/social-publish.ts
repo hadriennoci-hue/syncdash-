@@ -41,11 +41,12 @@ function formatXError(json: XCreateTweetResponse, status: number, bodyText: stri
   return fallback ? `X API ${status}: ${fallback.slice(0, 300)}` : `X API ${status}: unknown error`
 }
 
-async function postTweetWithOAuth(content: string, mediaIds: string[], creds: XOAuthCreds, quoteTweetId?: string | null): Promise<string> {
+async function postTweetWithOAuth(content: string, mediaIds: string[], creds: XOAuthCreds, quoteTweetId?: string | null, replyToId?: string | null): Promise<string> {
   const endpoint = process.env.X_API_POST_TWEET_URL ?? 'https://api.twitter.com/2/tweets'
   const payload: Record<string, unknown> = { text: content }
   if (mediaIds.length > 0) payload.media = { media_ids: mediaIds }
   if (quoteTweetId) payload.quote_tweet_id = quoteTweetId
+  if (replyToId) payload.reply = { in_reply_to_tweet_id: replyToId }
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -116,7 +117,7 @@ async function uploadMediaToX(imageUrl: string, creds: XOAuthCreds): Promise<str
   return parsed.media_id_string
 }
 
-async function postToX(accountId: string, content: string, imageUrls: string[], quoteTweetId?: string | null): Promise<string> {
+async function postToX(accountId: string, content: string, imageUrls: string[], quoteTweetId?: string | null, replyToId?: string | null): Promise<string> {
   const creds = resolveXCreds(accountId)
   if (!creds) throw new Error(`missing account-specific X OAuth credentials for account ${accountId}`)
 
@@ -125,10 +126,10 @@ async function postToX(accountId: string, content: string, imageUrls: string[], 
     for (const imageUrl of imageUrls.slice(0, 4)) {
       mediaIds.push(await uploadMediaToX(imageUrl, creds))
     }
-    return postTweetWithOAuth(content, mediaIds, creds, quoteTweetId)
+    return postTweetWithOAuth(content, mediaIds, creds, quoteTweetId, replyToId)
   }
 
-  return postTweetWithOAuth(content, [], creds, quoteTweetId)
+  return postTweetWithOAuth(content, [], creds, quoteTweetId, replyToId)
 }
 
 export async function runSocialPublishCron(): Promise<PublishSummary> {
@@ -145,6 +146,8 @@ export async function runSocialPublishCron(): Promise<PublishSummary> {
       imageUrl: socialMediaPosts.imageUrl,
       imageUrls: socialMediaPosts.imageUrls,
       quoteTweetId: socialMediaPosts.quoteTweetId,
+      parentPostPk: socialMediaPosts.parentPostPk,
+      replyToExternalId: socialMediaPosts.replyToExternalId,
       scheduledFor: socialMediaPosts.scheduledFor,
       handle: socialMediaAccounts.handle,
       platform: socialMediaAccounts.platform,
@@ -171,8 +174,27 @@ export async function runSocialPublishCron(): Promise<PublishSummary> {
 
     const imageUrls = parseImageUrls(post.imageUrls, post.imageUrl)
 
+    // Resolve reply-to ID: from a parent Wizhard post or a direct external ID
+    let replyToId: string | null = post.replyToExternalId ?? null
+    if (post.parentPostPk) {
+      const parent = await db
+        .select({ externalPostId: socialMediaPosts.externalPostId })
+        .from(socialMediaPosts)
+        .where(eq(socialMediaPosts.postPk, post.parentPostPk))
+        .limit(1)
+      const parentExternalId = parent[0]?.externalPostId ?? null
+      if (!parentExternalId) {
+        failed += 1
+        const message = `postPk=${post.postPk} skipped: parent postPk=${post.parentPostPk} not yet published`
+        errors.push(message)
+        await logOperation({ platform: 'x', action: 'social_publish', status: 'error', message, triggeredBy: 'system' })
+        continue
+      }
+      replyToId = parentExternalId
+    }
+
     try {
-      const externalPostId = await postToX(post.accountId, post.content, imageUrls, post.quoteTweetId)
+      const externalPostId = await postToX(post.accountId, post.content, imageUrls, post.quoteTweetId, replyToId)
       const publishedAt = new Date().toISOString()
       await db.update(socialMediaPosts).set({
         status: 'published',
