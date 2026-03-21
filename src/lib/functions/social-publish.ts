@@ -41,11 +41,11 @@ function formatXError(json: XCreateTweetResponse, status: number, bodyText: stri
   return fallback ? `X API ${status}: ${fallback.slice(0, 300)}` : `X API ${status}: unknown error`
 }
 
-async function postTweetWithOAuth(content: string, mediaIds: string[], creds: XOAuthCreds): Promise<string> {
+async function postTweetWithOAuth(content: string, mediaIds: string[], creds: XOAuthCreds, quoteTweetId?: string | null): Promise<string> {
   const endpoint = process.env.X_API_POST_TWEET_URL ?? 'https://api.twitter.com/2/tweets'
-  const payload = mediaIds.length > 0
-    ? { text: content, media: { media_ids: mediaIds } }
-    : { text: content }
+  const payload: Record<string, unknown> = { text: content }
+  if (mediaIds.length > 0) payload.media = { media_ids: mediaIds }
+  if (quoteTweetId) payload.quote_tweet_id = quoteTweetId
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -116,7 +116,7 @@ async function uploadMediaToX(imageUrl: string, creds: XOAuthCreds): Promise<str
   return parsed.media_id_string
 }
 
-async function postToX(accountId: string, content: string, imageUrls: string[]): Promise<string> {
+async function postToX(accountId: string, content: string, imageUrls: string[], quoteTweetId?: string | null): Promise<string> {
   const creds = resolveXCreds(accountId)
   if (!creds) throw new Error(`missing account-specific X OAuth credentials for account ${accountId}`)
 
@@ -125,10 +125,10 @@ async function postToX(accountId: string, content: string, imageUrls: string[]):
     for (const imageUrl of imageUrls.slice(0, 4)) {
       mediaIds.push(await uploadMediaToX(imageUrl, creds))
     }
-    return postTweetWithOAuth(content, mediaIds, creds)
+    return postTweetWithOAuth(content, mediaIds, creds, quoteTweetId)
   }
 
-  return postTweetWithOAuth(content, [], creds)
+  return postTweetWithOAuth(content, [], creds, quoteTweetId)
 }
 
 export async function runSocialPublishCron(): Promise<PublishSummary> {
@@ -144,6 +144,7 @@ export async function runSocialPublishCron(): Promise<PublishSummary> {
       content: socialMediaPosts.content,
       imageUrl: socialMediaPosts.imageUrl,
       imageUrls: socialMediaPosts.imageUrls,
+      quoteTweetId: socialMediaPosts.quoteTweetId,
       scheduledFor: socialMediaPosts.scheduledFor,
       handle: socialMediaAccounts.handle,
       platform: socialMediaAccounts.platform,
@@ -171,7 +172,7 @@ export async function runSocialPublishCron(): Promise<PublishSummary> {
     const imageUrls = parseImageUrls(post.imageUrls, post.imageUrl)
 
     try {
-      const externalPostId = await postToX(post.accountId, post.content, imageUrls)
+      const externalPostId = await postToX(post.accountId, post.content, imageUrls, post.quoteTweetId)
       const publishedAt = new Date().toISOString()
       await db.update(socialMediaPosts).set({
         status: 'published',

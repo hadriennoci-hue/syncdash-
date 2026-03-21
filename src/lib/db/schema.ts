@@ -605,6 +605,7 @@ export const socialMediaPosts = sqliteTable('social_media_posts', {
   scheduledFor:   text('scheduled_for').notNull(),
   status:         text('status').notNull().default('suggested'),
   externalPostId: text('external_post_id'),
+  quoteTweetId:   text('quote_tweet_id'),
   publishedAt:    text('published_at'),
   createdBy:      text('created_by').notNull().default('agent'),
   createdAt:      text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
