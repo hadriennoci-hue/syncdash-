@@ -393,7 +393,6 @@ export class CoincartConnector implements PlatformConnector {
     )
     const exactSlug = bySlug.find((item) => (item.slug ?? '').trim() === slug)
     if (exactSlug?.id) return String(exactSlug.id)
-    if (bySlug[0]?.id) return String(bySlug[0].id)
 
     const byTitle = await this.request<Array<{ id: number; slug?: string | null; name?: string | null }>>(
       'GET',

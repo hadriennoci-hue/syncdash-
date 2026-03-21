@@ -706,25 +706,16 @@ async function pushPlatform(
     const skuHit = await findPlatformIdForTarget(target)
     if (skuHit) return skuHit
 
+    // For group targets, only SKU-based recovery is safe — multiple groups can share the same
+    // title (e.g. two A15-51M groups with different specs), so a title search would find the
+    // wrong Coincart product and cross-contaminate variant sets.
+    if (target.kind === 'group') return null
+
     if (platform !== 'coincart2' || !isSlugTitleRecoverable(connector)) return null
 
-    const titleCandidates = Array.from(new Set(
-      [
-        target.primary.title,
-        ...(target.kind === 'group'
-          ? target.members.map((member) => member.product.title)
-          : []),
-      ]
-        .map((title) => title.trim())
-        .filter((title) => title.length > 0)
-    ))
-
-    for (const title of titleCandidates) {
-      const hit = await connector.findProductIdBySlugOrTitle(title)
-      if (hit) return hit
-    }
-
-    return null
+    const title = target.primary.title.trim()
+    if (!title) return null
+    return connector.findProductIdBySlugOrTitle(title)
   }
 
   for (const target of toPush) {
