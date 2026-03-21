@@ -10,7 +10,11 @@ const isBlockedAcerSku = (sku: string) =>
 import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
 import { eq, and, inArray, isNull } from 'drizzle-orm'
-import type { Platform } from '@/types/platform'
+import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
+import type { WarehouseStockProgress, WarehouseStockSnapshot } from '@/lib/connectors/types'
+import { logOperation } from './log'
+import type { Platform, TriggeredBy } from '@/types/platform'
+import { PLATFORMS } from '@/types/platform'
 
 // Map from platform to the corresponding pushed_* column in the products table.
 // Only platforms that have a pushed column are listed here.
@@ -22,11 +26,6 @@ const PLATFORM_PUSHED_FIELD: Partial<Record<Platform, keyof typeof products.$inf
   xmr_bazaar:         'pushedXmrBazaar',
   libre_market:       'pushedLibreMarket',
 }
-import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
-import type { WarehouseStockProgress, WarehouseStockSnapshot } from '@/lib/connectors/types'
-import { logOperation } from './log'
-import type { Platform, TriggeredBy } from '@/types/platform'
-import { PLATFORMS } from '@/types/platform'
 import { generateId } from '@/lib/utils/id'
 
 interface SyncResult {
