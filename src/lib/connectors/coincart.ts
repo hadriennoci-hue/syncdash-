@@ -383,6 +383,16 @@ export class CoincartConnector implements PlatformConnector {
     return search[0]?.id ? String(search[0].id) : null
   }
 
+  async findProductIdByExactSlug(slug: string): Promise<string | null> {
+    if (!slug) return null
+    const results = await this.request<Array<{ id: number; slug?: string | null }>>(
+      'GET',
+      `/products?slug=${encodeURIComponent(slug)}&per_page=5&status=any`
+    )
+    const exact = results.find((item) => (item.slug ?? '').trim() === slug)
+    return exact?.id ? String(exact.id) : null
+  }
+
   async findProductIdBySlugOrTitle(title: string): Promise<string | null> {
     const slug = this.slugify(title)
     if (!slug) return null

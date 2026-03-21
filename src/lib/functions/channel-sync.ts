@@ -71,6 +71,7 @@ function isWooSkuAware(connector: unknown): connector is WooSkuAware {
 
 type SlugTitleRecoverable = {
   findProductIdBySlugOrTitle: (title: string) => Promise<string | null>
+  findProductIdByExactSlug?: (slug: string) => Promise<string | null>
 }
 
 function isSlugTitleRecoverable(connector: unknown): connector is SlugTitleRecoverable {
@@ -950,6 +951,18 @@ async function pushPlatform(
         && message.includes('slug already exists')
       )
 
+      // Extract the exact auto-generated slug from a Coincart 409 error message
+      // e.g. "Key (slug)=(acer-aspire-15-laptop-a15-51m-es-qwerty-gray) already exists."
+      const extractCoincartConflictSlug = (message: string): string | null =>
+        message.match(/Key \(slug\)=\(([^)]+)\)/)?.[1] ?? null
+
+      const recoverByConflictSlug = async (errorMessage: string): Promise<string | null> => {
+        if (!isSlugTitleRecoverable(connector) || !connector.findProductIdByExactSlug) return null
+        const conflictSlug = extractCoincartConflictSlug(errorMessage)
+        if (!conflictSlug) return null
+        return connector.findProductIdByExactSlug(conflictSlug)
+      }
+
       // Coincart ignores our explicit `slug` field for variable products and always
       // auto-generates it from title + variant option values.  Two variant groups that
       // share the same title and options (different keyboard-layout batches of the same
@@ -996,26 +1009,17 @@ async function pushPlatform(
             } catch (createErr) {
               const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
               if (!isCoincartSlugConflict(createMessage)) throw createErr
-              const recoveredId = await findRecoveryPlatformIdForTarget(target)
+              const recoveredId = (await recoverByConflictSlug(createMessage)) ?? await findRecoveryPlatformIdForTarget(target)
               if (recoveredId) {
                 await upsertMappings(recoveredId)
-                await updateExisting(recoveredId)
-                finalPlatformId = recoveredId
-                successMessage = 'updated after slug-conflict remap'
-              } else if (platform === 'coincart2' && target.kind === 'group' && isSlugTitleRecoverable(connector)) {
-                const mergeId = await connector.findProductIdBySlugOrTitle(primary.title)
-                if (mergeId) {
-                  await upsertMappings(mergeId)
-                  await mergeGroupVariantsIntoExisting(mergeId)
-                  finalPlatformId = mergeId
+                if (target.kind === 'group') {
+                  await mergeGroupVariantsIntoExisting(recoveredId)
                   successMessage = 'merged into existing by slug conflict'
                 } else {
-                  createdId = await createNew(buildCoincartConflictSlug(primary.title, target.parentSku))
-                  successMessage = 'created with deterministic conflict slug'
+                  await updateExisting(recoveredId)
+                  successMessage = 'updated after slug-conflict remap'
                 }
-              } else {
-                createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
-                successMessage = 'created with deterministic conflict slug'
+                finalPlatformId = recoveredId
               }
             }
             if (!createdId) {
@@ -1046,32 +1050,19 @@ async function pushPlatform(
           } catch (createErr) {
             const createMessage = createErr instanceof Error ? createErr.message : String(createErr)
             if (!isCoincartSlugConflict(createMessage)) throw createErr
-            const recoveredId = await findRecoveryPlatformIdForTarget(target)
+            const recoveredId = (await recoverByConflictSlug(createMessage)) ?? await findRecoveryPlatformIdForTarget(target)
             if (recoveredId) {
               await upsertMappings(recoveredId)
-              await updateExisting(recoveredId)
-              finalPlatformId = recoveredId
-              successMessage = 'updated after slug-conflict remap'
-            } else if (platform === 'coincart2' && target.kind === 'group' && isSlugTitleRecoverable(connector)) {
-              const mergeId = await connector.findProductIdBySlugOrTitle(primary.title)
-              if (mergeId) {
-                await upsertMappings(mergeId)
-                await mergeGroupVariantsIntoExisting(mergeId)
-                finalPlatformId = mergeId
+              if (target.kind === 'group') {
+                await mergeGroupVariantsIntoExisting(recoveredId)
                 successMessage = 'merged into existing by slug conflict'
               } else {
-                const createdId = await createNew(buildCoincartConflictSlug(primary.title, target.parentSku))
-                await upsertMappings(createdId)
-                finalPlatformId = createdId
-                newSkus.push(...productIds)
-                successMessage = 'created with deterministic conflict slug'
+                await updateExisting(recoveredId)
+                successMessage = 'updated after slug-conflict remap'
               }
+              finalPlatformId = recoveredId
             } else {
-              const createdId = await createNew(buildCoincartConflictSlug(primary.title, target.kind === 'group' ? target.parentSku : primary.id))
-              await upsertMappings(createdId)
-              finalPlatformId = createdId
-              newSkus.push(...productIds)
-              successMessage = 'created with deterministic conflict slug'
+              throw createErr
             }
           }
         }
