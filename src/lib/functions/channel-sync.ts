@@ -133,6 +133,7 @@ interface GroupPushTarget {
   primary: EligibleProduct
   parentSku: string
   members: VariantGroupMember[]
+  titleOverride?: string
 }
 
 type PushTarget = SinglePushTarget | GroupPushTarget
@@ -481,21 +482,20 @@ function buildPushTargets(eligible: EligibleProduct[], platform: Platform): Push
   }
 
   // For Coincart, variable products ignore our explicit slug and auto-generate it from
-  // title + variant option values. Multiple products sharing the same title produce the
-  // same auto-generated slug → 409.  Detect title duplicates among single targets and
-  // append the last SKU segment as a disambiguator so each gets a unique slug.
+  // title + variant option values. Multiple targets (singles or groups) sharing the same
+  // title produce the same auto-generated slug → 409. Detect title duplicates across all
+  // targets and append a short disambiguator so each gets a unique Coincart slug.
   if (platform === 'coincart2') {
     const titleCount = new Map<string, number>()
     for (const t of targets) {
-      if (t.kind !== 'single') continue
       titleCount.set(t.primary.title, (titleCount.get(t.primary.title) ?? 0) + 1)
     }
     for (const t of targets) {
-      if (t.kind !== 'single') continue
-      if ((titleCount.get(t.primary.title) ?? 0) > 1) {
-        const suffix = t.primary.id.split('.').pop() ?? t.primary.id
-        t.titleOverride = `${t.primary.title} (${suffix})`
-      }
+      if ((titleCount.get(t.primary.title) ?? 0) <= 1) continue
+      const suffix = t.kind === 'group'
+        ? t.groupId.replace(/-/g, '').slice(0, 6)
+        : (t.primary.id.split('.').pop() ?? t.primary.id)
+      t.titleOverride = `${t.primary.title} (${suffix})`
     }
   }
 
@@ -932,7 +932,7 @@ async function pushPlatform(
           sku: canonicalSku,
           slug: slugOverride ?? null,
           ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
-          title: (target.kind === 'single' && target.titleOverride) ? target.titleOverride : primary.title,
+          title: target.titleOverride ?? primary.title,
           description: primary.description,
           status: 'active',
           vendor: primary.vendor,
