@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { socialAccountDailyMetrics, socialMediaAccounts, socialMediaPosts, socialPostDailyMetrics } from '@/lib/db/schema'
+import { socialMediaAccounts } from '@/lib/db/schema'
+import { ingestSocialAnalytics } from '@/lib/functions/social-analytics-ingest'
 
 const accountDailySchema = z.object({
   metricDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -68,109 +69,22 @@ export async function POST(req: NextRequest) {
     return apiError('VALIDATION_ERROR', `Account ${payload.accountId} is on ${account.platform}, not ${payload.platform}`, 400)
   }
 
-  const now = new Date().toISOString()
-  let accountDailyUpserts = 0
-  let postDailyUpserts = 0
-
-  for (const row of payload.accountDailyMetrics) {
-    await db.insert(socialAccountDailyMetrics).values({
+  try {
+    const result = await ingestSocialAnalytics({
       accountId: payload.accountId,
-      metricDate: row.metricDate,
-      impressions: row.impressions,
-      engagements: row.engagements,
-      linkClicks: row.linkClicks,
-      followersTotal: row.followersTotal ?? null,
-      followersDelta: row.followersDelta,
-      postsPublished: row.postsPublished,
-      sourceJson: row.source ? JSON.stringify(row.source) : null,
-      updatedAt: now,
-    }).onConflictDoUpdate({
-      target: [socialAccountDailyMetrics.accountId, socialAccountDailyMetrics.metricDate],
-      set: {
-        impressions: row.impressions,
-        engagements: row.engagements,
-        linkClicks: row.linkClicks,
-        followersTotal: row.followersTotal ?? null,
-        followersDelta: row.followersDelta,
-        postsPublished: row.postsPublished,
-        sourceJson: row.source ? JSON.stringify(row.source) : null,
-        updatedAt: now,
-      },
+      accountDailyMetrics: payload.accountDailyMetrics,
+      postDailyMetrics: payload.postDailyMetrics,
     })
-    accountDailyUpserts++
-  }
-
-  for (const row of payload.postDailyMetrics) {
-    const post = row.postPk
-      ? await db.query.socialMediaPosts.findFirst({
-        where: and(
-          eq(socialMediaPosts.postPk, row.postPk),
-          eq(socialMediaPosts.accountId, payload.accountId),
-        ),
-      })
-      : await db.query.socialMediaPosts.findFirst({
-        where: and(
-          eq(socialMediaPosts.accountId, payload.accountId),
-          eq(socialMediaPosts.externalPostId, row.externalPostId ?? ''),
-        ),
-      })
-
-    if (!post) {
-      return apiError('NOT_FOUND', `post not found for account ${payload.accountId} (postPk=${row.postPk ?? '-'}, externalPostId=${row.externalPostId ?? '-'})`, 404)
-    }
-
-    await db.insert(socialPostDailyMetrics).values({
-      postPk: post.postPk,
-      metricDate: row.metricDate,
-      impressions: row.impressions,
-      likes: row.likes,
-      reposts: row.reposts,
-      replies: row.replies,
-      bookmarks: row.bookmarks,
-      quotes: row.quotes,
-      profileClicks: row.profileClicks,
-      linkClicks: row.linkClicks,
-      followerDelta24h: row.followerDelta24h ?? null,
-      followerDelta72h: row.followerDelta72h ?? null,
-      sentimentTag: row.sentimentTag ?? null,
-      reasonTagsJson: row.reasonTags ? JSON.stringify(row.reasonTags) : null,
-      sourceJson: row.source ? JSON.stringify(row.source) : null,
-      updatedAt: now,
-    }).onConflictDoUpdate({
-      target: [socialPostDailyMetrics.postPk, socialPostDailyMetrics.metricDate],
-      set: {
-        impressions: row.impressions,
-        likes: row.likes,
-        reposts: row.reposts,
-        replies: row.replies,
-        bookmarks: row.bookmarks,
-        quotes: row.quotes,
-        profileClicks: row.profileClicks,
-        linkClicks: row.linkClicks,
-        followerDelta24h: row.followerDelta24h ?? null,
-        followerDelta72h: row.followerDelta72h ?? null,
-        sentimentTag: row.sentimentTag ?? null,
-        reasonTagsJson: row.reasonTags ? JSON.stringify(row.reasonTags) : null,
-        sourceJson: row.source ? JSON.stringify(row.source) : null,
-        updatedAt: now,
-      },
+    return apiResponse({
+      ok: true,
+      accountDailyUpserts: result.accountDailyUpserts,
+      postDailyUpserts: result.postDailyUpserts,
     })
-
-    if (row.hypothesis || row.variantLabel || row.experimentGroup) {
-      await db.update(socialMediaPosts).set({
-        hypothesis: row.hypothesis ?? undefined,
-        variantLabel: row.variantLabel ?? undefined,
-        experimentGroup: row.experimentGroup ?? undefined,
-        updatedAt: now,
-      }).where(eq(socialMediaPosts.postPk, post.postPk))
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'ingest failed'
+    if (message.includes('post not found for account')) {
+      return apiError('NOT_FOUND', message, 404)
     }
-
-    postDailyUpserts++
+    return apiError('INGEST_ERROR', message, 500)
   }
-
-  return apiResponse({
-    ok: true,
-    accountDailyUpserts,
-    postDailyUpserts,
-  })
 }

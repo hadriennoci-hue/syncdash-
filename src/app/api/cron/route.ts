@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server'
 import { runDailyHealthCheck, runDailyTokenRefresh } from '@/lib/automation/daily-sync'
+import { runSocialAnalyticsSync } from '@/lib/functions/social-analytics-sync'
 import { runSocialPublishCron } from '@/lib/functions/social-publish'
 
 // Internal Cloudflare Cron endpoint - NOT secured with bearer (called by Cloudflare)
 // Cloudflare Cron Triggers call GET /api/cron with a scheduled header.
 // Schedules:
 // - 0 4 * * * -> tokens
-// - 0 6 * * * -> health
+// - 0 6 * * * -> health + social analytics
 // - */10 * * * * -> social publish
 export async function GET(req: NextRequest) {
   const cronHeader = req.headers.get('x-cloudflare-scheduled')
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
       : 'health'
   )
 
-  // Manual override for local/dev usage: /api/cron?task=tokens|health|social
+  // Manual override for local/dev usage: /api/cron?task=tokens|health|social|social_analytics
   const task = req.nextUrl.searchParams.get('task') ?? scheduledTask
 
   if (task === 'tokens') {
@@ -26,12 +27,18 @@ export async function GET(req: NextRequest) {
 
   if (task === 'health') {
     await runDailyHealthCheck()
-    return new Response('health check done', { status: 200 })
+    const analytics = await runSocialAnalyticsSync('system')
+    return new Response(`health check done; social analytics: scanned=${analytics.scannedPosts} syncedPosts=${analytics.syncedPosts} syncedAccounts=${analytics.syncedAccounts} errors=${analytics.errors.length}`, { status: 200 })
   }
 
   if (task === 'social') {
     const result = await runSocialPublishCron()
     return new Response(`social publish done: scanned=${result.scanned} published=${result.published} failed=${result.failed}`, { status: 200 })
+  }
+
+  if (task === 'social_analytics') {
+    const result = await runSocialAnalyticsSync('system')
+    return new Response(`social analytics done: scanned=${result.scannedPosts} syncedPosts=${result.syncedPosts} syncedAccounts=${result.syncedAccounts} errors=${result.errors.length}`, { status: 200 })
   }
 
   return new Response('health check done', { status: 200 })
