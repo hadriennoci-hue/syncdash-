@@ -601,15 +601,18 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail, st
       })
     }
   }
-  await page.locator('xpath=/html/body/div[2]/div/main/div/form/div[4]/div/div[1]/input')
-    .first()
-    .fill(String(stock))
-    .catch(async () => {
-      await page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input')
-        .first()
-        .fill(String(stock))
-        .catch(() => {})
-    })
+  // LibreMarket rejects stock=0 — skip stock field when archiving (out of stock)
+  if (status === 'active' && stock > 0) {
+    await page.locator('xpath=/html/body/div[2]/div/main/div/form/div[4]/div/div[1]/input')
+      .first()
+      .fill(String(stock))
+      .catch(async () => {
+        await page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input')
+          .first()
+          .fill(String(stock))
+          .catch(() => {})
+      })
+  }
   const saveBtn = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[8]/button').first()
   if (await saveBtn.count() > 0) {
     await saveBtn.click().catch(() => {})
