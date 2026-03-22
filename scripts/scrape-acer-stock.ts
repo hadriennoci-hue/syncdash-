@@ -169,14 +169,40 @@ function extractProductsFromPage(): Omit<AcerProduct, 'descLocale'>[] {
       ? parseFloat(priceEl.getAttribute('data-price-amount') ?? '') || null
       : null
 
-    // oldPrice is present when a discount is applied (e.g., "€39.90" → "€29.90")
+    // oldPrice is present when a discount is applied via Magento native special price
     const oldPrice = oldPriceEl
       ? parseFloat(oldPriceEl.getAttribute('data-price-amount') ?? '') || null
       : null
 
-    // promoPrice = discounted final price when oldPrice exists, otherwise null
-    const promoPrice = oldPrice !== null && price !== null && oldPrice > price ? price : null
-    const importPrice = oldPrice !== null && promoPrice !== null ? oldPrice : price
+    // promoPrice = discounted final price when oldPrice exists (Magento native), otherwise null
+    let promoPrice = oldPrice !== null && price !== null && oldPrice > price ? price : null
+    let importPrice = promoPrice !== null ? oldPrice : price
+
+    // Acer also uses Amasty Labels extension for discounts — shows badge like "-20 €" or "-10%"
+    // In this case no oldPrice exists in DOM; finalPrice IS the discounted price.
+    if (promoPrice === null && price !== null) {
+      const labelTexts = Array.from(el.querySelectorAll('.amlabel-text'))
+        .map(e => e.textContent?.trim() ?? '')
+        .filter(t => t.length > 0)
+      for (const label of labelTexts) {
+        // Fixed euro discount: "-20 €", "- 50€", etc.
+        const euroMatch = label.match(/-\s*(\d+(?:[.,]\d+)?)\s*€/)
+        if (euroMatch) {
+          const discount = parseFloat(euroMatch[1].replace(',', '.'))
+          promoPrice = price
+          importPrice = Math.round((price + discount) * 100) / 100
+          break
+        }
+        // Percentage discount: "-10%", "- 15 %", etc.
+        const pctMatch = label.match(/-\s*(\d+(?:[.,]\d+)?)\s*%/)
+        if (pctMatch) {
+          const pct = parseFloat(pctMatch[1].replace(',', '.')) / 100
+          promoPrice = price
+          importPrice = Math.round((price / (1 - pct)) * 100) / 100
+          break
+        }
+      }
+    }
 
     // Stock detection by CSS class (works across all languages/locales)
     const inStock = !stockEl
@@ -217,7 +243,7 @@ async function crawlCategory(
   while (current) {
     log(`  📄 page ${pageNum}: ${current}`)
     await page.goto(current, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    await page.waitForTimeout(1_500)
+    await page.waitForTimeout(2_500)
 
     const products = await page.evaluate(extractProductsFromPage)
     log(`    → ${products.length} products`)
