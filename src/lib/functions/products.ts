@@ -9,6 +9,18 @@ import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
 import type { Platform, SyncResult, TriggeredBy, ImageInput } from '@/types/platform'
 
+function cleanDescription(desc?: string | null): string | null {
+  if (!desc) return desc ?? null
+  return desc
+    .replace(/\u2122/g, '')  // ™
+    .replace(/\u00ae/g, '')  // ®
+    .replace(/\u00a9/g, '')  // ©
+    .replace(/ {2,}/g, ' ')
+    .replace(/ +$/gm, '')
+    .replace(/^ +/gm, '')
+    || null
+}
+
 function normalizeTags(tags?: string[]): string[] | undefined {
   if (!tags) return undefined
   const seen = new Set<string>()
@@ -75,7 +87,7 @@ export async function createProduct(
     id:          input.sku,
     title:       input.title,
     ean:         input.ean ?? null,
-    description: input.description ?? null,
+    description: cleanDescription(input.description),
     tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
     status:      'active',
     taxCode:     input.taxCode ?? null,
@@ -89,7 +101,7 @@ export async function createProduct(
     set: {
       title:       input.title,
       ean:         input.ean ?? null,
-      description: input.description ?? null,
+      description: cleanDescription(input.description),
       tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
       updatedAt:   new Date().toISOString(),
     },
@@ -153,7 +165,7 @@ export async function createProduct(
         sku:         input.sku,
         ean:         input.ean ?? null,
         title:       input.title,
-        description: input.description ?? null,
+        description: cleanDescription(input.description),
         status:      'active',
         vendor:      input.vendor ?? null,
         productType: input.productType ?? null,
@@ -228,7 +240,7 @@ export async function updateProduct(
   // Update D1
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
-  if (input.fields.description !== undefined) d1Update.description = input.fields.description
+  if (input.fields.description !== undefined) d1Update.description = cleanDescription(input.fields.description)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
@@ -262,7 +274,7 @@ export async function updateProduct(
       const connector = await createConnector(platform)
       await connector.updateProduct(mapping.platformId, {
         title:       input.fields.title,
-        description: input.fields.description,
+        description: cleanDescription(input.fields.description),
         status:      input.fields.status,
         categoryIds: input.fields.categoryIds,
       })
@@ -307,7 +319,7 @@ export async function updateProductLocal(
 
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
-  if (input.fields.description !== undefined) d1Update.description = input.fields.description
+  if (input.fields.description !== undefined) d1Update.description = cleanDescription(input.fields.description)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
