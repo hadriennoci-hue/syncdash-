@@ -568,14 +568,14 @@ export class CoincartConnector implements PlatformConnector {
     })
   }
 
-  // WooCommerce batch API — 1 call per 100 products instead of 1 per product
+  // Coincart batch API — 1 call per 100 products instead of 1 per product
   async bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void> {
     const BATCH = 100
     for (let i = 0; i < items.length; i += BATCH) {
       const batch = items.slice(i, i + BATCH)
       await this.request('POST', '/products/batch', {
         update: batch.map(({ platformId, quantity }) => ({
-          id:             parseInt(platformId),
+          id:             platformId,
           manage_stock:   true,
           stock_quantity: quantity,
         })),
