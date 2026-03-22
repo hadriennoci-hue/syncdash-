@@ -588,9 +588,11 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail, st
   const statusSelect = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[2]/div/div[4]/div[2]/select').first()
   if (await statusSelect.count() > 0) {
     if (status === 'active') {
-      await statusSelect.selectOption({ label: 'Actif' }).catch(async () => {
-        await statusSelect.selectOption({ value: 'active' }).catch(async () => {
-          await statusSelect.selectOption({ value: 'published' }).catch(() => {})
+      await statusSelect.selectOption({ label: 'Publié' }).catch(async () => {
+        await statusSelect.selectOption({ label: 'Actif' }).catch(async () => {
+          await statusSelect.selectOption({ value: 'active' }).catch(async () => {
+            await statusSelect.selectOption({ value: 'published' }).catch(() => {})
+          })
         })
       })
     } else {
@@ -829,12 +831,9 @@ async function xmrCreate(
   await page.waitForLoadState('load')
   await xmrFillForm(page, product, imagePaths, moneroAddress)
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[7]/div[1]/input')
+  await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save"), input[type="submit"]')
     .first()
     .click()
-    .catch(async () => {
-      await page.locator('text=Publish, text=Update Listing, text=Save').first().click()
-    })
   if (delayState) delayState.submittedOnce = true
   await page.waitForLoadState('load')
   await page.waitForTimeout(1200)
@@ -919,12 +918,9 @@ async function xmrEdit(
 
   await xmrCheckXpath(page, '/html/body/div[3]/div/div[2]/form/div[6]/div/label/input').catch(() => {})
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[7]/div/input')
+  await page.locator('button:has-text("Update Listing"), button:has-text("Save"), input[type="submit"]')
     .first()
     .click()
-    .catch(async () => {
-      await page.locator('text=Update Listing, text=Save').first().click().catch(() => {})
-    })
   if (delayState) delayState.submittedOnce = true
   await page.waitForLoadState('load')
 }
