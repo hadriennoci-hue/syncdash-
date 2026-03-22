@@ -52,3 +52,4 @@ scripts/lm-screenshot-*.png
 scripts/error-*.png
 scripts/test-img-*.jpg
 scripts/tmp-*.sql
+tmp/
