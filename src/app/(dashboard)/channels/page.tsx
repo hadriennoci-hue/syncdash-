@@ -40,7 +40,7 @@ export default function ChannelsPage() {
 
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['channels-products'],
-    queryFn: () => apiFetch('/api/products?perPage=200'),
+    queryFn: () => apiFetch('/api/products?perPage=1000'),
   })
 
   async function handleScan() {

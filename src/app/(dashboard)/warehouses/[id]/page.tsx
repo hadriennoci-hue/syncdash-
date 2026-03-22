@@ -198,11 +198,12 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
               const isDirtyRow = Object.keys(rowDirty).length > 0 || stockChanged
               const hasError = errors.includes(s.productId)
               const hasFail = PUSH_PLATFORMS.some((p) => (s[p.field as keyof typeof s] as string)?.startsWith('FAIL:'))
+              const hasNoChannels = PUSH_PLATFORMS.every((p) => (s[p.field as keyof typeof s] as string) === 'N')
 
               return (
                 <tr
                   key={s.productId}
-                  className={`border-b border-border hover:bg-accent/50 ${isDirtyRow ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''} ${hasError || hasFail ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
+                  className={`border-b border-border hover:bg-accent/50 ${hasError || hasFail ? 'bg-red-50/60 dark:bg-red-900/10' : isDirtyRow ? 'bg-amber-50/60 dark:bg-amber-900/10' : hasNoChannels ? 'bg-orange-50/80 dark:bg-orange-900/10' : ''}`}
                 >
                   <td className="py-1 pr-3 font-mono">
                     <Link href={`/products/${s.productId}`} className="text-primary hover:underline">{s.productId}</Link>

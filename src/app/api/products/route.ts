@@ -5,6 +5,7 @@ import { apiResponse, apiError, paginatedResponse } from '@/lib/utils/api-respon
 import { db } from '@/lib/db/client'
 import { products, productPrices, productImages, platformMappings, warehouseStock, productCategories } from '@/lib/db/schema'
 import { eq, like, or, and, sql } from 'drizzle-orm'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { createProduct } from '@/lib/functions/products'
 import { PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const page    = parseInt(searchParams.get('page') ?? '1')
-  const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 200)
+  const perPage = Math.min(parseInt(searchParams.get('perPage') ?? '50'), 1000)
   const search        = searchParams.get('search') ?? ''
   const status        = searchParams.get('status') ?? ''
   const pendingReview  = searchParams.get('pendingReview') === '1'
@@ -100,39 +101,80 @@ export async function GET(req: NextRequest) {
     .from(products)
     .where(where)
 
-  const allProducts = await db.query.products.findMany({
+  // Step 1: fetch base product rows + supplier (1:1, safe from D1 row limits)
+  const baseProducts = await db.query.products.findMany({
     where,
-    with: {
-      supplier:         true,
-      images:           true,
-      prices:           true,
-      platformMappings: true,
-      categories:       true,
-      warehouseStock:   true,
-    },
+    with: { supplier: true },
     limit:  perPage,
     offset,
     orderBy: (t, { desc }) => [desc(t.updatedAt)],
   })
 
-  const rows = allProducts.map((p) => {
-    const imageCount = p.images.length
-    const priceMap = Object.fromEntries(p.prices.map((pr) => [pr.platform, { price: pr.price, compareAt: pr.compareAt }]))
-    const mappingMap = Object.fromEntries(p.platformMappings.map((m) => [m.platform, m]))
+  const skus = baseProducts.map((p) => p.id)
+
+  let rows: ReturnType<typeof buildRow>[] = []
+
+  if (skus.length > 0) {
+    // Step 2: chunked raw D1 queries for heavy relations (product_prices and
+    // platform_mappings have up to 6 rows per product — easily exceeds D1's
+    // 1000-row result cap when fetched via Drizzle JOIN for large page sizes).
+    const { env } = getCloudflareContext()
+    const binding = (env as Record<string, unknown>).DB as D1Database | undefined
+    if (!binding) throw new Error('D1 binding "DB" not found.')
+
+    const CHUNK = 99
+    async function fetchChunked(table: string) {
+      const out: Record<string, unknown>[] = []
+      for (let i = 0; i < skus.length; i += CHUNK) {
+        const chunk = skus.slice(i, i + CHUNK)
+        const ph = chunk.map(() => '?').join(',')
+        const res = await binding!.prepare(`SELECT * FROM ${table} WHERE product_id IN (${ph})`).bind(...chunk).all()
+        out.push(...((res.results ?? []) as Record<string, unknown>[]))
+      }
+      return out
+    }
+
+    const [priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw] = await Promise.all([
+      fetchChunked('product_prices'),
+      fetchChunked('platform_mappings'),
+      fetchChunked('warehouse_stock'),
+      fetchChunked('product_images'),
+      fetchChunked('product_categories'),
+    ])
+
+    rows = baseProducts.map((p) => buildRow(p, priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw))
+  }
+
+  function buildRow(
+    p: typeof baseProducts[number],
+    priceRaw: Record<string, unknown>[],
+    mappingsRaw: Record<string, unknown>[],
+    stockRaw: Record<string, unknown>[],
+    imagesRaw: Record<string, unknown>[],
+    categoriesRaw: Record<string, unknown>[],
+  ) {
+    const myPrices    = priceRaw.filter((r) => r.product_id === p.id)
+    const myMappings  = mappingsRaw.filter((r) => r.product_id === p.id)
+    const myStock     = stockRaw.filter((r) => r.product_id === p.id)
+    const imageCount  = imagesRaw.filter((r) => r.product_id === p.id).length
+    const myCategories = categoriesRaw.filter((r) => r.product_id === p.id)
+
+    const priceMap   = Object.fromEntries(myPrices.map((r) => [String(r.platform), { price: r.price as number | null, compareAt: r.compare_at as number | null }]))
+    const mappingMap = Object.fromEntries(myMappings.map((r) => [String(r.platform), r]))
 
     const platformData = Object.fromEntries(
       PLATFORMS.map((pl) => [pl, {
-        status:     mappingMap[pl] ? (mappingMap[pl].syncStatus === 'synced' ? 'synced' : 'differences') : 'missing',
-        price:      priceMap[pl]?.price ?? null,
-        compareAt:  priceMap[pl]?.compareAt ?? null,
+        status:    mappingMap[pl] ? (mappingMap[pl].sync_status === 'synced' ? 'synced' : 'differences') : 'missing',
+        price:     priceMap[pl]?.price     ?? null,
+        compareAt: priceMap[pl]?.compareAt ?? null,
       }])
     )
 
-    const stockMap = Object.fromEntries(p.warehouseStock.map((ws) => [ws.warehouseId, {
-      qty:              ws.quantity,
-      importPrice:      ws.importPrice      ?? null,
-      importPromoPrice: ws.importPromoPrice ?? null,
-      purchasePrice:    ws.purchasePrice    ?? null,
+    const stockMap = Object.fromEntries(myStock.map((r) => [String(r.warehouse_id), {
+      qty:              (r.quantity as number | null) ?? null,
+      importPrice:      (r.import_price as number | null) ?? null,
+      importPromoPrice: (r.import_promo_price as number | null) ?? null,
+      purchasePrice:    (r.purchase_price as number | null) ?? null,
     }]))
 
     return {
@@ -144,7 +186,7 @@ export async function GET(req: NextRequest) {
       isFeatured:     !!p.isFeatured,
       imageCount,
       hasMinImages:   imageCount >= 1,
-      localization:   null, // derived from categories — computed separately
+      localization:   null,
       platforms:      platformData,
       stock: {
         ireland:          stockMap.ireland?.qty              ?? null,
@@ -152,14 +194,14 @@ export async function GET(req: NextRequest) {
         acer_store:       stockMap.acer_store?.qty           ?? null,
         importPrice:      stockMap.ireland?.importPrice      ?? stockMap.acer_store?.importPrice      ?? null,
         importPromoPrice: stockMap.ireland?.importPromoPrice ?? stockMap.acer_store?.importPromoPrice ?? null,
-        purchasePrice:    stockMap.acer_store?.purchasePrice    ?? stockMap.ireland?.purchasePrice ?? null,
+        purchasePrice:    stockMap.acer_store?.purchasePrice ?? stockMap.ireland?.purchasePrice       ?? null,
       },
-      categories:     [],
-      collections:    p.categories.map((c) => c.categoryId),
+      categories:      [],
+      collections:     myCategories.map((c) => String(c.category_id)),
       inconsistencies: 0,
-      updatedAt:      p.updatedAt,
+      updatedAt:       p.updatedAt,
     }
-  })
+  }
 
   return paginatedResponse(rows, total, page, perPage)
 }
