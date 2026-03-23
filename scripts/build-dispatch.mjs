@@ -9,3 +9,9 @@ const command = isOpenNextInternal
   : 'opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion'
 
 execSync(command, { stdio: 'inherit' })
+
+// After a full OpenNext build, inject the Cloudflare scheduled event handler
+// so Cron Triggers actually fire the social publish / token refresh / health tasks.
+if (!isOpenNextInternal) {
+  execSync('node ./scripts/patch-worker-cron.mjs', { stdio: 'inherit' })
+}
