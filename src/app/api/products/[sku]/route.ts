@@ -73,6 +73,9 @@ const patchSchema = z.object({
     countryOfManufacture: z.string().optional(),
     weight:               z.number().positive().optional(),
     weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
+    competitorPrice:      z.number().nonnegative().nullable().optional(),
+    competitorUrl:        z.string().url().nullable().optional(),
+    competitorPriceType:  z.enum(['promo', 'normal']).nullable().optional(),
   }).optional(),
   variantGroupId: z.string().uuid().nullable().optional(),
   platforms:   z.array(z.string()).min(1).optional(),
@@ -130,6 +133,11 @@ export async function GET(
     }])
   )
   const acerSource = stockMap.acer_store ?? null
+  const competitorMap = Object.fromEntries(
+    product.metafields
+      .filter((mf) => mf.namespace === 'competitor')
+      .map((mf) => [mf.key, mf.value])
+  )
 
   // Variant siblings: other products in the same variant group
   let variantSiblings: { sku: string; keyboardLayout: string | null }[] = []
@@ -174,6 +182,13 @@ export async function GET(
     productType:          product.productType,
     isFeatured:           !!product.isFeatured,
     supplier:             product.supplier,
+    competitor: {
+      price:     competitorMap.price ? Number(competitorMap.price) : null,
+      url:       typeof competitorMap.url === 'string' ? competitorMap.url : null,
+      priceType: competitorMap.price_type === 'promo' || competitorMap.price_type === 'normal'
+        ? competitorMap.price_type
+        : null,
+    },
     variants:             product.variants,
     images:               product.images,
     metafields:           product.metafields,

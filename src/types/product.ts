@@ -91,9 +91,16 @@ export interface Product {
   updatedAt: string | null
 }
 
+export interface CompetitorPrice {
+  price: number | null
+  url: string | null
+  priceType: 'promo' | 'normal' | null
+}
+
 // Rich product with all relations — used in detail view
 export interface ProductDetail extends Product {
   supplier: { id: string; name: string } | null
+  competitor: CompetitorPrice
   variants: ProductVariant[]
   images: ProductImage[]
   prices: Record<Platform, { price: number | null; compareAt: number | null }>
@@ -110,6 +117,7 @@ export interface ProductRow {
   id: string
   title: string
   status: ProductStatus
+  competitor: CompetitorPrice
   supplier: { id: string; name: string } | null
   hasDescription: boolean
   isFeatured: boolean

@@ -3,7 +3,7 @@ import {
   products, productVariants, productImages, productPrices,
   productMetafields, platformMappings, productCategories,
 } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
@@ -226,6 +226,9 @@ interface UpdateProductInput {
     isFeatured?: boolean
     categoryIds?: string[]
     variantGroupId?: string | null
+    competitorPrice?: number | null
+    competitorUrl?: string | null
+    competitorPriceType?: 'promo' | 'normal' | null
   }
   platforms?: Platform[]
   triggeredBy?: TriggeredBy
@@ -249,6 +252,58 @@ export async function updateProduct(
   await db.update(products)
     .set(d1Update)
     .where(eq(products.id, sku))
+
+  if (
+    'competitorPrice' in input.fields ||
+    'competitorUrl' in input.fields ||
+    'competitorPriceType' in input.fields
+  ) {
+    await db.delete(productMetafields).where(
+      and(
+        eq(productMetafields.productId, sku),
+        eq(productMetafields.namespace, 'competitor'),
+        or(
+          eq(productMetafields.key, 'price'),
+          eq(productMetafields.key, 'url'),
+          eq(productMetafields.key, 'price_type')
+        )
+      )
+    )
+
+    const competitorMetafields = [
+      'competitorPrice' in input.fields && input.fields.competitorPrice !== null && input.fields.competitorPrice !== undefined
+        ? {
+            id: generateId(),
+            productId: sku,
+            namespace: 'competitor',
+            key: 'price',
+            value: String(input.fields.competitorPrice),
+          }
+        : null,
+      'competitorUrl' in input.fields && input.fields.competitorUrl
+        ? {
+            id: generateId(),
+            productId: sku,
+            namespace: 'competitor',
+            key: 'url',
+            value: input.fields.competitorUrl,
+          }
+        : null,
+      'competitorPriceType' in input.fields && input.fields.competitorPriceType
+        ? {
+            id: generateId(),
+            productId: sku,
+            namespace: 'competitor',
+            key: 'price_type',
+            value: input.fields.competitorPriceType,
+          }
+        : null,
+    ].filter((value): value is NonNullable<typeof value> => value !== null)
+
+    if (competitorMetafields.length > 0) {
+      await db.insert(productMetafields).values(competitorMetafields)
+    }
+  }
 
   if (input.fields.categoryIds) {
     await db.delete(productCategories).where(eq(productCategories.productId, sku))
