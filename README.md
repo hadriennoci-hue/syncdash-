@@ -242,7 +242,31 @@ Prioritize tests for:
 - route auth + validation
 - warehouse write guard behavior
 
-## 13) Session Shortcut Rule
+## 13) Agent Tools
+
+### Bearer token
+The API bearer token (`AGENT_BEARER_TOKEN`) is in `.dev.vars`.
+Include it in all `/api/*` requests:
+```
+Authorization: Bearer <AGENT_BEARER_TOKEN>
+```
+When calling the production API (`wizhard.store`) from outside the browser, also include the Cloudflare Access service token headers (also in `.dev.vars`):
+```
+CF-Access-Client-Id: <CF_ACCESS_CLIENT_ID>
+CF-Access-Client-Secret: <CF_ACCESS_CLIENT_SECRET>
+```
+
+### Competitor price check
+To find the best live competitor price for a product and update Wizhard:
+1. Load the `competitor-price-check` skill (in `skills/competitor-price-check/SKILL.md`)
+2. Run it with the target SKU — it searches Amazon (8 EU domains), Worten, ECI, Boulanger, Darty, JoyBuy, FNAC, PC Componentes, MediaMarkt
+3. PATCH the result: `{"fields":{"competitorPrice":X,"competitorUrl":"...","competitorPriceType":"normal"|"promo"},"triggeredBy":"agent"}`
+
+Note: `data:[]` on a successful PATCH is normal (no platform sync triggered). Verify by re-fetching.
+
+---
+
+## 14) Session Shortcut Rule
 
 If user says `Test restart`, execute in this exact order:
 1. close all local test server instances
@@ -257,12 +281,12 @@ Runner preference:
 - run runner in visible terminal
 - headed browser mode (not headless)
 
-## 14) Deferred Decisions
+## 15) Deferred Decisions
 
 - Wrangler v4 upgrade: deferred
 - `/api/cron` scheduled-only hardening: deferred
 
-## 15) Open TODO (Google Ads Attribution rollout)
+## 16) Open TODO (Google Ads Attribution rollout)
 
 1. Set production vars:
    - `GOOGLE_ADS_DEVELOPER_TOKEN`
