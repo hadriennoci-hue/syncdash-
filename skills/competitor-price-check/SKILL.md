@@ -10,8 +10,8 @@ description: Use when checking live competitor prices for a product across Amazo
 Searches 8 European competitor websites and returns a structured price table for a given product.
 Uses Playwright MCP for live scraping, WebFetch + Google for bot-protected sites.
 
-**Required tools:** `mcp__playwright__*`, `WebFetch`
-**No paid APIs.**
+**Required tools:** `mcp__playwright__*`, `WebFetch`, Firecrawl API (key in `.dev.vars` as `FIRECRAWL_API_KEY`)
+**No extra paid APIs beyond Firecrawl (already in project).**
 
 Per-competitor protocols, selectors, and URL patterns: see `competitors.md` in this directory.
 
@@ -75,16 +75,34 @@ Each competitor uses a layered approach. Try layers in order, stop at first succ
 
 - **Layer 1:** Last known working URL pattern + selectors (fast path)
 - **Layer 2:** Discovery protocol when Layer 1 selectors are stale (probe + iterate)
-- **Layer 3:** Google search via Playwright (for bot-blocked sites or repeated Layer 2 failure)
+- **Layer 3:** Google search via **Firecrawl** (preferred) or Playwright fallback (for bot-blocked sites or repeated Layer 2 failure)
   - **Do NOT use WebFetch for Google** — it returns a JS challenge page, not results
-  - Navigate with Playwright: `browser_navigate("https://www.google.com/search?q=site:{domain}+{term}")`
+  - **Preferred:** `POST https://api.firecrawl.dev/v1/scrape { "url": "https://www.google.com/search?q=site:{domain}+{term}", "formats": ["markdown"] }` — runs in parallel, ~2.5s for all competitors
+  - **Fallback:** `browser_navigate("https://www.google.com/search?q=site:{domain}+{term}")`
   - Prices and stock status appear directly in Google's rich snippets
 
 Full protocols in `competitors.md`.
 
 ---
 
-## Step 5 — Output
+## Step 5 — Verify URL before committing
+
+Before recording any result (for output or DB write), verify every URL that is not already **Confirmed** by exact SKU:
+
+1. Scrape the URL with Firecrawl: `POST https://api.firecrawl.dev/v1/scrape { "url": "<found_url>", "formats": ["markdown"] }`
+2. Check that the model ref (e.g. `A17-51M`, `PHN18-72`, `TMP614-54-TCO`) appears in the returned markdown
+3. **Pass** → proceed; record as Confirmed or Verify as appropriate
+4. **Fail** (model ref absent) → do not write this URL; re-search or mark as Not listed
+
+**Skip this step only when:**
+- The URL came from an exact SKU search that returned a single result (already Confirmed)
+- The site is known to block Firecrawl (Worten, JoyBuy) — use Playwright instead
+
+This step prevents storing category pages, search result pages, or wrong-product URLs in the DB. The API will also reject any URL with no path beyond the domain, so a homepage URL will cause the write to fail.
+
+---
+
+## Step 7 — Output
 
 Return a single markdown table after all checks:
 
@@ -108,7 +126,7 @@ For multi-variant products, note which configuration the price applies to (e.g. 
 
 ---
 
-## Step 6 — Write result to Wizhard database
+## Step 8 — Write result to Wizhard database
 
 After completing all competitor checks, PATCH the product in Wizhard.
 
@@ -155,3 +173,6 @@ Writing `competitorPrice: 0` + `competitorUrl: "https://not-listed"` marks the S
 - Flag all Google cache results with estimated staleness (~7d default)
 - If a product appears to be an exclusive model with no cross-listing, state that explicitly
 - **Never scan store.acer.com** — it is Acer's own store, not a third-party competitor. Do not include it in any search, result table, or database write.
+- **URL must be a product page** — before writing any URL to the DB, verify it contains a product identifier in the path (ASIN, product slug, product ID, `/mpXXXXX/`, `/OffersOfProduct/`, etc.). Never store a homepage (`https://geizhals.de`), a search result URL (`?fs=`, `?q=`, `/search?`), or a category/listing page. If you only have a search/category URL, navigate to the actual product listing first.
+- **Geizhals `?fs=` is a search URL** — never store it directly. Navigate to the product detail page (URL pattern: `/acer-{model}-{sku}-a{id}.html`) and store that.
+- **SKU regional variants** — Acer SKU suffixes encode the market (EF=France, EG=Germany, EH=Netherlands, ED=Nordic/Denmark, etc.). A product not found under its exact SKU may exist under a spec-equivalent variant. Note the mismatch explicitly — never silently substitute a different-market SKU as if it were the same.

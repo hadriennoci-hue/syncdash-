@@ -4,17 +4,48 @@
 
 ---
 
+## Tool Selection: Firecrawl vs Playwright
+
+**Use Firecrawl for all Google search (Layer 3) queries.** POST the Google search URL to `https://api.firecrawl.dev/v1/scrape` with `formats: ["markdown"]`. Key advantages vs Playwright:
+
+- **Speed**: All queries run in parallel via API — ~2.5s for all competitors combined vs 60-150s sequential Playwright
+- **No browser state**: No cookie consent, no CAPTCHA challenges, no page-load waits
+- **Simplicity**: One HTTP call per query; parse the returned markdown for prices
+
+**Use Playwright only for Layer 1 direct-site scraping** where Firecrawl is blocked:
+- **Worten**: Cookiebot wall blocks Firecrawl (returns 467-char cookie banner only, no products)
+- **JoyBuy**: Direct product URLs work with Layer 1 Playwright
+
+**Timing reference** (tested in parallel batch):
+- 5 Firecrawl Google calls: **2.4s total**
+- Playwright per query: **5–15s sequential**
+
+**Query format for Google via Firecrawl:**
+```
+POST https://api.firecrawl.dev/v1/scrape
+{ "url": "https://www.google.com/search?q=site:{domain}+{search_term}&hl={lang}&gl={country}", "formats": ["markdown"] }
+```
+
+**Critical: Use name-based queries, not quoted SKUs.** `site:boulanger.com "NX.KSHEB.005"` returns 0 results; `site:boulanger.com Acer Aspire 15 A15-51M` returns prices. Google's `site:` filter with exact product names is the reliable pattern.
+
+---
+
 ## Competitors by Country
 
 Countries correspond to Acer store locales in Wizhard. **We only scrape sites marked ✓** — these have a defined protocol in this file. All other sites are listed for reference only and are not scraped.
 
-### 🇮🇪 Ireland / 🇬🇧 UK (`en-ie`)
+### 🇮🇪 Ireland (`en-ie`)
+
+> ⚠️ **We do NOT ship to the UK. Ireland is the only target market for `en-ie` (K-suffix) SKUs.**
+> Never use currys.co.uk (GBP) prices — always use currys.ie (EUR). Amazon.co.uk ships to Ireland and shows EUR at checkout; use it as secondary only. Do NOT store GBP prices — always convert or prefer EUR-native sources.
+
 | Site | Domain | Notes |
 |------|--------|-------|
-| Amazon | amazon.co.uk | ✓ Layer 3 (Google, gl=de → use gl=uk) |
-| Currys | currys.ie / currys.co.uk | Largest UK/IE electronics chain |
-| Harvey Norman | harveynorman.ie | IE-focused; physical + online |
-| Argos | argos.ie / argos.co.uk | Wide laptop range |
+| Currys Ireland | currys.ie | ✓ Layer 1 (Firecrawl direct — `/search?q={model}`) — EUR prices |
+| Harvey Norman | harveynorman.ie | ✓ Layer 3 (Google, gl=ie) — EUR prices, IE stock |
+| Paradigit | paradigit.ie | ✓ Layer 3 (Google, gl=ie) — EUR prices; confirmed stocking Acer Aspire 17 A17-51M (€999). Product URL pattern: `/acer-{model-slug}/{id}/product` |
+| Amazon | amazon.co.uk | Secondary — ships to IE, GBP prices (×1.18 to EUR) |
+| Argos Ireland | argos.ie | Wide laptop range — not yet tested |
 
 ### 🇫🇷 France (`fr-fr`, `fr-be`)
 | Site | Domain | Notes |
@@ -24,8 +55,8 @@ Countries correspond to Acer store locales in Wizhard. **We only scrape sites ma
 | Darty | darty.com | ✓ Layer 3 only (Cloudflare) |
 | FNAC | fnac.com | ✓ Layer 3 only (Cloudflare) |
 | JoyBuy | joybuy.fr | ✓ Layer 1 (FR domain only) |
-| Cdiscount | cdiscount.com | Large marketplace; carries Acer |
-| Rue du Commerce | rueducommerce.fr | Owned by Cdiscount group |
+| Cdiscount | cdiscount.com | ✓ Layer 1 (Firecrawl direct — `/search/10/{query}.html`) |
+| Rue du Commerce | rueducommerce.fr | Owned by Cdiscount group — not yet tested |
 
 ### 🇧🇪 Belgium (`fr-be`, `nl-be`)
 | Site | Domain | Notes |
@@ -79,6 +110,7 @@ Countries correspond to Acer store locales in Wizhard. **We only scrape sites ma
 |------|--------|-------|
 | Verkkokauppa | verkkokauppa.com | Finland's largest online electronics retailer |
 | Gigantti | gigantti.fi | Elgiganten group brand for Finland |
+| Prisjakt | prisjakt.nu | ✓ Layer 3 (Google gl=fi) — covers FI market alongside SE. Finnish results appear on prisjakt.nu. |
 | Power | power.fi | Third major chain in FI |
 | Amazon | amazon.se | Closest Amazon domain (SE); FI has no amazon.fi |
 
@@ -86,23 +118,26 @@ Countries correspond to Acer store locales in Wizhard. **We only scrape sites ma
 | Site | Domain | Notes |
 |------|--------|-------|
 | Amazon | amazon.se | ✓ Layer 3 (gl=se) |
-| Elgiganten | elgiganten.se | Elkjøp group; dominant chain |
-| NetOnNet | netonnet.se | Online-only; competitive pricing |
-| Webhallen | webhallen.com | Enthusiast/gaming focus |
-| Power | power.se | ~190 Nordic stores |
+| Elgiganten | elgiganten.se | ✓ Layer 1 (Firecrawl direct — `/search?SearchTerm={model}`) |
+| Prisjakt | prisjakt.nu | ✓ Layer 3 (Google gl=se) — Nordic price aggregator covering SE/NO/DK/FI. Search: `site:prisjakt.nu {model}`. Prices in SEK — convert to EUR (~×0.088). Product URLs: `/produkter/{id}` |
+| NetOnNet | netonnet.se | Online-only; competitive pricing — not yet tested |
+| Webhallen | webhallen.com | Enthusiast/gaming focus — not yet tested |
+| Power | power.se | ~190 Nordic stores — not yet tested |
 
 ### 🇩🇰 Denmark (`da-dk`)
 | Site | Domain | Notes |
 |------|--------|-------|
-| Elgiganten | elgiganten.dk | Elkjøp group; market leader |
-| Power | power.dk | Second largest chain |
-| Proshop | proshop.dk | Pure-play online; IT/laptop focus |
-| Komplett | komplett.dk | Scandinavian IT e-tailer |
+| Elgiganten | elgiganten.dk | ✓ Layer 1 (Firecrawl direct — `/search?SearchTerm={model}`) |
+| Prisjagt | prisjagt.dk | ✓ Layer 3 (Google gl=dk) — Danish price aggregator. Prices in DKK — convert to EUR (~×0.134). |
+| Power | power.dk | Second largest chain — not yet tested |
+| Proshop | proshop.dk | Pure-play online; IT/laptop focus — not yet tested |
+| Komplett | komplett.dk | Scandinavian IT e-tailer — not yet tested |
 
 ### 🇳🇴 Norway (`no-no`)
 | Site | Domain | Notes |
 |------|--------|-------|
 | Elkjøp | elkjop.no | Market leader; same group as Elgiganten |
+| Prisjakt | prisjakt.no | ✓ Layer 3 (Google gl=no) — Norwegian price aggregator. Prices in NOK — convert to EUR (~×0.087). |
 | Power | power.no | Strong #2 |
 | Komplett | komplett.no | Large IT-focused e-tailer |
 | Proshop | proshop.no | Online-only IT specialist |
@@ -117,7 +152,27 @@ Countries correspond to Acer store locales in Wizhard. **We only scrape sites ma
 | Morele | morele.net | Online-only; strong IT catalogue |
 | x-kom | x-kom.pl | Gaming/IT specialist |
 | Komputronik | komputronik.pl | IT and laptop specialist |
-| Allegro | allegro.pl | Dominant PL marketplace (like Amazon) |
+| Allegro | allegro.pl | ✓ Layer 1 (Firecrawl direct — `/listing?string={query}`) |
+
+---
+
+## Cross-EU Price Comparison Sites
+
+These are not country-specific retailers but aggregators covering multiple EU markets. Use them for accessories, niche products, and any product where per-country retailer searches return no results.
+
+| Site | Domain | Markets | Notes |
+|------|--------|---------|-------|
+| geizhals.de | geizhals.de | ✓ DE/AT/PL/UK resellers | **Layer 1 (Firecrawl direct)** — search: `/?fs={sku_or_name}&hloc=de` — returns price, offer count, cheapest retailer. SKU search is exact. Confirmed working for all Acer accessory categories (monitors, GPUs, networking, docking). ⚠️ The `?fs=` search URL is NOT a product URL — always navigate to the product listing page (`/acer-{model}-{sku}-a{id}.html`) before storing. |
+| idealo | idealo.de / idealo.fr / idealo.es / idealo.it / idealo.pl | ✓ DE/FR/ES/IT/PL | **Layer 1 (Firecrawl direct)** — search: `/MainSearchProductCategory.html?q={model}` — shows per-country prices with retailer links. Product pages: `/OffersOfProduct/{id}` return ranked offers with EUR prices. |
+| Prisjakt / Prisjagt | prisjakt.nu (SE/FI) / prisjakt.no (NO) / prisjagt.dk (DK) | ✓ Nordic markets | **Layer 3 (Google)** — `site:prisjakt.nu {model}` or `site:prisjakt.no {model}`. Prices in local currency (SEK/NOK/DKK) — always convert to EUR. Use for Nordic SKUs (suffix ED=DK, EK=NO, ES=SE, EF≠FR for some Nordic variants — confirm by checking prisjakt). |
+
+**Search pattern for geizhals.de:**
+```
+Firecrawl POST: https://geizhals.de/?fs={SKU_or_model}&hloc=de
+```
+Returns: product listing with `ab €X.XX` (lowest offer), offer count, and product page link.
+
+**When to use:** Preferred for accessories (docking, networking, GPUs, peripherals, projectors) because geizhals indexes by exact SKU. Much faster than multiple site searches.
 
 ---
 
@@ -142,24 +197,30 @@ Use this when Layer 1 selectors fail for any competitor (site redesign, new layo
 
 ---
 
-## Layer 3 — Google Search via Playwright
+## Layer 3 — Google Search via Firecrawl (preferred) or Playwright (fallback)
 
-**Important:** WebFetch of Google does NOT work — it returns a JavaScript challenge page with no results.
-Use Playwright to navigate to Google instead:
+**Preferred method: Firecrawl POST** (see Tool Selection section above). Faster and parallelisable.
 
+**Fallback: Playwright navigate** — only if Firecrawl is unavailable or returns empty markdown:
 ```
 browser_navigate("https://www.google.com/search?q=site:{domain}+{search_term}&hl={lang}&gl={country}")
 ```
 
+> ⚠️ WebFetch of Google does NOT work — returns a JavaScript challenge page. Use Firecrawl or Playwright only.
+
 Prices and stock status appear directly in Google's rich snippets (no need to follow links).
 
-**Search term priority:**
-1. `{sku}` — SKU visible in snippet title or description → price is reliable
-2. `{model_ref}+{key_attribute}` e.g. `SFG16-72+Core+Ultra+9` — check snippet specs before accepting price
-3. Product name alone → insufficient — only use if full spec attributes appear in snippet
+**Search term priority (applies to both Firecrawl and Playwright):**
+1. `{model_ref}` e.g. `Acer Aspire 15 A15-51M` — reliable, returns product pages with prices
+2. `{model_ref}+{key_attribute}` e.g. `Acer SFG16-72 Core Ultra 9` — narrows to specific config
+3. Quoted SKU e.g. `"NX.KSHEB.005"` — **often returns 0 results**; try unquoted or skip
 
-**Extracting price and status from snapshot:**
-- Rich snippets show price, old price, and status (En stock / Agotado / En stock / Disponibile) directly
+**Extracting price from Firecrawl markdown:**
+- Prices appear as `X.XXX,XX €` or `X.XXX € · En stock` in the markdown text
+- Stock status follows the price: `En stock`, `Agotado`, `Disponible`, `Disponibile`
+- Product URL is in the markdown link preceding the price line
+
+**Extracting price from Playwright snapshot:**
 - In the accessibility tree: `generic` nodes containing `X.XXX,XX €` near stock status text
 - Product URL is in the `link` element of the result heading
 
@@ -168,13 +229,7 @@ If snippet has no price → product URL found but price not indexed → navigate
 
 If Google returns zero results → product not in Google's index for that domain → report Not listed.
 
-**Multi-site efficiency:** Combine multiple `site:` operators in a single query to cover all Layer-3 competitors at once:
-```
-browser_navigate("https://www.google.com/search?q=site:worten.es+OR+site:elcorteingles.es+OR+site:pccomponentes.com+OR+site:mediamarkt.es+%22{sku}%22&hl=en&gl=es")
-```
-This is significantly faster than separate queries per competitor.
-
-**Broad SKU search first:** Before site-specific searches, run a broad `"{sku}"` Google search to immediately see which competitors have the product indexed. If only 0–2 results appear, the product is niche/exclusive and further site searches will mostly return Not listed.
+**Broad name search first:** Before site-specific searches, run a broad `{model_ref}` Google search to see which competitors have the product indexed. If only 0–2 results appear, the product is niche/exclusive and further site searches will mostly return Not listed.
 
 **Acer GP/HP prefix variants:** Acer docking accessories appear as both `GP.DSCAB.xxx` and `HP.DSCAB.xxx` for the same physical product across different markets. Always search both prefixes:
 ```
@@ -191,11 +246,11 @@ Use the domain that matches the target market.
 **⚠️ Geo-lock — Playwright browser is geolocated to Indonesia.**
 Direct Playwright navigation to any amazon.{eu-domain} will show prices in IDR, not EUR.
 Do NOT use Layer 1 or Layer 2 for Amazon when running from this environment.
-Use **Layer 3 (Google rich snippets)** exclusively to get EUR prices.
+Use **Layer 3 (Firecrawl → Google rich snippets)** exclusively to get EUR prices.
 
 The confirmed Layer 3 query pattern for Amazon across all EU domains:
 ```
-browser_navigate("https://www.google.com/search?q=%22{asin}%22+%22€%22&hl=en&gl=de")
+Firecrawl POST: https://www.google.com/search?q=%22{asin}%22+%22€%22&hl=en&gl=de
 ```
 Google snippets for Amazon.de reliably show:
 - Current EUR price with "In stock" badge
@@ -251,9 +306,11 @@ Product page price selectors (in order of preference):
 
 ---
 
-## 2. Worten.es — Confirmed Working (Spain)
+## 2. Worten.es — Playwright Layer 1 Only (Spain)
 
-**Layer 1**
+> ⚠️ **Firecrawl blocked** — Cookiebot wall returns a 467-char cookie banner with no product content. Use Playwright only.
+
+**Layer 1 (Playwright)**
 
 **Critical: Accept cookie consent before any search.**
 Wait for Cookiebot banner and click: `#CybotCookiebotDialogBodyButtonAccept`
@@ -287,24 +344,28 @@ Also available on `canarias.worten.es` at same price (En stock) — different do
 
 ---
 
-## 3. El Corte Inglés — Confirmed Working (Spain)
+## 3. El Corte Inglés — Firecrawl Layer 3 (Spain)
 
-**Layer 1**
+> ✅ **Firecrawl confirmed working** — `site:elcorteingles.es Acer Aspire 15 A15-51M` returns product page with price in Google snippet (849,00 € · En stock). Simpler than Layer 1 direct scraping.
+
+**Layer 3 (Firecrawl — preferred):**
+```
+Firecrawl POST: https://www.google.com/search?q=site:elcorteingles.es+{model_name}&hl=es&gl=es
+```
+e.g. `site:elcorteingles.es+Acer+Aspire+15+A15-51M`
+
+Prices appear in markdown as `849,00 € · En stock · Entrega sin coste adicional`.
+
+**Layer 1 (Playwright — fallback if Firecrawl empty):**
 
 **Step 1: Accept cookies**
 Navigate to `https://www.elcorteingles.es/electronica/`
 Click: `#onetrust-accept-btn-handler`
 
-**Step 2: Open search**
-Click: `button.search-link` (this reveals the search input)
-
-**Step 3: Search**
-The confirmed search URL pattern (discovered live — `?s=` and `?search=` do NOT work):
+**Step 2: Search via URL** (more reliable than form):
 ```
 https://www.elcorteingles.es/search-nwx/?ss={query}&stype=text_box
 ```
-
-Navigate directly to this URL instead of using the form (more reliable).
 
 Wait for: `article`
 
@@ -314,24 +375,19 @@ Extract from results:
   title: card.querySelector('h2')?.textContent?.trim(),
   price: card.querySelector('span[aria-label="Precio de venta"]')?.textContent?.trim(),
   oldPrice: card.querySelector('span[aria-label="Precio original"]')?.textContent?.trim(),
-  discount: card.querySelector('span[aria-label="Descuento"]')?.textContent?.trim(),
   url: card.querySelector('a[href*="/electronica/"]')?.href
 })).filter(r => r.title)
 ```
 
-**Note:** SFG16-72 Core Ultra 9/32GB not found in top ECI results during live test.
-ECI primarily shows the lower-spec variant (Ultra 7/16GB at €899). Attribute scan required.
-
-**Layer 3:** `site:elcorteingles.es` via Playwright+Google
+**Note:** ECI direct URL returns "No results" for exact SKUs (e.g. NX.KSHEB.005). Use product name search. Attribute scan required — ECI shows multiple Acer variants at different specs.
 
 ---
 
-## 4. Boulanger — Layer 3 Only (France)
+## 4. Boulanger — Firecrawl Layer 3 Only (France)
 
-**Do not attempt Playwright for search.** The `BL-SEARCH` Shadow DOM component is accessible
-(input found at `BL-SEARCH > shadowRoot > input.search-input`) but the Lit-based web component
-refuses to fire internal Algolia search API calls in headless mode. The form action is `#` (no URL).
-All URL-based patterns (`/recherche/`, `/recherche?q=`, `/api/search`) return 404.
+> ✅ **Firecrawl confirmed working** — `site:boulanger.com Acer Aspire 15 A15-51M` returns 899,99 € with stock status. Direct site scraping remains impossible.
+
+**Do not attempt Playwright or Firecrawl for direct site search.** The `BL-SEARCH` Shadow DOM component refuses to fire Algolia calls in headless mode. All `/recherche/*` URL patterns return 404.
 
 **Confirmed dead ends (do not retry):**
 - Shadow DOM input typing — input value updates but no API call fires
@@ -339,31 +395,46 @@ All URL-based patterns (`/recherche/`, `/recherche?q=`, `/api/search`) return 40
 - `/api/search` → 404
 - Native keyboard events (Enter, form submit) → no effect
 
-**Layer 3 only:**
+**Layer 3 (Firecrawl — preferred):**
 ```
-browser_navigate("https://www.google.com/search?q=site:boulanger.com+{search_term}&hl=fr&gl=fr")
+Firecrawl POST: https://www.google.com/search?q=site:boulanger.com+{model_name}&hl=fr&gl=fr
+```
+e.g. `site:boulanger.com+Acer+Aspire+15+A15-51M`
+
+> ⚠️ **Use name-based queries only.** Quoted SKU queries (`"NX.KSHEB.005"`) return 0 results. Product name (e.g. `Acer Aspire 15 A15-51M`) reliably returns results.
+
+**Layer 3 (Playwright — fallback):**
+```
+browser_navigate("https://www.google.com/search?q=site:boulanger.com+{model_name}&hl=fr&gl=fr")
 ```
 
 ---
 
-## 5. Darty — Layer 3 Only (France)
+## 5. Darty — Firecrawl Layer 3 Only (France)
 
-**Do not attempt Playwright.** Darty uses Cloudflare bot/fingerprint detection — the site loads fine
-in a real browser but returns a challenge/block to headless Playwright regardless of IP or VPN.
+> ✅ **Firecrawl confirmed working** — `site:darty.com Acer Aspire 15 A15-51M` returns prices (979,00 € and 1 265,68 €) with stock status. Direct site scraping remains blocked.
 
-**Layer 3 only:**
+**Do not attempt Playwright or Firecrawl for direct site.** Darty uses Cloudflare bot/fingerprint detection.
+
+**Layer 3 (Firecrawl — preferred):**
 ```
-browser_navigate("https://www.google.com/search?q=site:darty.com+{search_term}&hl=fr&gl=fr")
+Firecrawl POST: https://www.google.com/search?q=site:darty.com+{model_name}&hl=fr&gl=fr
+```
+e.g. `site:darty.com+Acer+Aspire+15+A15-51M`
+
+**Layer 3 (Playwright — fallback):**
+```
+browser_navigate("https://www.google.com/search?q=site:darty.com+{model_name}&hl=fr&gl=fr")
 ```
 
 Product URL pattern (from Google snippets):
 ```
-https://www.darty.com/nav/achat/informatique/ordinateur_portable-portable/portable/{product-id}.html
+https://www.darty.com/nav/achat/ref/{product-id}.html
 ```
 
-**Known result:** Darty carries SFG16-72 but only the **lower-spec variant** (Core Ultra 7 155U, 16GB).
-Core Ultra 9 / 32GB config: zero results in Google's index on darty.com.
-When searching, attribute-scan any results carefully before reporting a price.
+**Known result:** Darty carries Aspire 15 A15-51M (i9/32GB) at ~979–1265 €.
+SFG16-72 Core Ultra 9/32GB: only lower-spec variant (Core Ultra 7, 16GB) indexed on darty.com.
+Attribute-scan results carefully before reporting a price.
 
 ---
 
@@ -405,36 +476,49 @@ Only Acer monitors/displays appear. "Not listed" is the expected and valid outco
 
 ---
 
-## 7. FNAC — Layer 3 Only (France / Spain)
+## 7. FNAC — Firecrawl Layer 3 Only (France / Spain)
 
-**Do not attempt Playwright.** FNAC returns 403 on every request including the homepage — Cloudflare
-bot/fingerprint detection. Site loads fine in a real browser but blocks headless automation.
+> ⚠️ **fnac.es returns 0 results** for both Aspire 15 and SFG16-72 (tested with both SKU queries and broad name queries). Skip fnac.es unless the product is confirmed listed there.
 
-**Layer 3 only:**
+**Do not attempt Playwright or Firecrawl for direct site.** FNAC returns 403 — Cloudflare bot detection.
+
+**Layer 3 (Firecrawl — preferred):**
 ```
 # Spanish domain
-browser_navigate("https://www.google.com/search?q=site:fnac.es+{search_term}&hl=es&gl=es")
+Firecrawl POST: https://www.google.com/search?q=site:fnac.es+{model_name}&hl=es&gl=es
 
 # French domain
-browser_navigate("https://www.google.com/search?q=site:fnac.com+{search_term}&hl=fr&gl=fr")
+Firecrawl POST: https://www.google.com/search?q=site:fnac.com+{model_name}&hl=fr&gl=fr
+```
+
+**Layer 3 (Playwright — fallback):**
+```
+browser_navigate("https://www.google.com/search?q=site:fnac.com+{model_name}&hl=fr&gl=fr")
 ```
 
 **Known results:**
-- `site:fnac.es Acer SFG16-72` → zero Google results. Product not indexed on fnac.es.
-- `site:fnac.com` may have results for other markets.
+- `site:fnac.es Acer Aspire 15 A15-51M` → 0 results (Firecrawl confirmed). Report Not listed.
+- `site:fnac.es Acer Swift Go 16 SFG16-72` → 0 results (Firecrawl confirmed). Report Not listed.
+- `site:fnac.com` (French domain) may have results — test separately per product.
 
 ---
 
-## 8. PC Componentes — Layer 3 Only (Spain)
+## 8. PC Componentes — Firecrawl Layer 3 Only (Spain)
 
-**Do not attempt Playwright.** Cloudflare Bot Management blocks headless browsers before any content loads.
+> ✅ **Firecrawl confirmed working** — SKU query `site:pccomponentes.com NX.KSHEB.005` returned 1349,00 € with full spec confirmation. SKU query works here (unlike other competitors).
 
-**Layer 3 only:**
+**Do not attempt Playwright or Firecrawl for direct site.** Cloudflare Bot Management blocks headless browsers.
+
+**Layer 3 (Firecrawl — preferred):**
 ```
-browser_navigate("https://www.google.com/search?q=site:pccomponentes.com+{search_term}&hl=es&gl=es")
+Firecrawl POST: https://www.google.com/search?q=site:pccomponentes.com+{sku_or_model_name}&hl=es&gl=es
 ```
-
 PC Componentes has good schema markup — price and stock status appear directly in Google snippets.
+
+**Layer 3 (Playwright — fallback):**
+```
+browser_navigate("https://www.google.com/search?q=site:pccomponentes.com+{sku_or_model_name}&hl=es&gl=es")
+```
 
 **Known result:** Acer Swift Go 16 OLED SFG16-72 Core Ultra 9 185H/32GB/1TB
 - URL: `https://www.pccomponentes.com/portatil-acer-swift-go-16-oled-sfg16-72-intel-evo-core-ultra-9-185h-32gb-1tb-ssd-16`
@@ -443,21 +527,28 @@ PC Componentes has good schema markup — price and stock status appear directly
 
 ---
 
-## 9. MediaMarkt — Layer 3 Only (Spain + multi-country)
+## 9. MediaMarkt — Firecrawl Layer 3 Only (Spain + multi-country)
 
-Cloudflare Bot Management blocks Playwright. Google snippets work.
+> ✅ **Firecrawl confirmed working** — `site:mediamarkt.es "NX.JCJEB.005" OR "Acer Aspire 15"` returns prices (990,94 € · En stock). Note: results may include refurbished units — check title for "Reacondicionado".
 
-**Layer 3 (Spain):**
+Cloudflare Bot Management blocks direct site scraping. Google snippets work.
+
+**Layer 3 (Firecrawl — preferred, Spain):**
 ```
-browser_navigate("https://www.google.com/search?q=site:mediamarkt.es+{search_term}&hl=es&gl=es")
+Firecrawl POST: https://www.google.com/search?q=site:mediamarkt.es+{model_name}&hl=es&gl=es
 ```
 
-**Other country domains** (same pattern, swap domain + hl/gl):
+**Other country domains** (same Firecrawl pattern, swap domain + hl/gl):
 - `mediamarkt.de` → Germany (`hl=de&gl=de`)
 - `mediamarkt.it` → Italy (`hl=it&gl=it`)
 - `mediamarkt.nl` → Netherlands (`hl=nl&gl=nl`)
 - `mediamarkt.pl` → Poland (`hl=pl&gl=pl`)
 - `mediamarkt.se` → Sweden (`hl=sv&gl=se`)
+
+**Layer 3 (Playwright — fallback):**
+```
+browser_navigate("https://www.google.com/search?q=site:mediamarkt.es+{model_name}&hl=es&gl=es")
+```
 
 **Known result (Spain):** Acer Swift Go 16 SFG16-72 Core Ultra 9 185H/32GB
 - Only **refurbished** ("Reacondicionado") units indexed — no new stock
@@ -469,9 +560,11 @@ browser_navigate("https://www.google.com/search?q=site:mediamarkt.es+{search_ter
 
 ---
 
-## 10. Currys — Firecrawl Layer 1 (Ireland / UK)
+## 10. Currys Ireland — Firecrawl Layer 1 (Ireland ONLY)
 
-**Confirmed working via Firecrawl scrape.** Name search returns full product cards with €/£ prices and direct product URLs.
+> ⚠️ **Use currys.ie (EUR) only. Do NOT use currys.co.uk (GBP) — we do not ship to UK.**
+
+**Confirmed working via Firecrawl scrape.** Name search returns full product cards with € prices and direct product URLs.
 
 **⚠️ SKU search returns empty** — Currys does not index Acer SKUs. Always search by name or model ref.
 
@@ -480,8 +573,6 @@ Search URL:
 https://www.currys.ie/search?q={model_ref}
 ```
 e.g. `https://www.currys.ie/search?q=Acer+Aspire+15+A15-51M`
-
-Use UK domain for GBP prices: `https://www.currys.co.uk/search?q=...`
 
 Price format: `€619.00` with optional "Was €X.XX (from date to date)" for promotions.
 Product URL pattern: `https://www.currys.ie/products/{product-slug}.html`

@@ -11,6 +11,21 @@ import type { Platform } from '@/types/platform'
 
 const tagSchema = z.string().trim().min(1).max(40).regex(/^\S+$/, 'Tags must be single words')
 
+// Rejects homepage/domain-only URLs (e.g. "https://geizhals.de", "https://idealo.de/")
+// The special sentinel "https://not-listed" is allowed to mark "searched, nothing found".
+function hasProductPath(url: string): boolean {
+  if (url === 'https://not-listed') return true
+  try {
+    const segments = new URL(url).pathname.split('/').filter(Boolean)
+    return segments.length > 0
+  } catch {
+    return false
+  }
+}
+const productUrl = z.string().url().refine(hasProductPath, {
+  message: 'URL must be a product page (must have a path beyond the domain). Use "https://not-listed" to mark a product as not found.',
+})
+
 function parseTags(raw: string | null): string[] {
   if (!raw) return []
   try {
@@ -74,11 +89,11 @@ const patchSchema = z.object({
     weight:               z.number().positive().optional(),
     weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
     competitorPrice:      z.number().nonnegative().nullable().optional(),
-    competitorUrl:        z.string().url().nullable().optional(),
+    competitorUrl:        productUrl.nullable().optional(),
     competitorPriceType:  z.enum(['promo', 'normal']).nullable().optional(),
     competitorPrices:     z.array(z.object({
       price:          z.number().nonnegative(),
-      url:            z.string().url().optional(),
+      url:            productUrl.optional(),
       priceType:      z.enum(['promo', 'normal']).optional(),
       competitorName: z.string().optional(),
     })).max(5).optional(),
