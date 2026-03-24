@@ -2,6 +2,123 @@
 
 ---
 
+## Competitors by Country
+
+Countries correspond to Acer store locales in Wizhard. **We only scrape sites marked ✓** — these have a defined protocol in this file. All other sites are listed for reference only and are not scraped.
+
+### 🇮🇪 Ireland / 🇬🇧 UK (`en-ie`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.co.uk | ✓ Layer 3 (Google, gl=de → use gl=uk) |
+| Currys | currys.ie / currys.co.uk | Largest UK/IE electronics chain |
+| Harvey Norman | harveynorman.ie | IE-focused; physical + online |
+| Argos | argos.ie / argos.co.uk | Wide laptop range |
+
+### 🇫🇷 France (`fr-fr`, `fr-be`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.fr | ✓ Layer 3 (gl=fr) |
+| Boulanger | boulanger.com | ✓ Layer 3 only (Shadow DOM, CF-blocked) |
+| Darty | darty.com | ✓ Layer 3 only (Cloudflare) |
+| FNAC | fnac.com | ✓ Layer 3 only (Cloudflare) |
+| JoyBuy | joybuy.fr | ✓ Layer 1 (FR domain only) |
+| Cdiscount | cdiscount.com | Large marketplace; carries Acer |
+| Rue du Commerce | rueducommerce.fr | Owned by Cdiscount group |
+
+### 🇧🇪 Belgium (`fr-be`, `nl-be`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.nl | Serves BE; nl domain |
+| Bol | bol.com/be | Leading BE/NL marketplace |
+| Coolblue | coolblue.be | Strong in NL+BE |
+| MediaMarkt | mediamarkt.be | Physical + online |
+| FNAC | fnac.be | French-speaking BE |
+
+### 🇩🇪 Germany (`de-de`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.de | ✓ Layer 3 (gl=de) |
+| MediaMarkt | mediamarkt.de | ✓ Layer 3 |
+| Saturn | saturn.de | Sister brand to MediaMarkt (same Ceconomy group) |
+| Alternate | alternate.de | Large IT/electronics e-tailer |
+| Cyberport | cyberport.de | Strong on laptops & Apple |
+| Notebooksbilliger | notebooksbilliger.de | Laptop specialist |
+
+### 🇪🇸 Spain (`es-es`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.es | ✓ Layer 3 (gl=es) |
+| Worten | worten.es | ✓ Layer 1 |
+| El Corte Inglés | elcorteingles.es | ✓ Layer 1 |
+| PC Componentes | pccomponentes.com | ✓ Layer 3 only (Cloudflare) |
+| MediaMarkt | mediamarkt.es | ✓ Layer 3 |
+| FNAC | fnac.es | ✓ Layer 3 only |
+| Carrefour | carrefour.es | Carries entry-level laptops |
+
+### 🇮🇹 Italy (`it-it`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.it | ✓ Layer 3 (gl=it) |
+| MediaWorld | mediaworld.it | Italian brand name for MediaMarkt |
+| Unieuro | unieuro.it | Italy's largest electronics chain |
+| Euronics | euronics.it | Second largest chain (franchise model) |
+| ePrice | eprice.it | Online-only; strong laptop catalogue |
+
+### 🇳🇱 Netherlands (`nl-nl`, `nl-be`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.nl | ✓ Layer 3 (gl=nl) |
+| Bol | bol.com | Leading NL marketplace |
+| Coolblue | coolblue.nl | Electronics specialist, very strong in NL |
+| MediaMarkt | mediamarkt.nl | ✓ Layer 3 |
+
+### 🇫🇮 Finland (`fi-fi`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Verkkokauppa | verkkokauppa.com | Finland's largest online electronics retailer |
+| Gigantti | gigantti.fi | Elgiganten group brand for Finland |
+| Power | power.fi | Third major chain in FI |
+| Amazon | amazon.se | Closest Amazon domain (SE); FI has no amazon.fi |
+
+### 🇸🇪 Sweden (`sv-se`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.se | ✓ Layer 3 (gl=se) |
+| Elgiganten | elgiganten.se | Elkjøp group; dominant chain |
+| NetOnNet | netonnet.se | Online-only; competitive pricing |
+| Webhallen | webhallen.com | Enthusiast/gaming focus |
+| Power | power.se | ~190 Nordic stores |
+
+### 🇩🇰 Denmark (`da-dk`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Elgiganten | elgiganten.dk | Elkjøp group; market leader |
+| Power | power.dk | Second largest chain |
+| Proshop | proshop.dk | Pure-play online; IT/laptop focus |
+| Komplett | komplett.dk | Scandinavian IT e-tailer |
+
+### 🇳🇴 Norway (`no-no`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Elkjøp | elkjop.no | Market leader; same group as Elgiganten |
+| Power | power.no | Strong #2 |
+| Komplett | komplett.no | Large IT-focused e-tailer |
+| Proshop | proshop.no | Online-only IT specialist |
+
+### 🇵🇱 Poland (`pl-pl`)
+| Site | Domain | Notes |
+|------|--------|-------|
+| Amazon | amazon.pl | ✓ Layer 3 (gl=pl) |
+| Media Expert | mediaexpert.pl | Largest electronics chain in PL |
+| RTV Euro AGD | euro.com.pl | Second largest chain |
+| MediaMarkt | mediamarkt.pl | ✓ Layer 3 |
+| Morele | morele.net | Online-only; strong IT catalogue |
+| x-kom | x-kom.pl | Gaming/IT specialist |
+| Komputronik | komputronik.pl | IT and laptop specialist |
+| Allegro | allegro.pl | Dominant PL marketplace (like Amazon) |
+
+---
+
 ## Layer 2 — Universal Discovery Protocol
 
 Use this when Layer 1 selectors fail for any competitor (site redesign, new layout).
