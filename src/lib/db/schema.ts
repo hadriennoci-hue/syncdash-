@@ -97,6 +97,17 @@ export const productMetafields = sqliteTable('product_metafields', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 
+export const competitorPrices = sqliteTable('competitor_prices', {
+  id:             text('id').primaryKey(),
+  productId:      text('product_id').notNull().references(() => products.id),
+  rank:           integer('rank').notNull(),
+  price:          real('price').notNull(),
+  url:            text('url'),
+  priceType:      text('price_type').$type<'normal' | 'promo'>(),
+  competitorName: text('competitor_name'),
+  updatedAt:      text('updated_at').notNull(),
+})
+
 export const attributeAllowedValues = sqliteTable('attribute_allowed_values', {
   id:              text('id').primaryKey(),
   collection:      text('collection').notNull(), // laptops | monitor
@@ -917,6 +928,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   categories:       many(productCategories),
   warehouseStock:   many(warehouseStock),
   tiktokSelection:  one(tiktokSelection, { fields: [products.id], references: [tiktokSelection.productId] }),
+  competitorPrices: many(competitorPrices),
 }))
 
 export const productCategoriesRelations = relations(productCategories, ({ one }) => ({
@@ -969,6 +981,10 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
 
 export const productMetafieldsRelations = relations(productMetafields, ({ one }) => ({
   product: one(products, { fields: [productMetafields.productId], references: [products.id] }),
+}))
+
+export const competitorPricesRelations = relations(competitorPrices, ({ one }) => ({
+  product: one(products, { fields: [competitorPrices.productId], references: [products.id] }),
 }))
 
 export const tiktokSelectionRelations = relations(tiktokSelection, ({ one }) => ({

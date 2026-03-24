@@ -134,16 +134,17 @@ export async function GET(req: NextRequest) {
       return out
     }
 
-    const [metafieldRaw, priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw] = await Promise.all([
+    const [metafieldRaw, priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw, competitorRaw] = await Promise.all([
       fetchChunked('product_metafields'),
       fetchChunked('product_prices'),
       fetchChunked('platform_mappings'),
       fetchChunked('warehouse_stock'),
       fetchChunked('product_images'),
       fetchChunked('product_categories'),
+      fetchChunked('competitor_prices'),
     ])
 
-    rows = baseProducts.map((p) => buildRow(p, metafieldRaw, priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw))
+    rows = baseProducts.map((p) => buildRow(p, metafieldRaw, priceRaw, mappingsRaw, stockRaw, imagesRaw, categoriesRaw, competitorRaw))
   }
 
   function buildRow(
@@ -154,8 +155,9 @@ export async function GET(req: NextRequest) {
     stockRaw: Record<string, unknown>[],
     imagesRaw: Record<string, unknown>[],
     categoriesRaw: Record<string, unknown>[],
+    competitorRaw: Record<string, unknown>[],
   ) {
-    const myMetafields = metafieldRaw.filter((r) => r.product_id === p.id && r.namespace === 'competitor')
+    const myMetafields = metafieldRaw.filter((r) => r.product_id === p.id && r.namespace !== 'competitor')
     const myPrices    = priceRaw.filter((r) => r.product_id === p.id)
     const myMappings  = mappingsRaw.filter((r) => r.product_id === p.id)
     const myStock     = stockRaw.filter((r) => r.product_id === p.id)
@@ -164,7 +166,7 @@ export async function GET(req: NextRequest) {
 
     const priceMap   = Object.fromEntries(myPrices.map((r) => [String(r.platform), { price: r.price as number | null, compareAt: r.compare_at as number | null }]))
     const mappingMap = Object.fromEntries(myMappings.map((r) => [String(r.platform), r]))
-    const competitorMap = Object.fromEntries(myMetafields.map((r) => [String(r.key), r.value]))
+    const rank1Competitor = competitorRaw.find((r) => r.product_id === p.id && r.rank === 1)
 
     const platformData = Object.fromEntries(
       PLATFORMS.map((pl) => [pl, {
@@ -186,10 +188,10 @@ export async function GET(req: NextRequest) {
       title:          p.title,
       status:         p.status,
       competitor: {
-        price:     competitorMap.price ? Number(competitorMap.price) : null,
-        url:       typeof competitorMap.url === 'string' ? competitorMap.url : null,
-        priceType: competitorMap.price_type === 'promo' || competitorMap.price_type === 'normal'
-          ? competitorMap.price_type
+        price:     rank1Competitor?.price != null ? Number(rank1Competitor.price) : null,
+        url:       typeof rank1Competitor?.url === 'string' ? rank1Competitor.url : null,
+        priceType: rank1Competitor?.price_type === 'promo' || rank1Competitor?.price_type === 'normal'
+          ? rank1Competitor.price_type as 'promo' | 'normal'
           : null,
       },
       supplier:       p.supplier ? { id: p.supplier.id, name: p.supplier.name } : null,

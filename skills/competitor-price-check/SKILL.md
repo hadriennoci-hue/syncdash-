@@ -109,13 +109,24 @@ For multi-variant products, note which configuration the price applies to (e.g. 
 
 ## Step 6 — Write result to Wizhard database
 
-After completing all competitor checks, PATCH the product in Wizhard:
+After completing all competitor checks, PATCH the product in Wizhard.
 
-**If at least one price was found:**
+**If at least one price was found**, send all found prices as an array (up to 5, sorted cheapest first):
 ```
 PATCH /api/products/{sku}
-{ "fields": { "competitorPrice": <lowest_confirmed_price>, "competitorUrl": "<url>", "competitorPriceType": "normal" | "promo" }, "triggeredBy": "agent" }
+{
+  "fields": {
+    "competitorPrices": [
+      { "price": 849, "url": "https://...", "priceType": "promo", "competitorName": "Worten.es" },
+      { "price": 869, "url": "https://...", "priceType": "normal", "competitorName": "PC Componentes" },
+      { "price": 899, "url": "https://...", "priceType": "normal", "competitorName": "Amazon.es" }
+    ]
+  },
+  "triggeredBy": "agent"
+}
 ```
+
+The array replaces all stored competitor prices for the SKU. Rank is assigned automatically by price (cheapest = rank 1). Maximum 5 entries.
 
 **If NO competitor has the product (all results are Not listed or Blocked):**
 ```
@@ -126,6 +137,8 @@ PATCH /api/products/{sku}
 Writing `competitorPrice: 0` + `competitorUrl: "https://not-listed"` marks the SKU as "searched, nothing found" so future agents skip it and don't re-search.
 
 > **Note:** The query that identifies SKUs needing a price check must exclude both `competitorPrice IS NOT NULL` AND `competitorUrl = 'https://not-listed'`.
+
+**Reading back:** `GET /api/products/{sku}` returns `competitor.all[]` with all stored ranks, and `competitor.price/url/priceType` for rank 1 (cheapest).
 
 ---
 

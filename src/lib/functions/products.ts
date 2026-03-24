@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
 import {
   products, productVariants, productImages, productPrices,
-  productMetafields, platformMappings, productCategories,
+  productMetafields, platformMappings, productCategories, competitorPrices,
 } from '@/lib/db/schema'
 import { eq, and, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
@@ -229,6 +229,12 @@ interface UpdateProductInput {
     competitorPrice?: number | null
     competitorUrl?: string | null
     competitorPriceType?: 'promo' | 'normal' | null
+    competitorPrices?: Array<{
+      price: number
+      url?: string | null
+      priceType?: 'promo' | 'normal' | null
+      competitorName?: string | null
+    }>
   }
   platforms?: Platform[]
   triggeredBy?: TriggeredBy
@@ -253,55 +259,52 @@ export async function updateProduct(
     .set(d1Update)
     .where(eq(products.id, sku))
 
-  if (
+  if ('competitorPrices' in input.fields && input.fields.competitorPrices !== undefined) {
+    // Array write: replace all ranks for this SKU (up to 5, sorted by price asc)
+    await db.delete(competitorPrices).where(eq(competitorPrices.productId, sku))
+    const sorted = [...input.fields.competitorPrices]
+      .sort((a, b) => a.price - b.price)
+      .slice(0, 5)
+    if (sorted.length > 0) {
+      await db.insert(competitorPrices).values(
+        sorted.map((entry, i) => ({
+          id:             generateId(),
+          productId:      sku,
+          rank:           i + 1,
+          price:          entry.price,
+          url:            entry.url ?? null,
+          priceType:      entry.priceType ?? null,
+          competitorName: entry.competitorName ?? null,
+          updatedAt:      new Date().toISOString(),
+        }))
+      )
+    }
+  } else if (
     'competitorPrice' in input.fields ||
     'competitorUrl' in input.fields ||
     'competitorPriceType' in input.fields
   ) {
-    await db.delete(productMetafields).where(
-      and(
-        eq(productMetafields.productId, sku),
-        eq(productMetafields.namespace, 'competitor'),
-        or(
-          eq(productMetafields.key, 'price'),
-          eq(productMetafields.key, 'url'),
-          eq(productMetafields.key, 'price_type')
-        )
+    // Single-field backward-compat write: upsert rank=1
+    const { competitorPrice, competitorUrl, competitorPriceType } = input.fields
+    if (competitorPrice !== null && competitorPrice !== undefined) {
+      await db.delete(competitorPrices).where(
+        and(eq(competitorPrices.productId, sku), eq(competitorPrices.rank, 1))
       )
-    )
-
-    const competitorMetafields = [
-      'competitorPrice' in input.fields && input.fields.competitorPrice !== null && input.fields.competitorPrice !== undefined
-        ? {
-            id: generateId(),
-            productId: sku,
-            namespace: 'competitor',
-            key: 'price',
-            value: String(input.fields.competitorPrice),
-          }
-        : null,
-      'competitorUrl' in input.fields && input.fields.competitorUrl
-        ? {
-            id: generateId(),
-            productId: sku,
-            namespace: 'competitor',
-            key: 'url',
-            value: input.fields.competitorUrl,
-          }
-        : null,
-      'competitorPriceType' in input.fields && input.fields.competitorPriceType
-        ? {
-            id: generateId(),
-            productId: sku,
-            namespace: 'competitor',
-            key: 'price_type',
-            value: input.fields.competitorPriceType,
-          }
-        : null,
-    ].filter((value): value is NonNullable<typeof value> => value !== null)
-
-    if (competitorMetafields.length > 0) {
-      await db.insert(productMetafields).values(competitorMetafields)
+      await db.insert(competitorPrices).values({
+        id:             generateId(),
+        productId:      sku,
+        rank:           1,
+        price:          competitorPrice,
+        url:            competitorUrl ?? null,
+        priceType:      competitorPriceType ?? null,
+        competitorName: null,
+        updatedAt:      new Date().toISOString(),
+      })
+    } else if (competitorPrice === null) {
+      // Explicit null = clear rank-1
+      await db.delete(competitorPrices).where(
+        and(eq(competitorPrices.productId, sku), eq(competitorPrices.rank, 1))
+      )
     }
   }
 

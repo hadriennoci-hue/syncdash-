@@ -76,6 +76,12 @@ const patchSchema = z.object({
     competitorPrice:      z.number().nonnegative().nullable().optional(),
     competitorUrl:        z.string().url().nullable().optional(),
     competitorPriceType:  z.enum(['promo', 'normal']).nullable().optional(),
+    competitorPrices:     z.array(z.object({
+      price:          z.number().nonnegative(),
+      url:            z.string().url().optional(),
+      priceType:      z.enum(['promo', 'normal']).optional(),
+      competitorName: z.string().optional(),
+    })).max(5).optional(),
   }).optional(),
   variantGroupId: z.string().uuid().nullable().optional(),
   platforms:   z.array(z.string()).min(1).optional(),
@@ -105,6 +111,7 @@ export async function GET(
       platformMappings: true,
       categories:       { with: { category: true } },
       warehouseStock:   true,
+      competitorPrices: true,
     },
   })
 
@@ -133,11 +140,8 @@ export async function GET(
     }])
   )
   const acerSource = stockMap.acer_store ?? null
-  const competitorMap = Object.fromEntries(
-    product.metafields
-      .filter((mf) => mf.namespace === 'competitor')
-      .map((mf) => [mf.key, mf.value])
-  )
+  const sortedCompetitors = [...product.competitorPrices].sort((a, b) => a.rank - b.rank)
+  const rank1 = sortedCompetitors[0] ?? null
 
   // Variant siblings: other products in the same variant group
   let variantSiblings: { sku: string; keyboardLayout: string | null }[] = []
@@ -183,11 +187,16 @@ export async function GET(
     isFeatured:           !!product.isFeatured,
     supplier:             product.supplier,
     competitor: {
-      price:     competitorMap.price ? Number(competitorMap.price) : null,
-      url:       typeof competitorMap.url === 'string' ? competitorMap.url : null,
-      priceType: competitorMap.price_type === 'promo' || competitorMap.price_type === 'normal'
-        ? competitorMap.price_type
-        : null,
+      price:     rank1?.price ?? null,
+      url:       rank1?.url ?? null,
+      priceType: rank1?.priceType ?? null,
+      all:       sortedCompetitors.map((c) => ({
+        rank:           c.rank,
+        price:          c.price,
+        url:            c.url ?? null,
+        priceType:      c.priceType ?? null,
+        competitorName: c.competitorName ?? null,
+      })),
     },
     variants:             product.variants,
     images:               product.images,
