@@ -719,12 +719,12 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'storage':                       'storage',
     'storage capacity':              'storage',
     'storage type':                  'storage_type',
-    'graphics controller model':     'graphics',  // actual label on en-ie
-    'graphics card model':           'graphics',
-    'graphics':                      'graphics',
-    'graphics card':                 'graphics',
-    'discrete graphics':             'graphics',
-    'integrated graphics':           'graphics',
+    'graphics controller model':     'gpu',  // actual label on en-ie
+    'graphics card model':           'gpu',
+    'graphics':                      'gpu',
+    'graphics card':                 'gpu',
+    'discrete graphics':             'gpu',
+    'integrated graphics':           'gpu',
     'colour':                        'color',
     'color':                         'color',
     'chassis color':                 'color',
@@ -756,10 +756,10 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'stockage':                      'storage',
     'capacité de stockage':          'storage',
     'type de stockage':              'storage_type',
-    'modèle de carte graphique':     'graphics',
-    'carte graphique':               'graphics',
-    'graphique':                     'graphics',
-    'graphiques':                    'graphics',
+    'modèle de carte graphique':     'gpu',
+    'carte graphique':               'gpu',
+    'graphique':                     'gpu',
+    'graphiques':                    'gpu',
     'couleur':                       'color',
     'couleur du boîtier':            'color',
   },
@@ -785,10 +785,10 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'gesamtkapazität ssd':           'storage',
     'speicherkapazität':             'storage',
     'speichertyp':                   'storage_type',
-    'grafikprozessormodell':         'graphics',
-    'grafik':                        'graphics',
-    'grafikkarte':                   'graphics',
-    'grafikprozessor':               'graphics',
+    'grafikprozessormodell':         'gpu',
+    'grafik':                        'gpu',
+    'grafikkarte':                   'gpu',
+    'grafikprozessor':               'gpu',
     'farbe':                         'color',
     'gehäusefarbe':                  'color',
   },
@@ -814,8 +814,8 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'standaardgeheugen':             'ram',
     'totale ssd capaciteit':         'storage',      // actual label (no hyphen)
     'totale ssd-opslagcapaciteit':   'storage',
-    'model grafische-kaart':         'graphics',     // actual label
-    'grafische kaart':               'graphics',
+    'model grafische-kaart':         'gpu',     // actual label
+    'grafische kaart':               'gpu',
     'kleur':                         'color',
   },
   es: { // es-es — verified from store.acer.com/es-es (NX.J02EB.002)
@@ -840,9 +840,9 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'almacenamiento':                'storage',
     'tipo de almacenamiento':        'storage_type',
     'interfaz de unidad de estado sólido': 'storage_type',
-    'tarjeta gráfica':               'graphics',
-    'tarjeta gráfica\u200b':         'graphics',  // page has trailing zero-width space
-    'gráficos':                      'graphics',
+    'tarjeta gráfica':               'gpu',
+    'tarjeta gráfica\u200b':         'gpu',  // page has trailing zero-width space
+    'gráficos':                      'gpu',
     'color':                         'color',
     'color del chasis':              'color',
   },
@@ -866,9 +866,9 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'capacità totale unità ssd':     'storage',
     'memoria di archiviazione':      'storage',
     'tipo di archiviazione':         'storage_type',
-    'modello del controller grafico': 'graphics',
-    'scheda grafica':                'graphics',
-    'grafica':                       'graphics',
+    'modello del controller grafico': 'gpu',
+    'scheda grafica':                'gpu',
+    'grafica':                       'gpu',
     'colore':                        'color',
     'colore chassis':                'color',
   },
@@ -889,7 +889,7 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'pamięć standardowa':            'ram',   // actual label (reversed word order)
     'standardowa pamięć':            'ram',
     'całkowita pojemność dysku ssd': 'storage',
-    'model karty graficznej':        'graphics',  // actual label
+    'model karty graficznej':        'gpu',  // actual label
     'kolor':                         'color',
   },
   sv: { // [✓] sv-se — verified from store.acer.com/sv-se (NX.J3JED.002)
@@ -910,7 +910,7 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'standardminne':                 'ram',
     'totalt solid state-drivkapacitet': 'storage',   // actual label
     'total ssd-kapacitet':           'storage',
-    'grafikkortsmodell':             'graphics',      // actual label
+    'grafikkortsmodell':             'gpu',      // actual label
     'färg':                          'color',
   },
   no: { // [✓] no-no — verified from store.acer.com/no-no (NX.J3JED.002)
@@ -928,8 +928,8 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'standard minne':                'ram',           // actual label (with space)
     'total kapasitet solid state drive': 'storage',   // actual label
     'total ssd-kapasitet':           'storage',
-    'grafikkort modell':             'graphics',      // actual label (with space)
-    'grafikkortmodell':              'graphics',
+    'grafikkort modell':             'gpu',      // actual label (with space)
+    'grafikkortmodell':              'gpu',
     'farge':                         'color',
   },
   fi: { // [✓] fi-fi — verified from store.acer.com/fi-fi (NX.J3JED.002)
@@ -950,8 +950,8 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'vakiokoko muistia':             'ram',
     'ssd-massamuistin kapasiteetin kokonaismäärä': 'storage', // actual label
     'ssd-kokonaiskapasiteetti':      'storage',
-    'grafiikkaohjaimen malli':       'graphics',      // actual label
-    'näytönohjainmalli':             'graphics',
+    'grafiikkaohjaimen malli':       'gpu',      // actual label
+    'näytönohjainmalli':             'gpu',
     'väri':                          'color',
   },
   da: { // [✓] da-dk — Danish (verified from store.acer.com/da-dk NH.QXAED.008)
@@ -976,10 +976,10 @@ const LAPTOP_LABEL_MAPS: Record<string, Record<string, string>> = {
     'samlet ssd-kapacitet':          'storage',
     'lagerkapacitet':                'storage',
     'lagertype':                     'storage_type',
-    'grafikkort model':              'graphics',         // verified (with space)
-    'grafikkortmodel':               'graphics',
-    'grafikkort':                    'graphics',
-    'grafik':                        'graphics',
+    'grafikkort model':              'gpu',         // verified (with space)
+    'grafikkortmodel':               'gpu',
+    'grafikkort':                    'gpu',
+    'grafik':                        'gpu',
     'farve':                         'color',
   },
 }

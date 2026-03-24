@@ -1,5 +1,7 @@
 # Competitor Protocols
 
+> ⚠️ **Never search store.acer.com.** It is Acer's own official store — not a third-party competitor. Do not include it in any Google `site:` query, Layer 1/2/3 search, result table, or database write.
+
 ---
 
 ## Competitors by Country

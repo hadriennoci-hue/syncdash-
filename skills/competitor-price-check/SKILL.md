@@ -107,12 +107,35 @@ For multi-variant products, note which configuration the price applies to (e.g. 
 
 ---
 
+## Step 6 — Write result to Wizhard database
+
+After completing all competitor checks, PATCH the product in Wizhard:
+
+**If at least one price was found:**
+```
+PATCH /api/products/{sku}
+{ "fields": { "competitorPrice": <lowest_confirmed_price>, "competitorUrl": "<url>", "competitorPriceType": "normal" | "promo" }, "triggeredBy": "agent" }
+```
+
+**If NO competitor has the product (all results are Not listed or Blocked):**
+```
+PATCH /api/products/{sku}
+{ "fields": { "competitorPrice": 0, "competitorUrl": "https://not-listed", "competitorPriceType": "normal" }, "triggeredBy": "agent" }
+```
+
+Writing `competitorPrice: 0` + `competitorUrl: "https://not-listed"` marks the SKU as "searched, nothing found" so future agents skip it and don't re-search.
+
+> **Note:** The query that identifies SKUs needing a price check must exclude both `competitorPrice IS NOT NULL` AND `competitorUrl = 'https://not-listed'`.
+
+---
+
 ## Rules
 
 - Fetch product spec once at the start — never mid-run
-- Run all 8 competitors regardless of failures
+- Run all applicable competitors regardless of failures
 - Never report a price from a name-only search without attribute verification
 - Distinguish "Not listed" (searched, nothing found) from "Blocked" (could not search)
 - All prices in EUR — note original currency if a site shows non-EUR
 - Flag all Google cache results with estimated staleness (~7d default)
 - If a product appears to be an exclusive model with no cross-listing, state that explicitly
+- **Never scan store.acer.com** — it is Acer's own store, not a third-party competitor. Do not include it in any search, result table, or database write.

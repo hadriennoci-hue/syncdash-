@@ -43,6 +43,7 @@ export default function ChannelsPage() {
 
   const [channelFilter, setChannelFilter] = useState<Platform | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['channels-products'],
@@ -76,20 +77,21 @@ export default function ChannelsPage() {
     [productsData]
   )
 
-  const filtered = useMemo(
-    () =>
-      products.filter((p) => {
-        if (channelFilter !== 'all' && p.platforms[channelFilter]?.status === 'missing') return false
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return products.filter((p) => {
+      if (channelFilter !== 'all' && p.platforms[channelFilter]?.status === 'missing') return false
 
-        const totalStock = (p.stock.ireland ?? 0) + (p.stock.poland ?? 0) + (p.stock.acer_store ?? 0)
-        if (statusFilter === 'for_sale' && !(p.status === 'active' && totalStock > 0)) return false
-        if (statusFilter === 'out_of_stock' && !(p.status === 'active' && totalStock === 0)) return false
-        if (statusFilter === 'deactivated' && p.status !== 'archived') return false
+      const totalStock = (p.stock.ireland ?? 0) + (p.stock.poland ?? 0) + (p.stock.acer_store ?? 0)
+      if (statusFilter === 'for_sale' && !(p.status === 'active' && totalStock > 0)) return false
+      if (statusFilter === 'out_of_stock' && !(p.status === 'active' && totalStock === 0)) return false
+      if (statusFilter === 'deactivated' && p.status !== 'archived') return false
 
-        return true
-      }),
-    [products, channelFilter, statusFilter]
-  )
+      if (q && !p.id.toLowerCase().includes(q) && !(p.title ?? '').toLowerCase().includes(q)) return false
+
+      return true
+    })
+  }, [products, channelFilter, statusFilter, searchQuery])
 
   return (
     <div className="space-y-4">
@@ -153,6 +155,13 @@ export default function ChannelsPage() {
       )}
 
       <div className="flex items-center gap-2">
+        <input
+          type="search"
+          placeholder="Search SKU or name…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="text-xs border border-border rounded px-2 py-1 bg-background w-48"
+        />
         <select
           value={channelFilter}
           onChange={(e) => setChannelFilter(e.target.value as Platform | 'all')}

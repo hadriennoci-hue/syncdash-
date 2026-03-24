@@ -18,8 +18,6 @@ export const ATTRIBUTE_SHORT_VALUE_MAP: AttributeShortValueMap = {
       'GeForce RTX 4080': 'RTX 4080',
       'GeForce RTX 4090': 'RTX 4090',
       'Intel Arc Graphics': 'Intel Arc',
-    },
-    graphics: {
       'GeForce RTX™ 5070 Ti': 'RTX 5070 Ti',
       'GeForce RTX™ 5070Ti': 'RTX 5070 Ti',
       'GeForce RTX™ 5070': 'RTX 5070',
@@ -222,7 +220,7 @@ export function getShortAttributeValue(
   }
 
   const normalizedKey = key.trim().toLowerCase()
-  if (normalizedKey === 'graphics') return shortenGraphics(value)
+  if (normalizedKey === 'gpu') return shortenGraphics(value)
   if (normalizedKey === 'panel_type') return shortenPanelType(value)
   if (normalizedKey === 'storage_type') return shortenStorageType(value)
   if (normalizedKey === 'refresh_rate' && normalizeLoose(value).includes('vertical frequency')) return 'Vert Freq'

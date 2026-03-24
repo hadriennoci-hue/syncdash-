@@ -269,7 +269,6 @@ const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   resolution: 'resolution',
   screen_resolution: 'max_resolution',
   gpu: 'graphic_card',
-  graphics: 'graphic_card',
   ram: 'ram_memory',
   storage: 'ssd_size',
   storage_type: 'storage_type',

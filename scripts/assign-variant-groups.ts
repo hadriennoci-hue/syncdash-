@@ -7,7 +7,7 @@
  * Variant definition:
  *  - Same laptop model (extracted from title: "| ModelCode |")
  *  - Different keyboard_layout (mandatory)
- *  - Same processor_model, ram, graphics, storage (diff = different product tier, not variant)
+ *  - Same processor_model, ram, gpu, storage (diff = different product tier, not variant)
  *  - panel_type differences are ignored (translation noise — same physical panel)
  *  - color, screen_size, resolution, refresh_rate must match
  *
@@ -85,7 +85,7 @@ function extractModel(title: string): string | null {
 
 // Attributes that must match exactly for two products to be variants.
 // panel_type is intentionally excluded — it's translation noise.
-const MUST_MATCH = ['processor_model', 'processor_brand', 'ram', 'storage', 'graphics', 'screen_size', 'resolution', 'color']
+const MUST_MATCH = ['processor_model', 'processor_brand', 'ram', 'storage', 'gpu', 'screen_size', 'resolution', 'color']
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {

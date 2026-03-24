@@ -113,7 +113,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     const metafields = Array.isArray(p?.metafields) ? p.metafields : []
     if (!metafields.length) return []
 
-    const PRIORITY_KEYS = ['keyboard_layout', 'processor_brand', 'processor_model', 'ram', 'storage', 'graphics', 'screen_size', 'operating_system']
+    const PRIORITY_KEYS = ['keyboard_layout', 'processor_brand', 'processor_model', 'ram', 'storage', 'gpu', 'screen_size', 'operating_system']
 
     return metafields
       .filter((m: any) => m?.namespace === 'attributes' && typeof m?.key === 'string')
