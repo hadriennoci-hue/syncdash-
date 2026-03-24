@@ -466,3 +466,84 @@ browser_navigate("https://www.google.com/search?q=site:mediamarkt.es+{search_ter
 - Seminuevo Muy bueno: **€1,019.15**, En stock
 - URL pattern: `/es/product/_reacondicionado-seminuevo-{grade}-portatil-{slug}-{id}.html`
 - Flag refurbished status in output — confidence is Verify for new-unit price comparison
+
+---
+
+## 10. Currys — Firecrawl Layer 1 (Ireland / UK)
+
+**Confirmed working via Firecrawl scrape.** Name search returns full product cards with €/£ prices and direct product URLs.
+
+**⚠️ SKU search returns empty** — Currys does not index Acer SKUs. Always search by name or model ref.
+
+Search URL:
+```
+https://www.currys.ie/search?q={model_ref}
+```
+e.g. `https://www.currys.ie/search?q=Acer+Aspire+15+A15-51M`
+
+Use UK domain for GBP prices: `https://www.currys.co.uk/search?q=...`
+
+Price format: `€619.00` with optional "Was €X.XX (from date to date)" for promotions.
+Product URL pattern: `https://www.currys.ie/products/{product-slug}.html`
+
+---
+
+## 11. Cdiscount — Firecrawl Layer 1 (France)
+
+**Confirmed working via Firecrawl scrape.** Returns category filters + product listings with €prices.
+
+Search URL:
+```
+https://www.cdiscount.com/search/10/{url-encoded-query}.html
+```
+e.g. `https://www.cdiscount.com/search/10/acer+aspire+14+oled.html`
+
+Returns: category counts (e.g. "Informatique(14)"), product cards with prices like `399,99 €`, product URLs.
+Price format: `399,99 €` (French decimal comma).
+
+---
+
+## 12. Allegro — Firecrawl Layer 1 (Poland)
+
+**Confirmed working via Firecrawl scrape.** Returns full product listing with PLN prices.
+
+Search URL:
+```
+https://allegro.pl/listing?string={query}
+```
+e.g. `https://allegro.pl/listing?string=NX.J02EK.003+Acer` or `https://allegro.pl/listing?string=Acer+Aspire+17+A17-51M`
+
+Price format: `2699,00zł` (Polish comma decimal, zł suffix).
+Returns 100K+ chars with many product cards. Attribute-scan required — search returns mixed results.
+
+---
+
+## 13. Elgiganten — Firecrawl Layer 1 (Sweden / Denmark)
+
+**Confirmed working via Firecrawl scrape.** Returns full product listing with SEK prices.
+
+Search URL:
+```
+https://www.elgiganten.se/search?SearchTerm={query}
+```
+e.g. `https://www.elgiganten.se/search?SearchTerm=Acer+Aspire+15+A15-51M`
+
+For Denmark: `https://www.elgiganten.dk/search?SearchTerm={query}`
+
+Price format: `4490.-` (SEK, dot-dash suffix). Promo shows two prices: `4490.-3592.-` (original then sale).
+Returns 60K+ chars. Attribute-scan required — results are mixed (all brands).
+
+---
+
+## Sites confirmed NOT accessible via Firecrawl
+
+| Site | Reason |
+|------|--------|
+| Bol.com | Akamai WAF — explicit IP block message |
+| Coolblue | Cookie wall blocks JS rendering — no product content |
+| Unieuro | Heavy SPA — Firecrawl only returns 3.8K homepage shell |
+| Notebooksbilliger | Consistent timeout (>40s) on every attempt |
+| Alternate.de | Search URL pattern unknown — all tried patterns return 404 |
+| Media Expert | SPA — search page returns nav only (8K); product JS never executes |
+
+For these sites, use **Layer 3 (Google rich snippets via Playwright)** as fallback.

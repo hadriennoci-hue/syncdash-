@@ -86,7 +86,7 @@ Full protocols in `competitors.md`.
 
 ## Step 5 — Output
 
-Return a single markdown table after all 8 checks:
+Return a single markdown table after all checks:
 
 | Competitor | Price | Was | Discount | Match | URL | Method | Freshness |
 |---|---|---|---|---|---|---|---|
@@ -100,6 +100,7 @@ Return a single markdown table after all 8 checks:
 | MediaMarkt | — | — | — | Blocked | — | Cache failed | — |
 
 Follow the table with:
+- **5 cheapest prices found** (across all competitors, ranked cheapest first)
 - **Lowest confirmed price:** [price] at [competitor]
 - **Lowest overall (including Verify):** [price] at [competitor] — verify manually
 
@@ -111,7 +112,7 @@ For multi-variant products, note which configuration the price applies to (e.g. 
 
 After completing all competitor checks, PATCH the product in Wizhard.
 
-**If at least one price was found**, send all found prices as an array (up to 5, sorted cheapest first):
+**If at least one price was found**, collect ALL prices found across all competitors and submit the 5 cheapest, sorted ascending:
 ```
 PATCH /api/products/{sku}
 {
@@ -119,14 +120,16 @@ PATCH /api/products/{sku}
     "competitorPrices": [
       { "price": 849, "url": "https://...", "priceType": "promo", "competitorName": "Worten.es" },
       { "price": 869, "url": "https://...", "priceType": "normal", "competitorName": "PC Componentes" },
-      { "price": 899, "url": "https://...", "priceType": "normal", "competitorName": "Amazon.es" }
+      { "price": 879, "url": "https://...", "priceType": "normal", "competitorName": "FNAC" },
+      { "price": 899, "url": "https://...", "priceType": "normal", "competitorName": "Amazon.es" },
+      { "price": 920, "url": "https://...", "priceType": "normal", "competitorName": "El Corte Inglés" }
     ]
   },
   "triggeredBy": "agent"
 }
 ```
 
-The array replaces all stored competitor prices for the SKU. Rank is assigned automatically by price (cheapest = rank 1). Maximum 5 entries.
+The array replaces all stored competitor prices for the SKU. Rank is assigned automatically by price (cheapest = rank 1). Always submit up to 5 — never just 1. Include every competitor that had a result, up to the cheapest 5.
 
 **If NO competitor has the product (all results are Not listed or Blocked):**
 ```
