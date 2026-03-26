@@ -297,8 +297,8 @@ export class CoincartConnector implements PlatformConnector {
         } else {
           if (!sku) continue
           map.set(sku, {
-            price:     parseFloat(p.regular_price as string) || null,
-            compareAt: parseFloat(p.sale_price as string)    || null,
+            price:     parseFloat(p.price as string) || null,
+            compareAt: parseFloat(p.sale_price as string) || null,
           })
         }
       }
