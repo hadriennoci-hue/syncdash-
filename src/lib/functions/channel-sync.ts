@@ -1180,7 +1180,9 @@ async function pushPlatform(
   // Flush bulk stock batch for coincart2 + shopify_komputerzz
   if (stockBatch.length > 0) {
     try {
-      if (isWooSkuAware(connector)) {
+      // Shopify's bulkSetStockForSkus loops one-by-one — use bulkSetStock (inventorySetOnHandQuantities) instead.
+      // Coincart's bulkSetStockForSkus is SKU-aware and handles variants correctly, so keep it for coincart2.
+      if (isWooSkuAware(connector) && platform !== 'shopify_komputerzz') {
         await callWithShopifyAuthRetry(() => (connector as unknown as WooSkuAware).bulkSetStockForSkus(stockBatch))
       } else {
         await callWithShopifyAuthRetry(() => connector.bulkSetStock(stockBatch.map(({ platformId, quantity }) => ({ platformId, quantity }))))
