@@ -53,3 +53,7 @@ scripts/error-*.png
 scripts/test-img-*.jpg
 scripts/tmp-*.sql
 tmp/
+
+# Production data snapshots (ephemeral exports, not for version control)
+allposts.json
+allproducts.json

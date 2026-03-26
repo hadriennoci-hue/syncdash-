@@ -54,9 +54,10 @@ Product names map to 10+ variants at different price points. Never report a pric
 
 1. Extract from each result card: CPU, GPU, RAM, storage, screen size, resolution
 2. Compare each against the spec loaded in Step 1
-3. Navigate only to the result where attributes align
-4. Report as **Verify**
-5. If no result's attributes match → **Not listed**
+3. Navigate only to the result where attributes are closest
+4. If attributes align → report as **Verify**
+5. If attributes differ (different RAM, storage, CPU, or model generation) → report as **Spec mismatch** and **still record the price** with spec details appended to competitor name (see Step 8)
+6. If no result found at all → **Not listed**
 
 ### Confidence levels
 
@@ -64,6 +65,7 @@ Product names map to 10+ variants at different price points. Never report a pric
 |-------|-----------|
 | Confirmed | Exact SKU found in title or product attributes |
 | Verify | Model ref or attribute match — SKU not found |
+| Spec mismatch | Same model family found but different spec (RAM/storage/CPU/gen) — price recorded with spec note |
 | Not listed | Searched successfully, no matching result found |
 | Blocked | Scraping failed and cache also unavailable |
 
@@ -106,19 +108,20 @@ This step prevents storing category pages, search result pages, or wrong-product
 
 Return a single markdown table after all checks:
 
-| Competitor | Price | Was | Discount | Match | URL | Method | Freshness |
-|---|---|---|---|---|---|---|---|
-| Amazon.es | 899 EUR | — | — | Confirmed | [link] | Live | Now |
-| Worten.es | 849 EUR | 999 EUR | -15% | Confirmed | [link] | Live | Now |
-| El Corte Ingles | 920 EUR | — | — | Verify | [link] | Live | Now |
-| Boulanger | — | — | — | Not listed | — | Live | Now |
-| JoyBuy | — | — | — | Not listed | — | Live | Now |
-| FNAC | 879 EUR | — | — | Verify | [link] | Google cache | ~7d |
-| PC Componentes | 869 EUR | — | — | Confirmed | [link] | Google cache | ~7d |
-| MediaMarkt | — | — | — | Blocked | — | Cache failed | — |
+| Competitor | Price | Was | Discount | Match | Spec | URL | Method | Freshness |
+|---|---|---|---|---|---|---|---|---|
+| Amazon.es | 899 EUR | — | — | Confirmed | ours | [link] | Live | Now |
+| Worten.es | 849 EUR | 999 EUR | -15% | Confirmed | ours | [link] | Live | Now |
+| El Corte Ingles | 920 EUR | — | — | Verify | ours | [link] | Live | Now |
+| MediaMarkt.es | 599 EUR | — | — | Spec mismatch | 16GB/512GB | [link] | Live | Now |
+| Boulanger | — | — | — | Not listed | — | — | Live | Now |
+| JoyBuy | — | — | — | Not listed | — | — | Live | Now |
+| FNAC | 879 EUR | — | — | Verify | ours | [link] | Google cache | ~7d |
+| PC Componentes | 869 EUR | — | — | Confirmed | ours | [link] | Google cache | ~7d |
+| MediaMarkt | — | — | — | Blocked | — | — | Cache failed | — |
 
 Follow the table with:
-- **5 cheapest prices found** (across all competitors, ranked cheapest first)
+- **5 cheapest prices found** (across all competitors, ranked cheapest first, spec-mismatch entries included and labelled)
 - **Lowest confirmed price:** [price] at [competitor]
 - **Lowest overall (including Verify):** [price] at [competitor] — verify manually
 
@@ -130,22 +133,24 @@ For multi-variant products, note which configuration the price applies to (e.g. 
 
 After completing all competitor checks, PATCH the product in Wizhard.
 
-**If at least one price was found**, collect ALL prices found across all competitors and submit the 5 cheapest, sorted ascending:
+**If at least one price was found**, collect ALL prices found across all competitors (including spec-mismatch results) and submit the 5 cheapest, sorted ascending:
 ```
 PATCH /api/products/{sku}
 {
   "fields": {
     "competitorPrices": [
+      { "price": 599, "url": "https://...", "priceType": "normal", "competitorName": "MediaMarkt.es [16GB/512GB]" },
       { "price": 849, "url": "https://...", "priceType": "promo", "competitorName": "Worten.es" },
       { "price": 869, "url": "https://...", "priceType": "normal", "competitorName": "PC Componentes" },
       { "price": 879, "url": "https://...", "priceType": "normal", "competitorName": "FNAC" },
-      { "price": 899, "url": "https://...", "priceType": "normal", "competitorName": "Amazon.es" },
-      { "price": 920, "url": "https://...", "priceType": "normal", "competitorName": "El Corte Inglés" }
+      { "price": 899, "url": "https://...", "priceType": "normal", "competitorName": "Amazon.es" }
     ]
   },
   "triggeredBy": "agent"
 }
 ```
+
+**Spec-mismatch entries:** Append the actual spec in brackets to `competitorName`, e.g. `"MediaMarkt.nl [8GB/128GB]"`, `"Amazon.it [i7-13620H/16GB]"`, `"Bol.com [RTX5060/32GB/512GB]"`. This preserves the price as market context while making the spec difference visible in the dashboard.
 
 The array replaces all stored competitor prices for the SKU. Rank is assigned automatically by price (cheapest = rank 1). Always submit up to 5 — never just 1. Include every competitor that had a result, up to the cheapest 5.
 
@@ -176,3 +181,4 @@ Writing `competitorPrice: 0` + `competitorUrl: "https://not-listed"` marks the S
 - **URL must be a product page** — before writing any URL to the DB, verify it contains a product identifier in the path (ASIN, product slug, product ID, `/mpXXXXX/`, `/OffersOfProduct/`, etc.). Never store a homepage (`https://geizhals.de`), a search result URL (`?fs=`, `?q=`, `/search?`), or a category/listing page. If you only have a search/category URL, navigate to the actual product listing first.
 - **Geizhals `?fs=` is a search URL** — never store it directly. Navigate to the product detail page (URL pattern: `/acer-{model}-{sku}-a{id}.html`) and store that.
 - **SKU regional variants** — Acer SKU suffixes encode the market (EF=France, EG=Germany, EH=Netherlands, ED=Nordic/Denmark, etc.). A product not found under its exact SKU may exist under a spec-equivalent variant. Note the mismatch explicitly — never silently substitute a different-market SKU as if it were the same.
+- **Always record spec-mismatch prices** — if a competitor carries the same model family but a different configuration (different RAM, storage, CPU, or generation), record the price anyway. Append the actual spec in brackets to `competitorName`: `"MediaMarkt.nl [8GB/128GB]"`. Never discard a price just because the spec doesn't perfectly match ours. These entries provide useful market context even when not directly comparable.
