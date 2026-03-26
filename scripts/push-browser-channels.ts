@@ -831,7 +831,7 @@ async function xmrCreate(
   await page.waitForLoadState('load')
   await xmrFillForm(page, product, imagePaths, moneroAddress)
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save"), input[type="submit"]')
+  await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save")')
     .first()
     .click()
   if (delayState) delayState.submittedOnce = true
@@ -918,7 +918,7 @@ async function xmrEdit(
 
   await xmrCheckXpath(page, '/html/body/div[3]/div/div[2]/form/div[6]/div/label/input').catch(() => {})
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('button:has-text("Update Listing"), button:has-text("Save"), input[type="submit"]')
+  await page.locator('button:has-text("Update Listing"), button:has-text("Save")')
     .first()
     .click()
   if (delayState) delayState.submittedOnce = true

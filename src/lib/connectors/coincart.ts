@@ -1,7 +1,7 @@
 import { coincartLimiter } from '@/lib/utils/rate-limiter'
 import type {
   PlatformConnector, RawProduct, RawVariant, RawImage, RawCollection,
-  ProductPayload, HealthCheckResult,
+  ProductPayload, HealthCheckResult, PriceSnapshot,
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
@@ -255,6 +255,57 @@ export class CoincartConnector implements PlatformConnector {
     }
 
     return products
+  }
+
+  async fetchPriceSnapshot(): Promise<Map<string, PriceSnapshot>> {
+    const map = new Map<string, PriceSnapshot>()
+    let page = 1
+    while (true) {
+      const items = await this.request<unknown[]>(
+        'GET',
+        `/products?per_page=100&page=${page}&status=any`
+      )
+      if (!items.length) break
+      for (const raw of items) {
+        const p = raw as Record<string, unknown>
+        const sku = (p.sku as string | null) ?? null
+        const type = (p.type as string | null) ?? 'simple'
+        if (type === 'variable') {
+          const parentId = String(p.id)
+          let vPage = 1
+          while (true) {
+            let vars: unknown[]
+            try {
+              vars = await this.request<unknown[]>(
+                'GET',
+                `/products/${parentId}/variations?per_page=100&page=${vPage}`
+              )
+            } catch { break }
+            if (!vars.length) break
+            for (const vraw of vars) {
+              const v = vraw as Record<string, unknown>
+              const vSku = (v.sku as string | null) ?? null
+              if (!vSku) continue
+              map.set(vSku, {
+                price:     parseFloat(v.regular_price as string) || null,
+                compareAt: parseFloat(v.sale_price as string)    || null,
+              })
+            }
+            if (vars.length < 100) break
+            vPage++
+          }
+        } else {
+          if (!sku) continue
+          map.set(sku, {
+            price:     parseFloat(p.regular_price as string) || null,
+            compareAt: parseFloat(p.sale_price as string)    || null,
+          })
+        }
+      }
+      if (items.length < 100) break
+      page++
+    }
+    return map
   }
 
   private normalizeProduct(p: Record<string, unknown>): RawProduct | null {
@@ -578,6 +629,7 @@ export class CoincartConnector implements PlatformConnector {
           id:             platformId,
           manage_stock:   true,
           stock_quantity: quantity,
+          in_stock:       quantity > 0,
         })),
       })
     }

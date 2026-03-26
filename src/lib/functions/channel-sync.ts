@@ -7,6 +7,20 @@ import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { deriveLaptopVariantAxes } from '@/lib/utils/laptop-variant-axes'
+import type { PriceSnapshot } from '@/lib/connectors/types'
+
+function priceChanged(
+  desired: { price: number | null; compareAt: number | null },
+  snapshot: Map<string, PriceSnapshot> | null,
+  sku: string
+): boolean {
+  if (!snapshot) return true
+  const current = snapshot.get(sku)
+  if (!current) return true
+  const eq = (a: number | null, b: number | null) =>
+    (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.001)
+  return !(eq(desired.price, current.price) && eq(desired.compareAt, current.compareAt))
+}
 
 export interface ChannelSyncResult {
   platform:           Platform
@@ -545,9 +559,7 @@ export async function syncChannelAvailability(
     },
   })
 
-  const eligible = raw.filter((p) =>
-    p.warehouseStock.some((ws) => ws.quantity > 0)
-  ) as unknown as EligibleProduct[]
+  const eligible = raw as unknown as EligibleProduct[]
 
   const results: ChannelSyncResult[] = []
   for (let index = 0; index < platforms.length; index++) {
@@ -738,6 +750,22 @@ async function pushPlatform(
     return connector.findProductIdBySlugOrTitle(title)
   }
 
+  // Pre-fetch price snapshot for coincart2 + shopify_komputerzz to skip unchanged prices
+  let priceSnapshotMap: Map<string, PriceSnapshot> | null = null
+  if (platform === 'coincart2' || platform === 'shopify_komputerzz') {
+    if (typeof (connector as { fetchPriceSnapshot?: () => Promise<Map<string, PriceSnapshot>> }).fetchPriceSnapshot === 'function') {
+      try {
+        priceSnapshotMap = await (connector as { fetchPriceSnapshot(): Promise<Map<string, PriceSnapshot>> }).fetchPriceSnapshot()
+        console.log(`[channel-sync] price snapshot: ${priceSnapshotMap.size} entries for ${platform}`)
+      } catch (err) {
+        console.warn(`[channel-sync] price snapshot fetch failed for ${platform}, pushing all prices: ${err}`)
+      }
+    }
+  }
+
+  // Stock batch accumulator for coincart2 + shopify_komputerzz
+  const stockBatch: Array<{ platformId: string; sku: string; quantity: number }> = []
+
   for (const target of toPush) {
     const productIds = target.kind === 'single'
       ? [target.primary.id]
@@ -867,10 +895,11 @@ async function pushPlatform(
             }
             const skuAwareConnector = connector
             for (const member of target.members) {
-              await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
-              await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+              stockBatch.push({ platformId, sku: member.product.id, quantity: member.totalStock })
+              if (priceChanged({ price: member.priceRow?.price ?? null, compareAt: member.priceRow?.compareAt ?? null }, priceSnapshotMap, member.product.id)) {
+                await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+              }
             }
-            await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
             return
           }
 
@@ -887,10 +916,11 @@ async function pushPlatform(
           }
           const skuAwareConnector = connector
           for (const member of target.members) {
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+            stockBatch.push({ platformId, sku: member.product.id, quantity: member.totalStock })
+            if (priceChanged({ price: member.priceRow?.price ?? null, compareAt: member.priceRow?.compareAt ?? null }, priceSnapshotMap, member.product.id)) {
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
+            }
           }
-          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           return
         }
 
@@ -898,20 +928,21 @@ async function pushPlatform(
           const skuAwareConnector = connector
           if (variantPayloads?.length) {
             await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, payloadWithVariants))
-            await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           } else {
             await callWithShopifyAuthRetry(() => skuAwareConnector.updateProductForSku(platformId, primary.id, identityPatch))
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null))
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, primary.id, totalStock))
-            await callWithShopifyAuthRetry(() => skuAwareConnector.toggleStatusForSku(platformId, primary.id, 'active'))
+            stockBatch.push({ platformId, sku: primary.id, quantity: totalStock })
+            if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null))
+            }
           }
           return
         }
 
         if (platform === 'shopify_komputerzz') {
-          await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
-          await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
-          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
+          stockBatch.push({ platformId, sku: primary.id, quantity: totalStock })
+          if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
+            await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
+          }
           return
         }
 
@@ -1143,6 +1174,21 @@ async function pushPlatform(
       await logPushResult(productIds, 'error', msg)
       processedTargets += 1
       await emitProgress(productIds, 'error', `${primary.id}: ${msg}`)
+    }
+  }
+
+  // Flush bulk stock batch for coincart2 + shopify_komputerzz
+  if (stockBatch.length > 0) {
+    try {
+      if (isWooSkuAware(connector)) {
+        await callWithShopifyAuthRetry(() => (connector as unknown as WooSkuAware).bulkSetStockForSkus(stockBatch))
+      } else {
+        await callWithShopifyAuthRetry(() => connector.bulkSetStock(stockBatch.map(({ platformId, quantity }) => ({ platformId, quantity }))))
+      }
+      console.log(`[channel-sync] bulk stock flushed: ${stockBatch.length} items for ${platform}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      errors.push(`bulk stock flush failed: ${msg}`)
     }
   }
 

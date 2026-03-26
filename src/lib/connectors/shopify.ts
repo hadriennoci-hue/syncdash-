@@ -1,7 +1,7 @@
 import { shopifyLimiter } from '@/lib/utils/rate-limiter'
 import type {
   PlatformConnector, RawProduct, RawVariant, RawImage, RawCollection,
-  RawMetafield, ProductPayload, HealthCheckResult, WarehouseStockOptions,
+  RawMetafield, ProductPayload, HealthCheckResult, WarehouseStockOptions, PriceSnapshot,
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
@@ -27,22 +27,34 @@ export class ShopifyConnector implements PlatformConnector {
   // -------------------------------------------------------------------------
 
   private async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    await shopifyLimiter.throttle()
-    const res = await fetch(`${this.baseUrl}/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': this.token,
-        'User-Agent': 'Wizhard/1.0',
-      },
-      body: JSON.stringify({ query, variables }),
-      // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules
-      cf: { cacheEverything: false },
-    })
-    if (!res.ok) throw new Error(`Shopify GraphQL error: ${res.status} ${await res.text()}`)
-    const json = await res.json() as { data?: T; errors?: unknown[] }
-    if (json.errors?.length) throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors)}`)
-    return json.data as T
+    const RETRYABLE = new Set([502, 503, 504])
+    const DELAYS_MS = [2000, 5000]
+    let lastError: Error | null = null
+    for (let attempt = 0; attempt <= DELAYS_MS.length; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, DELAYS_MS[attempt - 1]))
+      await shopifyLimiter.throttle()
+      const res = await fetch(`${this.baseUrl}/graphql.json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': this.token,
+          'User-Agent': 'Wizhard/1.0',
+        },
+        body: JSON.stringify({ query, variables }),
+        // @ts-ignore — Cloudflare Workers cf option: bypass Cloudflare edge rules
+        cf: { cacheEverything: false },
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        lastError = new Error(`Shopify GraphQL error: ${res.status} ${body}`)
+        if (RETRYABLE.has(res.status) && attempt < DELAYS_MS.length) continue
+        throw lastError
+      }
+      const json = await res.json() as { data?: T; errors?: unknown[] }
+      if (json.errors?.length) throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors)}`)
+      return json.data as T
+    }
+    throw lastError!
   }
 
   private async rest<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: Record<string, unknown>): Promise<T> {
@@ -115,6 +127,65 @@ export class ShopifyConnector implements PlatformConnector {
     }
 
     return products
+  }
+
+  async fetchPriceSnapshot(): Promise<Map<string, PriceSnapshot>> {
+    const map = new Map<string, PriceSnapshot>()
+    let cursor: string | null = null
+    while (true) {
+      const afterArg: string = cursor ? `, after: "${cursor}"` : ''
+      const gql: string = `{
+        products(first: 50${afterArg}) {
+          edges {
+            node {
+              variants(first: 50) {
+                edges {
+                  node { sku price compareAtPrice }
+                }
+              }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }`
+      type SnapshotGqlResult = {
+        products: {
+          edges: Array<{ node: { variants: { edges: Array<{ node: { sku: string | null; price: string | null; compareAtPrice: string | null } }> } } }>
+          pageInfo: { hasNextPage: boolean; endCursor: string | null }
+        }
+      }
+      const data: SnapshotGqlResult = await this.graphql<{
+        products: {
+          edges: Array<{
+            node: {
+              variants: {
+                edges: Array<{
+                  node: { sku: string | null; price: string | null; compareAtPrice: string | null }
+                }>
+              }
+            }
+          }>
+          pageInfo: { hasNextPage: boolean; endCursor: string | null }
+        }
+      }>(gql)
+      for (const { node: product } of data.products.edges) {
+        for (const { node: variant } of product.variants.edges) {
+          if (!variant.sku) continue
+          const shopifyPrice     = parseFloat(variant.price ?? '')       || null
+          const shopifyCompareAt = parseFloat(variant.compareAtPrice ?? '') || null
+          // Reverse Shopify's promo swap back to our internal format:
+          // Shopify: price=promo, compareAtPrice=base  →  ours: price=base, compareAt=promo
+          // Shopify: price=base,  compareAtPrice=null  →  ours: price=base, compareAt=null
+          map.set(variant.sku, {
+            price:     shopifyCompareAt != null ? shopifyCompareAt : shopifyPrice,
+            compareAt: shopifyCompareAt != null ? shopifyPrice     : null,
+          })
+        }
+      }
+      if (!data.products.pageInfo.hasNextPage) break
+      cursor = data.products.pageInfo.endCursor
+    }
+    return map
   }
 
   private normalizeProduct(node: Record<string, unknown>): RawProduct | null {

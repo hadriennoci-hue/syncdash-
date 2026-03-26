@@ -134,6 +134,15 @@ export interface VariantPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Price snapshot — used to skip unchanged price pushes
+// ---------------------------------------------------------------------------
+
+export interface PriceSnapshot {
+  price: number | null
+  compareAt: number | null
+}
+
+// ---------------------------------------------------------------------------
 // Health check result
 // ---------------------------------------------------------------------------
 
@@ -173,6 +182,9 @@ export interface PlatformConnector {
   // Bulk-set stock for many products in as few API calls as possible.
   // Use this instead of looping updateStock() — connectors implement platform-native batch APIs.
   bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void>
+  // Optional: fetch a Map<sku, PriceSnapshot> of all products currently listed on this platform.
+  // Used to skip price updates when nothing has changed.
+  fetchPriceSnapshot?(): Promise<Map<string, PriceSnapshot>>
   toggleStatus(platformId: string, status: 'active' | 'archived'): Promise<void>
   assignCategories(platformId: string, categoryIds: string[]): Promise<void>
   // Optional: merge product attribute values into a Shopify collection's metafields

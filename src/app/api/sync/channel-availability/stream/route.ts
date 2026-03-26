@@ -12,7 +12,7 @@ import { ensureFreshShopifyToken } from '@/lib/functions/tokens'
 import type { Platform } from '@/types/platform'
 
 const schema = z.object({
-  platforms: z.array(z.string()).min(1).default(['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar']),
+  platforms: z.array(z.string()).length(1),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
   protectRecentChannelEditsHours: z.number().min(0).max(24 * 30).default(0.5),
 })

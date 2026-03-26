@@ -108,6 +108,14 @@ Processed by:
 - `scripts/push-browser-channels.ts`
 - `scripts/local-browser-runner.ts`
 
+**IMPORTANT — browser runner rule:**
+Do NOT run `push:browser` yourself unless the user explicitly asks you to run the push and confirms it.
+When the user asks to "start the browser runner", always run:
+```bash
+npm run runner:browser
+```
+This starts the persistent polling runner (waits for queued products from Wizhard). `push:browser` is a one-shot push — never the right default.
+
 Push status lifecycle for browser channels:
 - `2push -> done | FAIL`
 
