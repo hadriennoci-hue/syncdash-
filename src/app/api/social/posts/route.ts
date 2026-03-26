@@ -82,6 +82,9 @@ export async function POST(req: NextRequest) {
   if (auth) return auth
 
   const body = await req.json().catch(() => ({}))
+  if (typeof body?.content === 'string' && body.content.includes('\uFFFD')) {
+    return apiError('VALIDATION_ERROR', 'content contains Unicode replacement characters (U+FFFD) — check caller encoding', 400)
+  }
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) {
     return apiError('VALIDATION_ERROR', parsed.error.message, 400)
