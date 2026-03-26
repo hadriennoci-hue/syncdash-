@@ -929,7 +929,6 @@ async function pushPlatform(
           if (variantPayloads?.length) {
             await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, payloadWithVariants))
           } else {
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updateProductForSku(platformId, primary.id, identityPatch))
             stockBatch.push({ platformId, sku: primary.id, quantity: totalStock })
             if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
               await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null))
