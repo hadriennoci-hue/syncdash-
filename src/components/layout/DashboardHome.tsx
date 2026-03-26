@@ -280,7 +280,8 @@ export function DashboardHome() {
     setPushError(null)
     const startedAt = new Date().toISOString()
     setLastPush(startedAt)
-    const selectedPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
+    const allPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
+    const apiPlatforms = ['shopify_komputerzz', 'coincart2'] as const
     const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
     const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
@@ -296,7 +297,7 @@ export function DashboardHome() {
     setActivePushPlatform(null)
     setPushBars(
       Object.fromEntries(
-        selectedPlatforms.map((platform) => [
+        allPlatforms.map((platform) => [
           platform,
           {
             label: labels[platform] ?? platform,
@@ -492,6 +493,10 @@ export function DashboardHome() {
         }))
       }
 
+      const allResults: ChannelSyncResult[] = []
+      let browserPollingStarted = false
+
+      for (const apiPlatform of apiPlatforms) {
       const res = await fetch('/api/sync/channel-availability/stream', {
         method: 'POST',
         headers: {
@@ -500,7 +505,7 @@ export function DashboardHome() {
         },
         signal: controller.signal,
         body: JSON.stringify({
-          platforms: selectedPlatforms,
+          platforms: [apiPlatform],
           triggeredBy: 'human',
         }),
       })
@@ -509,8 +514,7 @@ export function DashboardHome() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buf = ''
-      let final: ChannelSyncResult[] | null = null
-      let browserPollingStarted = false
+      let platformDone = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -620,19 +624,20 @@ export function DashboardHome() {
             }
           }
 
-          if (name === 'push_done') final = parsed.results ?? []
+          if (name === 'push_done') { allResults.push(...(parsed.results ?? [])); platformDone = true }
           if (name === 'stream_error') throw new Error(parsed.message ?? 'Unknown error')
         }
       }
 
-      if (timeout != null) window.clearTimeout(timeout)
-      if (final == null) {
+      if (!platformDone) {
         throw new Error(currentActivePlatform
           ? `Push stream ended unexpectedly while processing ${currentActivePlatform}`
-          : 'Push stream ended unexpectedly before completion')
+          : `Push stream ended unexpectedly for ${apiPlatform}`)
       }
+      } // end apiPlatforms loop
 
-      setPushResult(final ?? [])
+      if (timeout != null) window.clearTimeout(timeout)
+      setPushResult(allResults)
       const now = new Date().toISOString()
       localStorage.setItem('lastChannelPush', now)
       setLastPush(now)
