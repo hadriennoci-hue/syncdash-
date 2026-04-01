@@ -41,6 +41,13 @@ function formatXError(json: XCreateTweetResponse, status: number, bodyText: stri
   return fallback ? `X API ${status}: ${fallback.slice(0, 300)}` : `X API ${status}: unknown error`
 }
 
+/** Percent-encode characters X's URL parser rejects (™ ®) inside URL-like tokens. */
+function sanitizeUrlsInContent(content: string): string {
+  return content.replace(/\S+\.\S+\/\S*/g, (token) =>
+    token.replace(/™/g, '%E2%84%A2').replace(/®/g, '%C2%AE')
+  )
+}
+
 async function postTweetWithOAuth(content: string, mediaIds: string[], creds: XOAuthCreds, quoteTweetId?: string | null, replyToId?: string | null): Promise<string> {
   const endpoint = process.env.X_API_POST_TWEET_URL ?? 'https://api.twitter.com/2/tweets'
   const payload: Record<string, unknown> = { text: content }
@@ -194,7 +201,7 @@ export async function runSocialPublishCron(): Promise<PublishSummary> {
     }
 
     try {
-      const externalPostId = await postToX(post.accountId, post.content, imageUrls, post.quoteTweetId, replyToId)
+      const externalPostId = await postToX(post.accountId, sanitizeUrlsInContent(post.content), imageUrls, post.quoteTweetId, replyToId)
       const publishedAt = new Date().toISOString()
       await db.update(socialMediaPosts).set({
         status: 'published',

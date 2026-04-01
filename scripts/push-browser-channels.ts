@@ -831,7 +831,7 @@ async function xmrCreate(
   await page.waitForLoadState('load')
   await xmrFillForm(page, product, imagePaths, moneroAddress)
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save")')
+  await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save"), button:has-text("Update"), input.submit:not(.cancel-order-button)')
     .first()
     .click()
   if (delayState) delayState.submittedOnce = true
@@ -918,9 +918,18 @@ async function xmrEdit(
 
   await xmrCheckXpath(page, '/html/body/div[3]/div/div[2]/form/div[6]/div/label/input').catch(() => {})
   if (delayState) await xmrBeforeSubmit(delayState, page)
-  await page.locator('button:has-text("Update Listing"), button:has-text("Save")')
-    .first()
-    .click()
+  // XMR Bazaar uses input[type="submit"] (not button) for the edit form submit.
+  // Scope to the form to avoid matching unrelated page elements (e.g. trollbox Send).
+  const editForm = page.locator('xpath=/html/body/div[3]/div/div[2]/form')
+  const submitInput = editForm.locator('input[type="submit"]:not([class*="cancel"])').first()
+  if (await submitInput.count() > 0) {
+    await submitInput.click()
+  } else {
+    // Fallback: any non-cancel submit input or button on the page
+    await page.locator('input.submit:not(.cancel-order-button), button:has-text("Update Listing"), button:has-text("Save"), button:has-text("Update")')
+      .first()
+      .click()
+  }
   if (delayState) delayState.submittedOnce = true
   await page.waitForLoadState('load')
 }
