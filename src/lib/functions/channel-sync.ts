@@ -52,7 +52,7 @@ interface ChannelSyncOptions {
 }
 
 interface PriceRow   { platform: string; price: number | null; compareAt: number | null }
-interface CatRow     { category: { id: string; platform: string; name: string; slug: string | null } }
+interface CatRow     { category: { id: string; name: string; slug: string | null } }
 interface StockRow   {
   quantity: number
   sourceUrl?: string | null
@@ -213,30 +213,18 @@ function collectProductAttributeValues(
   return out
 }
 
+const LAPTOP_COLLECTION_SLUGS = new Set(['laptops', 'gaming-laptops', 'work-laptops'])
+const MONITOR_COLLECTION_SLUGS = new Set(['monitors', 'gaming-monitors', 'ultrawide-monitors'])
+
 function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
   const targets: Array<{ handle: string; type: 'laptops' | 'monitor' }> = []
   for (const pc of product.categories) {
     if (!pc.category) continue
-    const platform = pc.category.platform
-    if (platform !== 'shopify_komputerzz' && platform !== 'shopify_tiktok') continue
-    const name = normalizeText(pc.category.name ?? '')
-    const slug = normalizeText(pc.category.slug ?? '')
-    const handle = (pc.category.slug ?? slugifyHandle(pc.category.name)).trim()
+    const slug = pc.category.slug ?? ''
+    const handle = slug.trim()
     if (!handle) continue
-    if (name.includes('laptop') || slug.includes('laptop')) {
-      targets.push({ handle, type: 'laptops' })
-      continue
-    }
-    if (
-      name.includes('display')
-      || name.includes('monitor')
-      || name.includes('ecran')
-      || slug.includes('display')
-      || slug.includes('monitor')
-      || slug.includes('ecran')
-    ) {
-      targets.push({ handle, type: 'monitor' })
-    }
+    if (LAPTOP_COLLECTION_SLUGS.has(slug)) targets.push({ handle, type: 'laptops' })
+    else if (MONITOR_COLLECTION_SLUGS.has(slug)) targets.push({ handle, type: 'monitor' })
   }
   const dedup = new Map<string, { handle: string; type: 'laptops' | 'monitor' }>()
   for (const t of targets) dedup.set(`${t.type}:${t.handle}`, t)
@@ -655,23 +643,16 @@ async function pushPlatform(
     }))
   }
 
-  const collectCategoryIds = (product: EligibleProduct): string[] => (
-    product.categories
-      .filter((pc) => platform === 'coincart2'
-        ? pc.category.platform !== 'coincart2'
-        : pc.category.platform === platform)
-      .map((pc) => pc.category.id)
-  )
+  const collectCategoryIds = (product: EligibleProduct): string[] =>
+    product.categories.map((pc) => pc.category.id)
 
-  const collectCollections = (product: EligibleProduct): Array<{ name: string; handle: string }> => (
+  const collectCollections = (product: EligibleProduct): Array<{ name: string; handle: string }> =>
     product.categories
-      .filter((pc) => pc.category.platform !== 'coincart2')
       .map((pc) => ({
         name: pc.category.name,
         handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),
       }))
       .filter((c) => c.name.trim().length > 0)
-  )
 
   const buildImages = (product: EligibleProduct): ImageInput[] => (
     [...product.images]
@@ -1127,10 +1108,9 @@ async function pushPlatform(
         if (!productIds.every((productId) => newSkus.includes(productId))) statusUpdated += productIds.length
       }
 
-      // Shopify: when pushing to a non-TikTok Shopify channel, sync TikTok collections by title/handle.
+      // Shopify: sync universal collections by title/handle.
       if (platform.startsWith('shopify') && platform !== 'shopify_tiktok') {
         const tikCats = primary.categories
-          .filter((pc) => pc.category.platform === 'shopify_tiktok')
           .map((pc) => ({
             title: pc.category.name,
             handle: (pc.category.slug ?? slugifyHandle(pc.category.name)).trim(),

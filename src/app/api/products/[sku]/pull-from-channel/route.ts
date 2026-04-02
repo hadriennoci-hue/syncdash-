@@ -86,19 +86,19 @@ export async function POST(
       imagesFetched = toInsert.length
     }
 
-  // Categories — upsert as collections into categories + product_categories
+  // Categories — match incoming slugs to canonical taxonomy, link if found
     let categoriesImported = 0
     if (fields.includes('categories') && raw.collections.length > 0) {
       for (const col of raw.collections) {
-        const catId = `${platform}_${col.platformId}`
-        await db.insert(categoriesTable)
-          .values({ id: catId, platform, name: col.name, slug: col.slug ?? catId, collectionType: 'product' })
-          .onConflictDoUpdate({ target: categoriesTable.id, set: { name: col.name } })
+        const slug = (col.slug ?? '').trim().toLowerCase()
+        if (!slug) continue
+        const existing = await db.query.categories.findFirst({ where: (t, { eq }) => eq(t.id, slug) })
+        if (!existing) continue
         await db.insert(productCategories)
-          .values({ productId: sku, categoryId: catId })
+          .values({ productId: sku, categoryId: slug })
           .onConflictDoNothing()
+        categoriesImported++
       }
-      categoriesImported = raw.collections.length
     }
 
   // Ensure platform mapping exists

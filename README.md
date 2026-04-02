@@ -27,6 +27,10 @@ Rules and patterns for AI assistants working on this codebase.
 
 ## 3) Non-Negotiable Rules
 
+### 3.0 Production-first rule
+Everything we do is on production.
+Never check the local DB for validation, investigation, or decision-making when production data is what matters.
+
 ### 3.1 No AI logic inside app runtime
 Do not add LLM/AI calls inside app code. The app is deterministic. Agent logic is external via API.
 

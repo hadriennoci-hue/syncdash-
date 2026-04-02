@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { categories, platformMappings, productCategories, productImages, productMetafields, productPrices, products } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { logOperation } from './log'
 import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
 import { canonicalizeAttributeValue } from './attribute-options'
@@ -11,7 +11,7 @@ import { generateId } from '@/lib/utils/id'
 import { isUsablePlainTextDescription } from '@/lib/utils/description'
 import { createConnector } from '@/lib/connectors/registry'
 import type { RawCollection, RawImage, RawProduct } from '@/lib/connectors/types'
-import { inferProductCollection, type ProductCollectionSlug } from '@/lib/utils/product-collection'
+import { inferCollection } from '@/lib/functions/collection-inference'
 
 export interface FillResult {
   sku: string
@@ -46,7 +46,7 @@ interface FirecrawlBudget {
   maxImagesPerCall: number
 }
 
-const WIZHARD_COLLECTION_PLATFORM = 'shopify_komputerzz'
+
 const IRELAND_SOURCE_PLATFORM = 'shopify_tiktok'
 
 function decodeHtmlEntities(input: string): string {
@@ -198,14 +198,13 @@ function buildState(product: {
   tags: string | null
   images: Array<unknown>
   prices: Array<{ platform: string; price: number | null }>
-  categories: Array<{ category?: { name: string; slug: string | null; platform: string } }>
+  categories: Array<{ category?: { name: string; slug: string | null } }>
   metafields: Array<{ namespace: string; key: string; value: string | null }>
 }): ProductState {
   const tags = parseTags(product.tags)
   const priceRow = product.prices.find((p) => p.platform === 'coincart2')
   const collections = product.categories
-    .filter((pc): pc is { category: { name: string; slug: string | null; platform: string } } => Boolean(pc.category))
-    .filter((pc) => pc.category.platform !== 'coincart2')
+    .filter((pc): pc is { category: { name: string; slug: string | null } } => Boolean(pc.category))
     .map((pc) => ({ name: pc.category.name, slug: pc.category.slug ?? '' }))
 
   const hasCollection = collections.length > 0
@@ -510,49 +509,32 @@ async function backfillMissingImages(
 async function upsertShopifyCollections(
   sku: string,
   collections: RawCollection[],
-  platform: typeof IRELAND_SOURCE_PLATFORM
+  _platform: typeof IRELAND_SOURCE_PLATFORM
 ): Promise<number> {
   if (collections.length === 0) return 0
 
-  const categoryIds = new Set<string>()
+  // Match incoming Shopify collection slugs to canonical taxonomy IDs.
+  // Only link to collections that exist in our universal taxonomy (id = slug).
+  const canonicalIds = new Set<string>()
   for (const col of collections) {
     const normalizedSlug = normalizeCollectionSlug(col.slug ?? null, col.name)
     if (!normalizedSlug) continue
-
-    const sourceCategoryId = `${platform}_${col.platformId}`
-    await db.insert(categories).values({
-      id: sourceCategoryId,
-      platform,
-      name: col.name,
-      slug: normalizedSlug,
-      collectionType: 'product',
-      createdAt: new Date().toISOString(),
-    }).onConflictDoUpdate({
-      target: categories.id,
-      set: { name: col.name, slug: normalizedSlug, platform, collectionType: 'product' },
-    })
-    categoryIds.add(sourceCategoryId)
-
-    const wizhardCategoryId = `wizhard_${normalizedSlug}`
-    await db.insert(categories).values({
-      id: wizhardCategoryId,
-      platform: WIZHARD_COLLECTION_PLATFORM,
-      name: col.name,
-      slug: normalizedSlug,
-      collectionType: 'product',
-      createdAt: new Date().toISOString(),
-    }).onConflictDoUpdate({
-      target: categories.id,
-      set: { name: col.name, slug: normalizedSlug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
-    })
-    categoryIds.add(wizhardCategoryId)
+    // Canonical collection IDs are the slugs themselves
+    canonicalIds.add(normalizedSlug)
   }
 
-  for (const categoryId of categoryIds) {
-    await db.insert(productCategories).values({ productId: sku, categoryId }).onConflictDoNothing()
+  if (canonicalIds.size === 0) return 0
+
+  // Verify these IDs actually exist in categories table, then link
+  const existing = await db.select({ id: categories.id })
+    .from(categories)
+    .where(inArray(categories.id, Array.from(canonicalIds)))
+
+  for (const row of existing) {
+    await db.insert(productCategories).values({ productId: sku, categoryId: row.id }).onConflictDoNothing()
   }
 
-  return categoryIds.size
+  return existing.length
 }
 
 async function replaceImages(sku: string, images: RawImage[]): Promise<number> {
@@ -580,7 +562,7 @@ async function backfillFromIrelandShopify(
     description: string | null
     tags: string | null
     images: Array<unknown>
-    categories: Array<{ category?: { name: string; slug: string | null; platform: string } }>
+    categories: Array<{ category?: { name: string; slug: string | null } }>
     warehouseStock: Array<{ warehouseId: string }>
   },
   state: ProductState,
@@ -783,39 +765,9 @@ async function backfillMissingAttributes(
   sources.push(sourceRow.warehouseId)
 }
 
-async function assignInferredCollection(
-  productId: string,
-  slug: ProductCollectionSlug
-): Promise<void> {
-  const nameBySlug: Record<ProductCollectionSlug, string> = {
-    laptops: 'Laptops',
-    displays: 'Displays',
-    tablets: 'Tablets',
-    desktops: 'Desktops',
-    audio: 'Audio',
-    gpu: 'GPU',
-    'input-devices': 'Input Devices',
-    cases: 'Cases',
-    lifestyle: 'Lifestyle',
-  }
-  const categoryId = `wizhard_${slug}`
-
-  await db.insert(categories).values({
-    id: categoryId,
-    platform: WIZHARD_COLLECTION_PLATFORM,
-    name: nameBySlug[slug],
-    slug,
-    collectionType: 'product',
-    createdAt: new Date().toISOString(),
-  }).onConflictDoUpdate({
-    target: categories.id,
-    set: { name: nameBySlug[slug], slug, platform: WIZHARD_COLLECTION_PLATFORM, collectionType: 'product' },
-  })
-
-  await db.insert(productCategories).values({
-    productId,
-    categoryId,
-  }).onConflictDoNothing()
+async function assignInferredCollection(productId: string, slug: string): Promise<void> {
+  // Canonical collection IDs are the slugs themselves — just link directly.
+  await db.insert(productCategories).values({ productId, categoryId: slug }).onConflictDoNothing()
 }
 
 export async function fillMissingFields(
@@ -876,16 +828,11 @@ export async function fillMissingFields(
       ?? workingProduct.prices.find((row) => row.platform === 'coincart2')?.price
       ?? null
     const sourceRow = workingProduct.warehouseStock.find((row) => row.sourceName || row.sourceUrl)
-    const inferredCollection = inferProductCollection({
-      title: workingProduct.title,
-      sourceName: sourceRow?.sourceName ?? null,
-      sourceUrl: sourceRow?.sourceUrl ?? null,
-      price,
-    })
-    if (inferredCollection) {
-      await assignInferredCollection(workingProduct.id, inferredCollection.slug)
+    const inferredSlug = inferCollection(workingProduct.title)
+    if (inferredSlug) {
+      await assignInferredCollection(workingProduct.id, inferredSlug)
       filled.push('collection')
-      sources.push(`inferred:${inferredCollection.reason}`)
+      sources.push(`inferred:${inferredSlug}`)
       const reloaded = await load()
       if (reloaded) {
         workingProduct = reloaded

@@ -159,13 +159,11 @@ export const syncJobs = sqliteTable('sync_jobs', {
 
 export const categories = sqliteTable('categories', {
   id:             text('id').primaryKey(),
-  platform:       text('platform').notNull(),
   name:           text('name').notNull(),
   slug:           text('slug'),
   parentId:       text('parent_id'),
   description:    text('description'),
   collectionType: text('collection_type').notNull().default('product'),
-  // 'product' | 'country_layout' | 'editorial'
   createdAt:      text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 

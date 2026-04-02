@@ -182,7 +182,7 @@ export async function GET(
 
   const categoryItems = product.categories
     .filter((c) => c.category)
-    .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType, platform: c.category!.platform }))
+    .map((c) => ({ id: c.categoryId, name: c.category!.name, slug: c.category!.slug, type: c.category!.collectionType }))
 
   return apiResponse({
     id:                   product.id,
@@ -222,7 +222,7 @@ export async function GET(
     acerStoreSourceUrl:   acerSource?.sourceUrl ?? null,
     acerStoreSourceName:  acerSource?.sourceName ?? null,
     localization,
-    collections: categoryItems.filter((c) => c.platform !== 'coincart2'),
+    collections: categoryItems,
     pushStatus: {
       coincart2:          product.pushedCoincart2,
       woocommerce:        product.pushedCoincart2, // legacy alias
