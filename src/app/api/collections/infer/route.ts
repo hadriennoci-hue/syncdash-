@@ -13,6 +13,7 @@ import { inferCollection } from '@/lib/functions/collection-inference'
  * Returns a summary of assignments by collection.
  */
 export async function POST(req: NextRequest) {
+  try {
   const auth = verifyBearer(req)
   if (auth) return auth
 
@@ -32,8 +33,8 @@ export async function POST(req: NextRequest) {
   // Clear all existing product_categories
   await binding.prepare('DELETE FROM product_categories').run()
 
-  // Batch insert (D1 batch API — chunks of 99 to stay within binding limits)
-  const CHUNK = 99
+  // Batch insert — D1 limits bound parameters to 100 per statement; 2 params per row → max 49 rows
+  const CHUNK = 49
   for (let i = 0; i < assignments.length; i += CHUNK) {
     const chunk = assignments.slice(i, i + CHUNK)
     const placeholders = chunk.map(() => '(?, ?)').join(', ')
@@ -51,4 +52,8 @@ export async function POST(req: NextRequest) {
     assigned: assignments.length,
     byCollection,
   })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return apiError('INTERNAL_ERROR', msg, 500)
+  }
 }
