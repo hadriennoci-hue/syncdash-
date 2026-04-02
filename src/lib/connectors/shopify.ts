@@ -1047,6 +1047,74 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  /** List all products on the store — returns GID and first variant SKU. */
+  async listAllProducts(): Promise<Array<{ gid: string; sku: string }>> {
+    type ProductsPage = {
+      products: {
+        nodes: Array<{ id: string; variants: { nodes: Array<{ sku: string }> } }>
+        pageInfo: { hasNextPage: boolean; endCursor: string }
+      }
+    }
+    const productsQuery = `
+      query Products($first: Int!, $after: String) {
+        products(first: $first, after: $after) {
+          nodes { id variants(first: 1) { nodes { sku } } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    `
+    const results: Array<{ gid: string; sku: string }> = []
+    let cursor: string | null = null
+    do {
+      const data: ProductsPage = await this.graphql<ProductsPage>(productsQuery, { first: 50, after: cursor })
+      for (const p of data.products.nodes) {
+        results.push({ gid: p.id, sku: p.variants.nodes[0]?.sku ?? '' })
+      }
+      cursor = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null
+    } while (cursor)
+    return results
+  }
+
+  /** List all custom collections (not smart). Returns numeric id, handle, title. */
+  async listCustomCollections(): Promise<Array<{ id: number; handle: string; title: string }>> {
+    const res = await this.rest<{ custom_collections: Array<{ id: number; handle: string; title: string }> }>(
+      'GET', '/custom_collections.json?limit=250'
+    )
+    return res.custom_collections
+  }
+
+  /** Delete a custom collection by its numeric Shopify ID. */
+  async deleteCustomCollection(numericId: number): Promise<void> {
+    await shopifyLimiter.throttle()
+    const res = await fetch(`${this.baseUrl}/custom_collections/${numericId}.json`, {
+      method: 'DELETE',
+      headers: { 'X-Shopify-Access-Token': this.token, 'User-Agent': 'Wizhard/1.0' },
+      // @ts-ignore
+      cf: { cacheEverything: false },
+    })
+    if (!res.ok && res.status !== 404) throw new Error(`Shopify DELETE collection error: ${res.status} ${await res.text()}`)
+  }
+
+  /** List all collects (product↔collection links) for a product (numeric ID). */
+  async listCollectsForProduct(productNumericId: number): Promise<Array<{ id: number; collection_id: number }>> {
+    const res = await this.rest<{ collects: Array<{ id: number; collection_id: number; product_id: number }> }>(
+      'GET', `/collects.json?product_id=${productNumericId}&limit=250`
+    )
+    return res.collects
+  }
+
+  /** Delete a collect (product↔collection link) by its ID. */
+  async deleteCollect(collectId: number): Promise<void> {
+    await shopifyLimiter.throttle()
+    const res = await fetch(`${this.baseUrl}/collects/${collectId}.json`, {
+      method: 'DELETE',
+      headers: { 'X-Shopify-Access-Token': this.token, 'User-Agent': 'Wizhard/1.0' },
+      // @ts-ignore
+      cf: { cacheEverything: false },
+    })
+    if (!res.ok && res.status !== 404) throw new Error(`Shopify DELETE collect error: ${res.status} ${await res.text()}`)
+  }
+
   async syncCollectionAttributeValues(
     collectionHandle: string,
     attributes: Record<string, string[]>
