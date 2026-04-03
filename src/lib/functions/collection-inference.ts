@@ -12,17 +12,23 @@ export function inferCollection(title: string): string {
   // Storage
   if (/\bssd\b|\bstorage\b|\bhard drive\b|\bhdd\b/.test(t)) return 'storage'
 
-  // Monitors — ultrawide has priority over gaming
+  // Monitors — foldable/dual before ultrawide before gaming
   if (/\bmonitor\b|\bdisplay\b/.test(t)) {
+    if (/foldable|dual.screen|dual.foldable/.test(t)) return 'foldable-monitors'
     if (/ultrawide|ultra.wide|curved/.test(t)) return 'ultrawide-monitors'
     if (/gaming/.test(t)) return 'gaming-monitors'
     return 'monitors'
   }
 
+  // Laptop accessories — must run BEFORE generic laptop match
+  if (/\bcarrying case\b|\bprotective case\b|\blaptop case\b/.test(t)) return 'laptop-bags'
+  if (/\blaptop stand\b|\bhub\b.*\bstand\b|\bstand\b.*\bhub\b/.test(t)) return 'docking-stations'
+
   // Laptops — gaming/Predator/Nitro before work signals before generic
   if (/\b(laptop|notebook)\b|\bchromebook\b|\btravelmate\b/.test(t)) {
+    if (/grabadora|cd.*dvd|dvd.*cd|optical drive/.test(t)) return 'accessories'
     if (/gaming|\bpredator\b|\bnitro\b/.test(t)) return 'gaming-laptops'
-    if (/swift|ultra.thin|ultrabook|\bchromebook\b|\btravelmate\b/.test(t)) return 'work-laptops'
+    if (/swift|ultra.thin|ultrabook|\bchromebook\b|\btravelmate\b|\baspire\b/.test(t)) return 'work-laptops'
     return 'laptops'
   }
 
@@ -50,7 +56,7 @@ export function inferCollection(title: string): string {
   if (/\bkeyboard\b/.test(t)) return 'keyboards'
   if (/\bcontroller\b|\bgamepad\b/.test(t)) return 'controllers'
   if (/\bdock\b|\bdocking\b/.test(t)) return 'docking-stations'
-  if (/\bbackpack\b|\bsleeve\b|\bluggage\b|\bbag\b|\bfunda\b/.test(t)) return 'laptop-bags'
+  if (/\bbackpack\b|\bsleeve\b|\bluggage\b|\bbag\b|\bfunda\b|\bcarrying case\b|\bprotective case\b|\blaptop case\b/.test(t)) return 'laptop-bags'
   if (/router|\bwi.fi\b|\bwifi\b|\bhotspot\b|\bmesh\b|\bdongle\b/.test(t)) return 'connectivity'
 
   return 'accessories'
