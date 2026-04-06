@@ -80,6 +80,49 @@ export class ShopifyConnector implements PlatformConnector {
     return n
   }
 
+  /**
+   * Wizhard semantics:
+   * - price     = current selling price
+   * - compareAt = crossed-out old price
+   *
+   * Shopify semantics:
+   * - price          = current selling price
+   * - compareAtPrice = crossed-out old price, only when compareAtPrice > price
+   */
+  private toShopifySalePricing(price: number | null, compareAt?: number | null): {
+    price: string | null
+    compareAtPrice: string | null
+  } {
+    const currentPrice = typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null
+    const oldPrice = typeof compareAt === 'number' && Number.isFinite(compareAt) && compareAt > 0 ? compareAt : null
+
+    if (currentPrice == null) return { price: null, compareAtPrice: null }
+    if (oldPrice != null && oldPrice > currentPrice) {
+      return { price: currentPrice.toString(), compareAtPrice: oldPrice.toString() }
+    }
+    return { price: currentPrice.toString(), compareAtPrice: null }
+  }
+
+  private fromShopifySalePricing(price: string | number | null, compareAtPrice: string | number | null): {
+    price: number | null
+    compareAt: number | null
+  } {
+    const currentPrice =
+      typeof price === 'number' ? price :
+      price ? parseFloat(price) : null
+    const oldPrice =
+      typeof compareAtPrice === 'number' ? compareAtPrice :
+      compareAtPrice ? parseFloat(compareAtPrice) : null
+
+    if (currentPrice == null || !Number.isFinite(currentPrice)) {
+      return { price: null, compareAt: null }
+    }
+    if (oldPrice != null && Number.isFinite(oldPrice) && oldPrice > currentPrice) {
+      return { price: currentPrice, compareAt: oldPrice }
+    }
+    return { price: currentPrice, compareAt: null }
+  }
+
 
   // -------------------------------------------------------------------------
   // Import (paginated)
@@ -171,14 +214,15 @@ export class ShopifyConnector implements PlatformConnector {
       for (const { node: product } of data.products.edges) {
         for (const { node: variant } of product.variants.edges) {
           if (!variant.sku) continue
-          const shopifyPrice     = parseFloat(variant.price ?? '')       || null
-          const shopifyCompareAt = parseFloat(variant.compareAtPrice ?? '') || null
-          // Reverse Shopify's promo swap back to our internal format:
-          // Shopify: price=promo, compareAtPrice=base  →  ours: price=base, compareAt=promo
-          // Shopify: price=base,  compareAtPrice=null  →  ours: price=base, compareAt=null
+          const normalizedPricing = this.fromShopifySalePricing(
+            variant.price ?? null,
+            variant.compareAtPrice ?? null,
+          )
+          // Normalize Shopify sale pricing into Wizhard semantics:
+          // current price in `price`, crossed-out old price in `compareAt`.
           map.set(variant.sku, {
-            price:     shopifyCompareAt != null ? shopifyCompareAt : shopifyPrice,
-            compareAt: shopifyCompareAt != null ? shopifyPrice     : null,
+            price: normalizedPricing.price,
+            compareAt: normalizedPricing.compareAt,
           })
         }
       }
@@ -194,17 +238,16 @@ export class ShopifyConnector implements PlatformConnector {
         (v): RawVariant => {
           const vn = v as Record<string, unknown>
           const opts = (vn.selectedOptions as Array<{ name: string; value: string }>) ?? []
-          const rawPrice = vn.price ? parseFloat(vn.price as string) : null
-          const rawCompareAt = vn.compareAtPrice ? parseFloat(vn.compareAtPrice as string) : null
-          const hasPromo = rawCompareAt != null && rawCompareAt > 0
-          const basePrice = hasPromo ? rawCompareAt : rawPrice
-          const promoPrice = hasPromo ? rawPrice : null
+          const normalizedPricing = this.fromShopifySalePricing(
+            typeof vn.price === 'string' ? vn.price : null,
+            typeof vn.compareAtPrice === 'string' ? vn.compareAtPrice : null,
+          )
           return {
             platformId:   String(vn.id),
             title:        (vn.title as string) ?? null,
             sku:          (vn.sku as string) ?? null,
-            price:        basePrice ?? null,
-            compareAtPrice: promoPrice ?? null,
+            price:        normalizedPricing.price,
+            compareAtPrice: normalizedPricing.compareAt,
             stock:        (vn.inventoryQuantity as number) ?? 0,
             position:     (vn.position as number) ?? 0,
             optionName1:  opts[0]?.name ?? null,
@@ -257,6 +300,10 @@ export class ShopifyConnector implements PlatformConnector {
 
       const firstVariant = variants[0]
 
+      const firstVariantPricing = this.fromShopifySalePricing(
+        firstVariant?.price ?? null,
+        firstVariant?.compareAtPrice ?? null,
+      )
       return {
         platformId:  String(node.id),
         sku:         (firstVariant?.sku ?? String(node.id)),
@@ -273,8 +320,8 @@ export class ShopifyConnector implements PlatformConnector {
         collections,
         metafields,
         prices: {
-          price:     firstVariant?.price ?? null,
-          compareAt: firstVariant?.compareAtPrice ?? null,
+          price:     firstVariantPricing.price,
+          compareAt: firstVariantPricing.compareAt,
         },
       }
     } catch {
@@ -459,22 +506,15 @@ export class ShopifyConnector implements PlatformConnector {
       if (v.option2?.trim() && v.optionName2?.trim()) optionValues.push({ optionName: v.optionName2.trim(), name: v.option2.trim() })
       if (v.option3?.trim() && v.optionName3?.trim()) optionValues.push({ optionName: v.optionName3.trim(), name: v.option3.trim() })
 
-      const hasPromo = v.compareAt != null && v.compareAt > 0
-      const basePrice = v.price
-      const promoPrice = hasPromo ? v.compareAt : null
-
       const inventoryItem: Record<string, unknown> = { tracked: true }
       if (v.sku) inventoryItem.sku = v.sku
+      const pricing = this.toShopifySalePricing(v.price ?? null, v.compareAt ?? null)
       const input: Record<string, unknown> = {
         optionValues,
         inventoryItem,
       }
-      if (promoPrice != null) {
-        input.price = promoPrice.toString()
-        input.compareAtPrice = (basePrice ?? promoPrice).toString()
-      } else if (basePrice != null) {
-        input.price = basePrice.toString()
-      }
+      if (pricing.price != null) input.price = pricing.price
+      if (pricing.compareAtPrice != null) input.compareAtPrice = pricing.compareAtPrice
       return input
     })
 
@@ -559,16 +599,9 @@ export class ShopifyConnector implements PlatformConnector {
         inventoryItem: { tracked: true },
       }
       if (data.ean) variantInput.barcode = data.ean
-      const hasPromo = data.compareAt != null && data.compareAt > 0
-      const basePrice = data.price
-      const promoPrice = hasPromo ? data.compareAt : null
-      if (promoPrice != null) {
-        variantInput.price = promoPrice.toString()
-        variantInput.compareAtPrice = (basePrice ?? promoPrice).toString()
-      } else if (basePrice != null) {
-        variantInput.price = basePrice.toString()
-        variantInput.compareAtPrice = null
-      }
+      const pricing = this.toShopifySalePricing(data.price ?? null, data.compareAt ?? null)
+      if (pricing.price != null) variantInput.price = pricing.price
+      variantInput.compareAtPrice = pricing.compareAtPrice
 
       const varUpdate = await this.graphql<{
         productVariantsBulkUpdate: { userErrors: Array<{ message: string }> }
@@ -725,14 +758,12 @@ export class ShopifyConnector implements PlatformConnector {
     if (!variantId) return
 
     const numericId = this.gidToNumericId(variantId)
-    const hasPromo = compareAt != null && compareAt > 0
-    const basePrice = price
-    const promoPrice = hasPromo ? compareAt : null
+    const pricing = this.toShopifySalePricing(price, compareAt ?? null)
     await this.rest('PUT', `/variants/${numericId}.json`, {
       variant: {
         id: numericId,
-        price: promoPrice != null ? promoPrice.toString() : (basePrice?.toString() ?? null),
-        compare_at_price: promoPrice != null ? (basePrice ?? promoPrice).toString() : null,
+        price: pricing.price,
+        compare_at_price: pricing.compareAtPrice,
       },
     })
   }
@@ -745,14 +776,12 @@ export class ShopifyConnector implements PlatformConnector {
     }
 
     const numericId = this.gidToNumericId(variant.id)
-    const hasPromo = compareAt != null && compareAt > 0
-    const basePrice = price
-    const promoPrice = hasPromo ? compareAt : null
+    const pricing = this.toShopifySalePricing(price, compareAt ?? null)
     await this.rest('PUT', `/variants/${numericId}.json`, {
       variant: {
         id: numericId,
-        price: promoPrice != null ? promoPrice.toString() : (basePrice?.toString() ?? null),
-        compare_at_price: promoPrice != null ? (basePrice ?? promoPrice).toString() : null,
+        price: pricing.price,
+        compare_at_price: pricing.compareAtPrice,
       },
     })
   }
@@ -1269,6 +1298,26 @@ export class ShopifyWarehouseConnector {
     this.baseUrl = `https://${shop}/admin/api/2025-01`
   }
 
+  private fromShopifySalePricing(price: string | number | null, compareAtPrice: string | number | null): {
+    price: number | null
+    compareAt: number | null
+  } {
+    const currentPrice =
+      typeof price === 'number' ? price :
+      price ? parseFloat(price) : null
+    const oldPrice =
+      typeof compareAtPrice === 'number' ? compareAtPrice :
+      compareAtPrice ? parseFloat(compareAtPrice) : null
+
+    if (currentPrice == null || !Number.isFinite(currentPrice)) {
+      return { price: null, compareAt: null }
+    }
+    if (oldPrice != null && Number.isFinite(oldPrice) && oldPrice > currentPrice) {
+      return { price: currentPrice, compareAt: oldPrice }
+    }
+    return { price: currentPrice, compareAt: null }
+  }
+
   private async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
     await shopifyLimiter.throttle()
     const res = await fetch(`${this.baseUrl}/graphql.json`, {
@@ -1330,15 +1379,16 @@ export class ShopifyWarehouseConnector {
       for (const item of gqlResponse.inventoryItems.nodes) {
         if (item.sku) {
           const qty = item.inventoryLevel?.quantities[0]?.quantity ?? 0
-          const rawPrice = item.variant?.price ? parseFloat(item.variant.price) : null
-          const rawCompareAt = item.variant?.compareAtPrice ? parseFloat(item.variant.compareAtPrice) : null
-          const hasPromo = rawCompareAt != null && rawCompareAt > 0
+          const pricing = this.fromShopifySalePricing(
+            item.variant?.price ?? null,
+            item.variant?.compareAtPrice ?? null,
+          )
           snapshots.push({
             sku:              item.sku,
             quantity:         qty,
             sourceName:       item.variant?.product?.title ?? undefined,
-            importPrice:      hasPromo ? rawCompareAt : rawPrice,
-            importPromoPrice: hasPromo ? rawPrice : null,
+            importPrice:      pricing.compareAt ?? pricing.price,
+            importPromoPrice: pricing.compareAt != null ? pricing.price : null,
           })
         }
       }

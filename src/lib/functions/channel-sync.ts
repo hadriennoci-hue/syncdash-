@@ -881,6 +881,7 @@ async function pushPlatform(
                 await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
               }
             }
+            await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
             return
           }
 
@@ -915,6 +916,7 @@ async function pushPlatform(
               await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, primary.id, priceRow?.price ?? null, priceRow?.compareAt ?? null))
             }
           }
+          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           return
         }
 
@@ -923,6 +925,7 @@ async function pushPlatform(
           if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
             await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
           }
+          await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
           return
         }
 

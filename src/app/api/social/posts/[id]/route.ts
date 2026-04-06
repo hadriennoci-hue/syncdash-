@@ -31,8 +31,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return apiError('VALIDATION_ERROR', 'Invalid post id', 400)
   }
 
-  const body = await req.json().catch(() => ({}))
-  if (typeof body?.content === 'string' && body.content.includes('\uFFFD')) {
+  const body: unknown = await req.json().catch((): unknown => ({}))
+  const content = typeof body === 'object' && body !== null && 'content' in body
+    ? (body as { content?: unknown }).content
+    : undefined
+  if (typeof content === 'string' && content.includes('\uFFFD')) {
     return apiError('VALIDATION_ERROR', 'content contains Unicode replacement characters (U+FFFD) — check caller encoding', 400)
   }
   const parsed = patchSchema.safeParse(body)
