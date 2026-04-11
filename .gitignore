@@ -47,6 +47,7 @@ Thumbs.db
 .claude/
 
 # Local browser runner artifacts
+.runner/
 scripts/screenshot-*.png
 scripts/lm-screenshot-*.png
 scripts/error-*.png

@@ -746,6 +746,23 @@ async function pushPlatform(
 
   // Stock batch accumulator for coincart2 + shopify_komputerzz
   const stockBatch: Array<{ platformId: string; sku: string; quantity: number }> = []
+  const flushStockBatch = async (): Promise<void> => {
+    if (stockBatch.length === 0) return
+
+    const pending = stockBatch.splice(0, stockBatch.length)
+    try {
+      // SKU-aware bulk stock is required when one platform product contains multiple variants with distinct stock quantities.
+      if (isWooSkuAware(connector)) {
+        await callWithShopifyAuthRetry(() => (connector as unknown as WooSkuAware).bulkSetStockForSkus(pending))
+      } else {
+        await callWithShopifyAuthRetry(() => connector.bulkSetStock(pending.map(({ platformId, quantity }) => ({ platformId, quantity }))))
+      }
+      console.log(`[channel-sync] bulk stock flushed: ${pending.length} items for ${platform}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      errors.push(`bulk stock flush failed: ${msg}`)
+    }
+  }
 
   for (const target of toPush) {
     const productIds = target.kind === 'single'
@@ -1149,6 +1166,7 @@ async function pushPlatform(
       await logPushResult(productIds, 'success', successMessage)
       processedTargets += 1
       await emitProgress(productIds, 'success', `${primary.id}: ${successMessage}`)
+      if (stockBatch.length >= 50) await flushStockBatch()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       errors.push(`${primary.id}: ${msg}`)
@@ -1160,21 +1178,7 @@ async function pushPlatform(
   }
 
   // Flush bulk stock batch for coincart2 + shopify_komputerzz
-  if (stockBatch.length > 0) {
-    try {
-      // Shopify's bulkSetStockForSkus loops one-by-one — use bulkSetStock (inventorySetOnHandQuantities) instead.
-      // Coincart's bulkSetStockForSkus is SKU-aware and handles variants correctly, so keep it for coincart2.
-      if (isWooSkuAware(connector) && platform !== 'shopify_komputerzz') {
-        await callWithShopifyAuthRetry(() => (connector as unknown as WooSkuAware).bulkSetStockForSkus(stockBatch))
-      } else {
-        await callWithShopifyAuthRetry(() => connector.bulkSetStock(stockBatch.map(({ platformId, quantity }) => ({ platformId, quantity }))))
-      }
-      console.log(`[channel-sync] bulk stock flushed: ${stockBatch.length} items for ${platform}`)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      errors.push(`bulk stock flush failed: ${msg}`)
-    }
-  }
+  await flushStockBatch()
 
   let zeroedOutOfStock = 0
   const skippedRecentEdits = 0

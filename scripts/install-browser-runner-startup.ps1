@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $taskName = "SyncDash Browser Runner"
-$startScript = Join-Path $PSScriptRoot "start-browser-runner.ps1"
+$startScript = Join-Path $PSScriptRoot "start-browser-runner-control.ps1"
 
 if (!(Test-Path $startScript)) {
   throw "Start script not found: $startScript"
@@ -13,7 +13,7 @@ try {
   $trigger = New-ScheduledTaskTrigger -AtLogOn
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "Runs SyncDash browser push runner in background at logon." -Force | Out-Null
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description "Runs SyncDash browser runner control service in background at logon." -Force | Out-Null
   Start-ScheduledTask -TaskName $taskName
   Write-Host "Installed and started scheduled task: $taskName"
 } catch {

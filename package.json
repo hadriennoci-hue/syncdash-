@@ -61,6 +61,7 @@
     "push:browser:local": "npx tsx scripts/push-browser-channels.ts --local",
     "push:browser:dry": "npx tsx scripts/push-browser-channels.ts --dry-run",
     "runner:browser": "npx tsx scripts/local-browser-runner.ts --interval-min=30 --wake-poll-sec=10 --prod --headless",
+    "runner:browser-control": "npx tsx scripts/browser-runner-control.ts",
     "runner:browser:once": "npx tsx scripts/local-browser-runner.ts --once --prod --headless",
     "runner:browser:local": "npx tsx scripts/local-browser-runner.ts --interval-min=30 --wake-poll-sec=10 --local --headless",
     "runner:browser:once:local": "npx tsx scripts/local-browser-runner.ts --once --local --headless",

@@ -221,6 +221,25 @@ export function DashboardHome() {
     setLastPush(summary?.lastPush ?? null)
   }, [summary?.lastPush])
 
+  async function ensureBrowserRunner() {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8000)
+    try {
+      const res = await fetch('http://127.0.0.1:8789/browser-runner/ensure', {
+        method: 'POST',
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json() as { action?: 'started' | 'restarted'; pid?: number }
+    } catch {
+      throw new Error(
+        'Local browser runner control is not available. Run npm run runner:browser-control on this computer, then push again.'
+      )
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }
+
   async function handleScan() {
     setScanning(true)
     setScanResult(null)
@@ -279,9 +298,8 @@ export function DashboardHome() {
     setPushResult(null)
     setPushError(null)
     const startedAt = new Date().toISOString()
-    setLastPush(startedAt)
-    const allPlatforms = ['shopify_komputerzz', 'coincart2', 'libre_market', 'xmr_bazaar'] as const
-    const apiPlatforms = ['shopify_komputerzz', 'coincart2'] as const
+    const allPlatforms = ['shopify_komputerzz', 'coincart2', 'shopify_tiktok', 'ebay_ie', 'libre_market', 'xmr_bazaar'] as const
+    const apiPlatforms = ['shopify_komputerzz', 'coincart2', 'shopify_tiktok', 'ebay_ie'] as const
     const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
     const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
@@ -311,6 +329,16 @@ export function DashboardHome() {
         ])
       )
     )
+    try {
+      const runner = await ensureBrowserRunner()
+      setPushError(`Browser runner ${runner.action ?? 'ready'}`)
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : 'Runner control failed')
+      setPushing(false)
+      return
+    }
+
+    setLastPush(startedAt)
     let timeout: number | null = null
     let currentActivePlatform: string | null = null
 
@@ -327,7 +355,7 @@ export function DashboardHome() {
       )
     }
 
-    const pollBackendPlatform = async (platform: 'shopify_komputerzz' | 'coincart2') => {
+    const pollBackendPlatform = async (platform: (typeof apiPlatforms)[number]) => {
       let lastCount = 0
       let idlePolls = 0
       let hadActivity = false
@@ -652,8 +680,7 @@ export function DashboardHome() {
       if (shouldFallbackToLogs) {
         setPushError('Live stream disconnected. Tracking progress from logs...')
         await Promise.all([
-          pollBackendPlatform('shopify_komputerzz'),
-          pollBackendPlatform('coincart2'),
+          ...apiPlatforms.map((platform) => pollBackendPlatform(platform)),
         ])
       } else {
         setPushError(message)

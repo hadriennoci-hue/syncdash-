@@ -28,6 +28,7 @@ const INTERVAL_MIN = Number(argValue('--interval-min', '5'))
 const WAKE_POLL_SEC = Number(argValue('--wake-poll-sec', '10'))
 const NO_WAKE = hasFlag('--no-wake')
 const ALLOW_INTERVAL = hasFlag('--allow-interval')
+const RUN_ON_START = hasFlag('--run-on-start')
 const HEARTBEAT_MIN = Number(argValue('--heartbeat-min', '5'))
 const STALE_LOCK_MIN = Number(argValue('--stale-lock-min', '360'))
 
@@ -212,7 +213,7 @@ async function main(): Promise<void> {
   const wakeEnabled = !NO_WAKE && !!apiBase && !!token
   const intervalEnabled = !wakeEnabled || ALLOW_INTERVAL
 
-  log(`Runner started (interval=${intervalEnabled ? `${INTERVAL_MIN}m` : 'disabled'}, wakePoll=${WAKE_POLL_SEC}s, heartbeat=${HEARTBEAT_MIN}m, local=${USE_LOCAL}, headless=${HEADLESS}, dryRun=${DRY_RUN}, once=${ONCE}, wake=${wakeEnabled})`)
+  log(`Runner started (interval=${intervalEnabled ? `${INTERVAL_MIN}m` : 'disabled'}, wakePoll=${WAKE_POLL_SEC}s, heartbeat=${HEARTBEAT_MIN}m, local=${USE_LOCAL}, headless=${HEADLESS}, dryRun=${DRY_RUN}, once=${ONCE}, wake=${wakeEnabled}, runOnStart=${RUN_ON_START})`)
 
   if (ONCE) {
     const code = await runPushOnce()
@@ -233,6 +234,11 @@ async function main(): Promise<void> {
     }
   }
   let lastHeartbeatAt = Date.now()
+
+  if (RUN_ON_START) {
+    await runPushOnce()
+    lastRunAt = Date.now()
+  }
 
   while (!stopRequested) {
     let ran = false

@@ -871,21 +871,50 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  private async resolveInventoryLocation(): Promise<string> {
+    if (this.locationId) return this.locationId
+
+    const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(
+      `{ locations(first: 1) { nodes { id } } }`
+    )
+    const locationGid = locData.locations.nodes[0]?.id
+    if (!locationGid) throw new Error('No Shopify location found')
+    return locationGid
+  }
+
+  private async setOnHandQuantities(
+    setQuantities: Array<{ inventoryItemId: string; locationId: string; quantity: number }>
+  ): Promise<void> {
+    if (setQuantities.length === 0) return
+
+    const MUTATION_BATCH = 250
+    const mutation = `
+      mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
+        inventorySetOnHandQuantities(input: $input) {
+          userErrors { field message }
+        }
+      }
+    `
+    for (let i = 0; i < setQuantities.length; i += MUTATION_BATCH) {
+      const batch  = setQuantities.slice(i, i + MUTATION_BATCH)
+      const result = await this.graphql<{
+        inventorySetOnHandQuantities: { userErrors: Array<{ field?: string[] | null; message: string }> }
+      }>(mutation, { input: { reason: 'correction', setQuantities: batch } })
+      if (result.inventorySetOnHandQuantities.userErrors.length > 0) {
+        throw new Error(result.inventorySetOnHandQuantities.userErrors
+          .map((e) => e.field?.length ? `${e.field.join('.')}: ${e.message}` : e.message)
+          .join(', '))
+      }
+    }
+  }
+
   // Bulk-set stock: resolve all inventory items in one nodes() query per 50 products,
   // then set quantities in one inventorySetOnHandQuantities mutation per 250 items.
   // This replaces 3N individual API calls with ~ceil(N/50) + ceil(N/250) calls.
   async bulkSetStock(items: Array<{ platformId: string; quantity: number }>): Promise<void> {
     if (items.length === 0) return
 
-    // Resolve location once
-    let locationGid = this.locationId
-    if (!locationGid) {
-      const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(
-        `{ locations(first: 1) { nodes { id } } }`
-      )
-      locationGid = locData.locations.nodes[0]?.id
-      if (!locationGid) throw new Error('No Shopify location found')
-    }
+    const locationGid = await this.resolveInventoryLocation()
 
     // Batch-resolve inventory item IDs from product GIDs (50 per query)
     const QUERY_BATCH = 50
@@ -921,30 +950,77 @@ export class ShopifyConnector implements PlatformConnector {
 
     if (setQuantities.length === 0) return
 
-    // Set all quantities in batches of 250
-    const MUTATION_BATCH = 250
-    const mutation = `
-      mutation SetInventory($input: InventorySetOnHandQuantitiesInput!) {
-        inventorySetOnHandQuantities(input: $input) {
-          userErrors { field message }
-        }
-      }
-    `
-    for (let i = 0; i < setQuantities.length; i += MUTATION_BATCH) {
-      const batch  = setQuantities.slice(i, i + MUTATION_BATCH)
-      const result = await this.graphql<{
-        inventorySetOnHandQuantities: { userErrors: Array<{ message: string }> }
-      }>(mutation, { input: { reason: 'correction', setQuantities: batch } })
-      if (result.inventorySetOnHandQuantities.userErrors.length > 0) {
-        throw new Error(result.inventorySetOnHandQuantities.userErrors.map((e) => e.message).join(', '))
-      }
-    }
+    await this.setOnHandQuantities(setQuantities)
   }
 
   async bulkSetStockForSkus(items: Array<{ platformId: string; sku: string; quantity: number }>): Promise<void> {
+    if (items.length === 0) return
+
+    const locationGid = await this.resolveInventoryLocation()
+    const QUERY_BATCH = 50
+    const setQuantities: Array<{ inventoryItemId: string; locationId: string; quantity: number }> = []
+    const pending = new Map<string, Array<{ sku: string; quantity: number }>>()
+
     for (const item of items) {
-      await this.updateStockForSku(item.platformId, item.sku, item.quantity)
+      const productItems = pending.get(item.platformId) ?? []
+      productItems.push({ sku: item.sku, quantity: item.quantity })
+      pending.set(item.platformId, productItems)
     }
+
+    const productIds = [...pending.keys()]
+    for (let i = 0; i < productIds.length; i += QUERY_BATCH) {
+      const ids = productIds.slice(i, i + QUERY_BATCH)
+      const query = `
+        query InventoryItemsBySku($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              variants(first: 250) {
+                nodes {
+                  sku
+                  inventoryItem { id }
+                }
+              }
+            }
+          }
+        }
+      `
+      const data = await this.graphql<{
+        nodes: Array<{
+          id?: string
+          variants?: { nodes: Array<{ sku?: string | null; inventoryItem?: { id?: string | null } | null }> }
+        } | null>
+      }>(query, { ids })
+
+      for (const node of data.nodes) {
+        if (!node?.id || !node.variants) continue
+        const productItems = pending.get(node.id) ?? []
+        const variants = node.variants.nodes
+        for (const item of productItems) {
+          const matchingVariant = variants.find((variant) => variant.sku === item.sku)
+          const fallbackVariant = variants.length === 1 ? variants[0] : null
+          const inventoryItemId = (matchingVariant ?? fallbackVariant)?.inventoryItem?.id
+          if (!inventoryItemId) {
+            throw new Error(`No Shopify inventory item found for SKU ${item.sku} on product ${node.id}`)
+          }
+          setQuantities.push({ inventoryItemId, locationId: locationGid, quantity: item.quantity })
+        }
+      }
+    }
+
+    const seenInventoryItems = new Set<string>()
+    const dedupedSetQuantities = setQuantities.filter((item) => {
+      const key = `${item.locationId}:${item.inventoryItemId}`
+      if (seenInventoryItems.has(key)) return false
+      seenInventoryItems.add(key)
+      return true
+    })
+
+    if (dedupedSetQuantities.length !== items.length) {
+      throw new Error(`Resolved ${dedupedSetQuantities.length} unique Shopify inventory items for ${items.length} stock updates`)
+    }
+
+    await this.setOnHandQuantities(dedupedSetQuantities)
   }
 
   async listProductsForZeroing(): Promise<Array<{ platformId: string; sku: string | null; updatedAt: string | null }>> {
