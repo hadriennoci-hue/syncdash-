@@ -175,6 +175,7 @@ export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
                 <th className="text-left py-1.5 pr-3 font-medium">IE</th>
                 <th className="text-left py-1.5 pr-3 font-medium">PL</th>
                 <th className="text-left py-1.5 pr-3 font-medium">ACER</th>
+                <th className="text-left py-1.5 pr-3 font-medium">DS</th>
                 {mode === 'warehouse_overview' && (
                   <>
                     <th className="text-left py-1.5 pr-3 font-medium">Import EUR</th>
@@ -215,6 +216,7 @@ export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
                   <td className="py-1 pr-3">{p.stock?.ireland ?? '-'}</td>
                   <td className="py-1 pr-3">{p.stock?.poland ?? '-'}</td>
                   <td className="py-1 pr-3">{p.stock?.acer_store ?? '-'}</td>
+                  <td className="py-1 pr-3">{p.stock?.dropshipping ?? '-'}</td>
                   {mode === 'warehouse_overview' && (
                     <>
                       <td className="py-1 pr-3">{p.stock?.importPrice != null ? `EUR ${p.stock.importPrice}` : '-'}</td>
@@ -264,7 +266,7 @@ function StatusDot({ status }: { status?: string }) {
 }
 
 function StockHealthDot({ product }: { product: any }) {
-  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0)
+  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0) + (product.stock?.dropshipping ?? 0)
   const incomplete = product.status === 'info' || !product.hasDescription || !product.hasMinImages
   const color = totalStock > 0 ? 'bg-green-500' : (incomplete ? 'bg-muted-foreground/50' : 'bg-red-500')
   const title = totalStock > 0 ? 'In stock' : (incomplete ? 'Incomplete' : 'Out of stock')

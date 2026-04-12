@@ -39,6 +39,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         message: 'ACER stock scan queued on local runner',
       })
     }
+    if (params.id === 'dropshipping') {
+      return apiResponse({
+        warehouseId: params.id,
+        productsUpdated: 0,
+        errors: [],
+        syncedAt: new Date().toISOString(),
+        skipped: true,
+        message: 'Manual warehouse - scan skipped',
+      })
+    }
 
     const result = await syncWarehouse(params.id, parsed.data.triggeredBy)
     return apiResponse(result)

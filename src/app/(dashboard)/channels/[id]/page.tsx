@@ -36,6 +36,7 @@ interface Product {
     ireland:    number | null
     acer_store: number | null
     poland:     number | null
+    dropshipping: number | null
   }
   platformId:  string | null
   syncStatus:  string | null
@@ -244,14 +245,15 @@ function handleCopyCmd() {
                 <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground/60">Import promo</th>
                 <th className="text-right py-1.5 pr-3 font-medium">IE</th>
                 <th className="text-right py-1.5 pr-3 font-medium">ACER</th>
-                <th className="text-right py-1.5 font-medium">PL</th>
+                <th className="text-right py-1.5 pr-3 font-medium">PL</th>
+                <th className="text-right py-1.5 font-medium">DS</th>
               </tr>
             </thead>
             <tbody>
               {products.map((p) => {
                 const isTwoPush  = p.pushStatus === '2push'
                 const isFail     = p.pushStatus.startsWith('FAIL:')
-                const hasStock   = (p.stock.ireland ?? 0) + (p.stock.acer_store ?? 0) + (p.stock.poland ?? 0) > 0
+                const hasStock   = (p.stock.ireland ?? 0) + (p.stock.acer_store ?? 0) + (p.stock.poland ?? 0) + (p.stock.dropshipping ?? 0) > 0
                 const isPriority = isTwoPush && hasStock
                 const rowDirty   = dirty[p.sku]
 
@@ -296,7 +298,8 @@ function handleCopyCmd() {
                     </td>
                     <td className="py-1 pr-3 text-right font-mono"><StockQty qty={p.stock.ireland} /></td>
                     <td className="py-1 pr-3 text-right font-mono"><StockQty qty={p.stock.acer_store} /></td>
-                    <td className="py-1 text-right font-mono"><StockQty qty={p.stock.poland} /></td>
+                    <td className="py-1 pr-3 text-right font-mono"><StockQty qty={p.stock.poland} /></td>
+                    <td className="py-1 text-right font-mono"><StockQty qty={p.stock.dropshipping} /></td>
                   </tr>
                 )
               })}

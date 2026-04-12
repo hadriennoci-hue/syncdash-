@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
-import { eq, or, gt, inArray } from 'drizzle-orm'
+import { eq, or, gt } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
@@ -1194,35 +1194,22 @@ async function pushPlatform(
       const allMappings = await db.query.platformMappings.findMany({
         where: eq(platformMappings.platform, platform),
       })
-      const toDeactivate = allMappings
+      const toZero = allMappings
         .filter((m) => !inStockSkus.has(m.productId))
         .filter((m) => !touchedPlatformIds.has(m.platformId))
 
-      if (toDeactivate.length > 0) {
-        // Zero stock (XMR Bazaar doesn't manage stock but is already excluded above via BROWSER_PLATFORMS)
-        const zeroPayload = toDeactivate.map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
+      if (toZero.length > 0) {
+        // Zero stock only. Do not archive/deactivate listings or reset push status.
+        const zeroPayload = toZero.map((m) => ({ platformId: m.platformId, sku: m.productId, quantity: 0 }))
         if (isWooSkuAware(connector)) {
           await connector.bulkSetStockForSkus(zeroPayload)
         } else {
           await connector.bulkSetStock(zeroPayload.map(({ platformId, quantity }) => ({ platformId, quantity })))
         }
-        // Deactivate listing
-        for (const m of toDeactivate) {
-          try { await connector.toggleStatus(m.platformId, 'archived') } catch { /* best-effort */ }
-        }
-        // Reset pushed status so they re-enter the next push run
-        const skusToReset = [...new Set(toDeactivate.map((m) => m.productId))]
-        const pushedUpdate = getPushUpdate(platform, '2push')
-        if (Object.keys(pushedUpdate).length > 0) {
-          for (let i = 0; i < skusToReset.length; i += 99) {
-            const chunk = skusToReset.slice(i, i + 99)
-            await db.update(products).set(pushedUpdate).where(inArray(products.id, chunk))
-          }
-        }
-        zeroedOutOfStock = toDeactivate.length
+        zeroedOutOfStock = toZero.length
       }
     } catch (err) {
-      errors.push(`deactivate-untouched: ${err instanceof Error ? err.message : 'error'}`)
+      errors.push(`zero-untouched: ${err instanceof Error ? err.message : 'error'}`)
     }
   }
 

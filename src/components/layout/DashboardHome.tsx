@@ -52,6 +52,7 @@ const WAREHOUSES = [
   { id: 'ireland', label: 'Ireland', sub: 'Auto-synced - read only', href: '/warehouses/ireland' },
   { id: 'poland', label: 'Poland', sub: 'API sync - read only', href: '/warehouses/poland' },
   { id: 'acer_store', label: 'ACER Store', sub: 'Scraper - read only', href: '/warehouses/acer_store' },
+  { id: 'dropshipping', label: 'Dropshipping', sub: 'Manual - scan skipped', href: '/warehouses/dropshipping' },
 ] as const
 
 const CHANNELS = [
@@ -64,7 +65,7 @@ const CHANNELS = [
   { id: 'xmr_bazaar', label: 'XMR BAZAAR', sub: 'browser runner', href: '/channels/xmr_bazaar' },
 ] as const
 
-const INCOMING: Record<string, number> = { ireland: 18, poland: 12, acer_store: 15 }
+const INCOMING: Record<string, number> = { ireland: 18, poland: 12, acer_store: 15, dropshipping: 0 }
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v))

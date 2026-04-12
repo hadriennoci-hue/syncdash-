@@ -66,6 +66,7 @@ export function ProductsPage() {
                 <th className="text-left py-1.5 pr-3 font-medium">IE</th>
                 <th className="text-left py-1.5 pr-3 font-medium">PL</th>
                 <th className="text-left py-1.5 pr-3 font-medium">ACER</th>
+                <th className="text-left py-1.5 pr-3 font-medium">DS</th>
                 <th className="text-left py-1.5 pr-3 font-medium">Imgs</th>
               </tr>
             </thead>
@@ -99,6 +100,7 @@ export function ProductsPage() {
                   <td className="py-1 pr-3">{p.stock?.ireland     ?? '—'}</td>
                   <td className="py-1 pr-3">{p.stock?.poland      ?? '—'}</td>
                   <td className="py-1 pr-3">{p.stock?.acer_store  ?? '—'}</td>
+                  <td className="py-1 pr-3">{p.stock?.dropshipping ?? '—'}</td>
                   <td className="py-1 pr-3">
                     <span className={p.hasMinImages ? 'text-green-600' : 'text-amber-500'}>{p.imageCount}</span>
                   </td>

@@ -9,7 +9,8 @@ INSERT OR IGNORE INTO suppliers (id, name) VALUES
 INSERT OR IGNORE INTO warehouses (id, display_name, address, source_type, source_config, can_modify_stock, auto_sync, created_at) VALUES
   ('ireland',    'Entrepôt Irlande',  'Dublin, Ireland', 'shopify', '{"locationId":"placeholder"}', 0, 1, datetime('now')),
   ('poland',     'Entrepôt Pologne',  'Warsaw, Poland',  'manual',   NULL,                           0, 0, datetime('now')),
-  ('acer_store', 'ACER Store',        'France',          'scraper', '{"url":"placeholder"}',         0, 0, datetime('now'));
+  ('acer_store', 'ACER Store',        'France',          'scraper', '{"url":"placeholder"}',         0, 0, datetime('now')),
+  ('dropshipping', 'Dropshipping',    NULL,              'manual',   NULL,                           0, 0, datetime('now'));
 
 -- Sales Channels
 INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, config, created_at) VALUES
@@ -31,10 +32,13 @@ INSERT OR IGNORE INTO sales_channels (id, name, url, connector_type, enabled, co
 INSERT OR IGNORE INTO warehouse_channel_rules (warehouse_id, platform, priority) VALUES
   ('ireland',    'coincart2',        1),
   ('acer_store', 'coincart2',        2),
+  ('dropshipping', 'coincart2',      3),
   ('ireland',    'shopify_komputerzz', 1),
   ('acer_store', 'shopify_komputerzz', 2),
+  ('dropshipping', 'shopify_komputerzz', 3),
   ('ireland',    'ebay_ie',            1),
   ('acer_store', 'ebay_ie',            2),
+  ('dropshipping', 'ebay_ie',          3),
   ('ireland',    'shopify_tiktok',     1);
   -- acer_store + shopify_tiktok: intentionally omitted = FORBIDDEN
 

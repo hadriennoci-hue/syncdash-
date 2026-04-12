@@ -12,6 +12,7 @@ export type WarehouseId =
   | 'ireland'
   | 'poland'
   | 'acer_store'
+  | 'dropshipping'
   | 'spain'
 
 export type TriggeredBy = 'human' | 'agent' | 'system'
@@ -55,5 +56,6 @@ export const WAREHOUSE_LABELS: Record<WarehouseId, string> = {
   ireland:    'Entrepôt Irlande',
   poland:     'Entrepôt Pologne',
   acer_store: 'ACER Store',
+  dropshipping: 'Dropshipping',
   spain:      'Entrepôt Espagne',
 }

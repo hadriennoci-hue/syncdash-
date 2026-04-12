@@ -9,6 +9,8 @@ interface WarehouseSyncResult {
   productsUpdated: number
   errors: string[]
   syncedAt: string
+  skipped?: boolean
+  message?: string
 }
 
 function toSse(event: string, data: unknown): string {
@@ -65,6 +67,28 @@ export async function GET(req: NextRequest) {
                 total: 1,
               })
               push('warehouse_result', queued)
+              continue
+            }
+            if (warehouse.id === 'dropshipping') {
+              const skipped: WarehouseSyncResult = {
+                warehouseId: warehouse.id,
+                productsUpdated: 0,
+                errors: [],
+                syncedAt: new Date().toISOString(),
+                skipped: true,
+                message: 'Manual warehouse - scan skipped',
+              }
+              results.push(skipped)
+              push('progress', {
+                warehouseId: warehouse.id,
+                warehouseIndex: index + 1,
+                warehouseTotal: ordered.length,
+                stage: 'skipped',
+                message: 'Manual warehouse - scan skipped',
+                current: 1,
+                total: 1,
+              })
+              push('warehouse_result', skipped)
               continue
             }
 

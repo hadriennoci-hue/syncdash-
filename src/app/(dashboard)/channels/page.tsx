@@ -82,7 +82,7 @@ export default function ChannelsPage() {
     return products.filter((p) => {
       if (channelFilter !== 'all' && p.platforms[channelFilter]?.status === 'missing') return false
 
-      const totalStock = (p.stock.ireland ?? 0) + (p.stock.poland ?? 0) + (p.stock.acer_store ?? 0)
+      const totalStock = (p.stock.ireland ?? 0) + (p.stock.poland ?? 0) + (p.stock.acer_store ?? 0) + (p.stock.dropshipping ?? 0)
       if (statusFilter === 'for_sale' && !(p.status === 'active' && totalStock > 0)) return false
       if (statusFilter === 'out_of_stock' && !(p.status === 'active' && totalStock === 0)) return false
       if (statusFilter === 'deactivated' && p.status !== 'archived') return false
@@ -267,7 +267,7 @@ function ChannelPriceCell({ platform, product }: { platform?: PlatformData; prod
     return <span className="text-muted-foreground">-</span>
   }
 
-  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0)
+  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0) + (product.stock?.dropshipping ?? 0)
   const hasStock = totalStock > 0
   const colorClass = hasStock ? 'text-green-600' : 'text-red-600'
 

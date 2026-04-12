@@ -6,7 +6,7 @@ import { salesChannels, products, adsCampaigns, orders, salesOrders } from '@/li
 import { eq, or, and, like, sql, gte, inArray } from 'drizzle-orm'
 import { PLATFORM_LABELS, PLATFORMS, WAREHOUSE_LABELS } from '@/types/platform'
 
-const ACTIVE_WAREHOUSES = ['ireland', 'poland', 'acer_store'] as const
+const ACTIVE_WAREHOUSES = ['ireland', 'poland', 'acer_store', 'dropshipping'] as const
 
 function isMissingSchemaError(err: unknown): boolean {
   if (!(err instanceof Error)) return false

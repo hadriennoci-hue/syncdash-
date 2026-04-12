@@ -28,6 +28,16 @@ export async function POST(req: NextRequest) {
             message: 'ACER stock scan queued on local runner',
           }
         }
+        if (warehouse.id === 'dropshipping') {
+          return {
+            warehouseId: warehouse.id,
+            productsUpdated: 0,
+            errors: [],
+            syncedAt: new Date().toISOString(),
+            skipped: true,
+            message: 'Manual warehouse - scan skipped',
+          }
+        }
         return await syncWarehouse(warehouse.id, 'human')
       } catch (err) {
         return {

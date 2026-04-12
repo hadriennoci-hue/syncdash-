@@ -29,6 +29,17 @@ export async function POST(
       columns: { warehouseId: true, sourceUrl: true },
     })
     const acerSource = acerRows.some((row) => row.warehouseId === 'acer_store' && !!row.sourceUrl)
+    const hasOnlyDropshippingSource = acerRows.length > 0 && acerRows.every((row) => row.warehouseId === 'dropshipping')
+
+    if (hasOnlyDropshippingSource) {
+      return apiResponse({
+        sku: params.sku,
+        status: 'complete',
+        filled: [],
+        missing: [],
+        sources: ['dropshipping-manual-skip'],
+      })
+    }
 
     if (acerSource) {
       await requestRunnerWake('acer-fill', `fill-request:${params.sku}`)

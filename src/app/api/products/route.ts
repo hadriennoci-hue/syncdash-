@@ -89,9 +89,9 @@ export async function GET(req: NextRequest) {
       )
     )
   )
-  // hasStock: at least one warehouse (ireland or acer_store) has quantity > 0
+  // hasStock: at least one sellable warehouse has quantity > 0
   if (hasStock) conditions.push(
-    sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id IN ('ireland','acer_store') AND ws.quantity > 0)`
+    sql`EXISTS (SELECT 1 FROM warehouse_stock ws WHERE ws.product_id = ${products.id} AND ws.warehouse_id IN ('ireland','acer_store','dropshipping') AND ws.quantity > 0)`
   )
   const where = conditions.length > 0 ? and(...conditions) : undefined
 
@@ -205,6 +205,7 @@ export async function GET(req: NextRequest) {
         ireland:          stockMap.ireland?.qty              ?? null,
         poland:           stockMap.poland?.qty               ?? null,
         acer_store:       stockMap.acer_store?.qty           ?? null,
+        dropshipping:     stockMap.dropshipping?.qty         ?? null,
         importPrice:      stockMap.ireland?.importPrice      ?? stockMap.acer_store?.importPrice      ?? null,
         importPromoPrice: stockMap.ireland?.importPromoPrice ?? stockMap.acer_store?.importPromoPrice ?? null,
         purchasePrice:    stockMap.acer_store?.purchasePrice ?? stockMap.ireland?.purchasePrice       ?? null,

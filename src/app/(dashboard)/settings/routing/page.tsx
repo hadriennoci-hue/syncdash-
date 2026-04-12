@@ -8,6 +8,7 @@ const WAREHOUSES = [
   { id: 'ireland',    label: 'Ireland (Shopify TikTok)' },
   { id: 'poland',     label: 'Poland' },
   { id: 'acer_store', label: 'ACER Store' },
+  { id: 'dropshipping', label: 'Dropshipping' },
 ]
 
 // Build a lookup: rules[warehouseId][platform] = priority (0 if missing = forbidden)
@@ -106,10 +107,10 @@ export default function RoutingPage() {
 
       <div className="text-xs text-muted-foreground space-y-1 border border-border rounded p-3">
         <p className="font-medium">Current rules (from seed):</p>
-        <p>• Coincart: Ireland (1) → Acer Store (2) → Poland (NO)</p>
-        <p>• Komputerzz: Ireland (1) → Acer Store (2) → Poland (NO)</p>
-        <p>• eBay IE: Ireland (1) → Acer Store (2) → Poland (NO)</p>
-        <p>• TikTok: Ireland (1) — Acer Store FORBIDDEN — Poland (NO)</p>
+        <p>• Coincart: Ireland (1) → Acer Store (2) → Dropshipping (3) → Poland (NO)</p>
+        <p>• Komputerzz: Ireland (1) → Acer Store (2) → Dropshipping (3) → Poland (NO)</p>
+        <p>• eBay IE: Ireland (1) → Acer Store (2) → Dropshipping (3) → Poland (NO)</p>
+        <p>• TikTok: Ireland (1) — Acer Store FORBIDDEN — Dropshipping FORBIDDEN — Poland (NO)</p>
         <p className="text-muted-foreground/60 mt-1">Stock pushed daily = SUM of quantities from all allowed warehouses.</p>
       </div>
     </div>

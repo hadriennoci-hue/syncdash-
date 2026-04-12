@@ -92,6 +92,7 @@ export default function NewOrderPage() {
             className="w-full text-xs border border-border rounded px-2 py-1 bg-background"
           >
             <option value="acer_store">ACER Store</option>
+            <option value="dropshipping">Dropshipping</option>
             <option value="ireland">Ireland</option>
             <option value="poland">Poland</option>
           </select>

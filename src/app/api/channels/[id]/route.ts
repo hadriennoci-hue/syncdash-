@@ -7,7 +7,7 @@ import { products, salesChannels } from '@/lib/db/schema'
 import { eq, or, desc, sql } from 'drizzle-orm'
 import type { Platform } from '@/types/platform'
 
-const WAREHOUSES = ['ireland', 'acer_store', 'poland'] as const
+const WAREHOUSES = ['ireland', 'acer_store', 'poland', 'dropshipping'] as const
 
 function getPushCol(platform: Platform) {
   if (platform === 'shopify_komputerzz') return products.pushedShopifyKomputerzz
@@ -268,6 +268,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         ireland:    stockMap.ireland.qty,
         acer_store: stockMap.acer_store.qty,
         poland:     stockMap.poland.qty,
+        dropshipping: stockMap.dropshipping.qty,
       },
       platformId:  mapping?.platformId ?? null,
       syncStatus:  mapping?.syncStatus ?? null,
@@ -281,4 +282,3 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
   return apiResponse(responseBody, 200)
 }
-
