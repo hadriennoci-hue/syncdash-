@@ -20,6 +20,7 @@
   | 'webcams'
   | 'ai_workstations'
   | 'desktops'
+  | 'accessories'
 export type AttributeBrand = 'acer' | 'predator'
 
 type AttributeOptionsMap = Record<string, string[]>
@@ -338,6 +339,20 @@ export const ATTRIBUTE_OPTIONS: Record<AttributeCollection, AttributeOptionsMap>
     aspect_ratio: ['16:9'],
     keyboard_mouse: ['Included', 'Not included'],
     color: ['Black', 'Silver', 'White'],
+  },
+  accessories: {
+    product_subtype: ['External optical drive', 'Active stylus', 'GaN charger'],
+    connection: ['USB-A 3.0', 'USB-C 3.0', 'USB-C PD'],
+    compatibility: ['Windows', 'Mac', 'AES 2.0', 'USI 2.0', 'MPP 2.5'],
+    material: ['ABS plastic'],
+    disc_format: ['M-DISC'],
+    pressure_levels: ['4096'],
+    tilt_support: ['Yes'],
+    battery_life: ['Up to 12 months'],
+    power_delivery: ['100W'],
+    plug_type: ['EU plug', 'UK plug'],
+    cable_length: ['1.5m'],
+    protection: ['Overvoltage', 'Overcurrent', 'Short circuit', 'Overheating'],
   },
 }
 

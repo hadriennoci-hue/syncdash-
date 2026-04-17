@@ -242,6 +242,7 @@ const ATTRIBUTE_COLLECTION_BY_SLUG: Record<string, AttributeCollection> = {
   webcams: 'webcams',
   'ai-workstations': 'ai_workstations',
   desktops: 'desktops',
+  accessories: 'accessories',
 }
 
 function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
@@ -439,6 +440,11 @@ const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   chassis_volume: 'chassis_volume',
   power_adapter: 'power_adapter',
   model_size: 'model_size',
+  disc_format: 'disc_format',
+  pressure_levels: 'pressure_levels',
+  tilt_support: 'tilt_support',
+  plug_type: 'plug_type',
+  protection: 'protection',
 }
 
 function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct): Record<string, string[]> {

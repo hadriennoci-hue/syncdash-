@@ -164,6 +164,7 @@ export const ATTRIBUTE_SHORT_VALUE_MAP: AttributeShortValueMap = {
   webcams: {},
   ai_workstations: {},
   desktops: {},
+  accessories: {},
 }
 
 function normalizeValue(raw: string): string {
