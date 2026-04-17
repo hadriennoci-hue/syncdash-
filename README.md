@@ -300,6 +300,25 @@ Runner preference:
 
 ## 16) Open TODO (Google Ads Attribution rollout)
 
+Docs:
+- `docs/google-ads/README.md`
+- `docs/google-ads/campaign-pipeline.md`
+- `docs/google-ads/campaign-setup-rules.md`
+- `docs/google-ads/testing-and-sandbox.md`
+- `docs/google-ads/performance-analysis.md`
+- `docs/google-ads/attribution.md`
+- `docs/google-ads/technical-integration.md`
+- `docs/google-ads/runbooks.md`
+- `docs/google-ads/campaign-templates.md`
+- `docs/google-ads/test-campaigns.md`
+
+Rules:
+- Do not enable `GOOGLE_ADS_PUBLISH_ENABLED=1` until Google Ads import works.
+- Wizhard-created Google Ads campaigns must be created paused first.
+- Campaigns must have a verified destination URL before scheduling.
+- Test/manual Google Ads campaigns must be documented in `docs/google-ads/test-campaigns.md`.
+- Google-reported conversions and Wizhard-attributed orders must be labeled separately in analysis.
+
 1. Set production vars:
    - `GOOGLE_ADS_DEVELOPER_TOKEN`
    - `GOOGLE_ADS_CUSTOMER_ID`

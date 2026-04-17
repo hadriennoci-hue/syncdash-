@@ -150,7 +150,7 @@ function parseStreamRows(payload: unknown): any[] {
 }
 
 async function googleAdsSearchStream(customerId: string, query: string, accessToken: string): Promise<any[]> {
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim()
   if (!developerToken) {
     throw new Error('Missing GOOGLE_ADS_DEVELOPER_TOKEN')
   }

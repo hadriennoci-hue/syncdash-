@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
 import { runDailyHealthCheck, runDailyTokenRefresh } from '@/lib/automation/daily-sync'
+import { verifyBearer } from '@/lib/auth/bearer'
+import { runAdsPublishCron } from '@/lib/functions/ads-publish'
 import { runSocialAnalyticsSync } from '@/lib/functions/social-analytics-sync'
 import { runSocialPublishCron } from '@/lib/functions/social-publish'
 
@@ -17,7 +19,7 @@ export async function GET(req: NextRequest) {
       : 'health'
   )
 
-  // Manual override for local/dev usage: /api/cron?task=tokens|health|social|social_analytics
+  // Manual override for local/dev usage: /api/cron?task=tokens|health|social|social_analytics|ads
   const task = req.nextUrl.searchParams.get('task') ?? scheduledTask
 
   if (task === 'tokens') {
@@ -39,6 +41,15 @@ export async function GET(req: NextRequest) {
   if (task === 'social_analytics') {
     const result = await runSocialAnalyticsSync('system')
     return new Response(`social analytics done: scanned=${result.scannedPosts} syncedPosts=${result.syncedPosts} syncedAccounts=${result.syncedAccounts} errors=${result.errors.length}`, { status: 200 })
+  }
+
+  if (task === 'ads') {
+    if (!cronHeader) {
+      const auth = verifyBearer(req)
+      if (auth) return auth
+    }
+    const result = await runAdsPublishCron()
+    return new Response(`ads publish done: enabled=${result.enabled} scanned=${result.scanned} published=${result.published} failed=${result.failed} skipped=${result.skipped}`, { status: 200 })
   }
 
   return new Response('health check done', { status: 200 })
