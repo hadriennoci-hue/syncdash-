@@ -145,6 +145,7 @@ export const ATTRIBUTE_SHORT_VALUE_MAP: AttributeShortValueMap = {
       '7680x4320@60Hz': '8K@60Hz',
     },
   },
+  mice: {},
 }
 
 function normalizeValue(raw: string): string {

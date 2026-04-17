@@ -1,4 +1,4 @@
-﻿export type AttributeCollection = 'laptops' | 'monitor'
+﻿export type AttributeCollection = 'laptops' | 'monitor' | 'mice'
 export type AttributeBrand = 'acer' | 'predator'
 
 type AttributeOptionsMap = Record<string, string[]>
@@ -56,6 +56,34 @@ export const ATTRIBUTE_OPTIONS: Record<AttributeCollection, AttributeOptionsMap>
     ports: ['HDMI 2.0', 'HDMI 2.1', 'DP 1.4', 'USB-C', 'USB Hub', '3.5mm Out'],
     vesa_mount: ['75x75', '100x100'],
     color: ['Black', 'White', 'Silver'],
+  },
+  mice: {
+    product_subtype: ['Mouse', 'Gaming mouse', 'Vertical mouse', 'Keyboard and mouse combo', 'Mousepad'],
+    dpi: ['1600', '7200', '16000', '19000'],
+    sensor: ['Optical', 'PixArt 3370', 'PixArt 3389'],
+    buttons: ['3', '6', '10'],
+    connection: ['Wired USB', '2.4GHz Wireless', 'Bluetooth 5.0', '2.4GHz Wireless + Bluetooth 5.0'],
+    polling_rate: ['125Hz', '2000Hz'],
+    response_time: ['1ms'],
+    ips: ['400 IPS'],
+    lighting: ['RGB', '7-color lighting', '16.8M RGB'],
+    scroll: ['Hyper-fast infinite scroll'],
+    hand_orientation: ['Right-handed'],
+    battery: ['2 x AAA', 'Rechargeable'],
+    battery_life: ['Up to 120 hours'],
+    charging_time: ['3 hours'],
+    charging_cable: ['Micro-USB'],
+    receiver: ['USB receiver', 'USB Nano receiver'],
+    keyboard_shortcuts: ['11 shortcuts'],
+    keystroke_life: ['5 million keystrokes'],
+    surface: ['Low-friction fabric', 'Smooth fabric', 'Recycled surface'],
+    base: ['Non-slip rubber', 'Recycled natural rubber'],
+    material: ['Recycled materials', 'Non-hazardous materials'],
+    dimensions: ['220x180x3mm'],
+    thickness: ['3mm'],
+    wrist_support: ['Yes'],
+    compatibility: ['Windows 7+', 'Mac OS'],
+    color: ['Black', 'Gray'],
   },
 }
 

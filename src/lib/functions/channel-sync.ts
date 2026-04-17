@@ -231,9 +231,10 @@ function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ ha
   return Array.from(dedup.values())
 }
 
-function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; isDisplay: boolean } {
+function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; isDisplay: boolean; isMice: boolean } {
   let isLaptop = false
   let isDisplay = false
+  let isMice = false
   for (const pc of product.categories) {
     if (!pc.category) continue
     const name = normalizeText(pc.category.name ?? '')
@@ -247,17 +248,26 @@ function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; i
       || slug.includes('monitor')
       || slug.includes('ecran')
     ) isDisplay = true
+    if (
+      name.includes('mouse')
+      || name.includes('mice')
+      || name.includes('muis')
+      || slug.includes('mouse')
+      || slug.includes('mice')
+      || slug.includes('muis')
+    ) isMice = true
   }
-  return { isLaptop, isDisplay }
+  return { isLaptop, isDisplay, isMice }
 }
 
 function collectCoincartAttributeValues(product: EligibleProduct): Record<string, string[]> {
-  const { isLaptop, isDisplay } = detectCollectionTypes(product)
-  if (!isLaptop && !isDisplay) return {}
+  const { isLaptop, isDisplay, isMice } = detectCollectionTypes(product)
+  if (!isLaptop && !isDisplay && !isMice) return {}
 
   const allowedKeys = new Set<string>([
     ...(isLaptop ? Object.keys(ATTRIBUTE_OPTIONS.laptops) : []),
     ...(isDisplay ? Object.keys(ATTRIBUTE_OPTIONS.monitor) : []),
+    ...(isMice ? Object.keys(ATTRIBUTE_OPTIONS.mice) : []),
   ])
   return collectProductAttributeValues(product, allowedKeys)
 }
@@ -279,6 +289,32 @@ const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   operating_system: 'operating_system',
   touchscreen: 'touchscreen',
   category: 'usage',
+  product_subtype: 'product_subtype',
+  dpi: 'dpi',
+  sensor: 'sensor',
+  buttons: 'buttons',
+  connection: 'connection',
+  polling_rate: 'polling_rate',
+  response_time: 'response_time',
+  ips: 'ips',
+  lighting: 'lighting',
+  scroll: 'scroll',
+  hand_orientation: 'hand_orientation',
+  battery: 'battery',
+  battery_life: 'battery_life',
+  charging_time: 'charging_time',
+  charging_cable: 'charging_cable',
+  receiver: 'receiver',
+  keyboard_shortcuts: 'keyboard_shortcuts',
+  keystroke_life: 'keystroke_life',
+  surface: 'surface',
+  base: 'base',
+  material: 'material',
+  dimensions: 'dimensions',
+  thickness: 'thickness',
+  wrist_support: 'wrist_support',
+  compatibility: 'compatibility',
+  color: 'color',
 }
 
 function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct): Record<string, string[]> {
