@@ -19,6 +19,7 @@
   | 'gaming_desks'
   | 'webcams'
   | 'ai_workstations'
+  | 'desktops'
 export type AttributeBrand = 'acer' | 'predator'
 
 type AttributeOptionsMap = Record<string, string[]>
@@ -317,6 +318,26 @@ export const ATTRIBUTE_OPTIONS: Record<AttributeCollection, AttributeOptionsMap>
     weight: ['1.2kg'],
     power_adapter: ['240W'],
     model_size: ['Up to 200B parameters', 'Up to 405B parameters with two units'],
+  },
+  desktops: {
+    product_subtype: ['Desktop', 'Gaming desktop', 'All-in-one desktop', 'Mini desktop', 'Chromebox'],
+    series: ['Predator Orion', 'Nitro', 'Aspire C', 'Aspire XC', 'Veriton', 'Chromebox'],
+    operating_system: ['Win 11 Home', 'Win 11 Pro', 'ChromeOS'],
+    processor_brand: ['Intel', 'AMD'],
+    processor: ['Core i5', 'Core i7', 'Core Ultra 5', 'Core Ultra 7', 'Core Ultra 9', 'AMD Ryzen 3', 'AMD Ryzen 5'],
+    processor_model: ['i5-1235U', 'i5-12450H', 'i5-14400', 'i7-13700T', 'i7-14700', 'i7-14700T', 'Core Ultra 5 125U', 'Core Ultra 5 225', 'Core Ultra 7 155U', 'Core Ultra 7 265', 'Core Ultra 7 265F', 'Core Ultra 7 265KF', 'Core Ultra 9 285K', 'Ryzen 3 7320U', 'Ryzen 5 7520U'],
+    processor_cores: ['10', '16', '20'],
+    ram: ['8', '16', '32', '64'],
+    ram_type: ['DDR4', 'DDR5', 'LPDDR5'],
+    storage: ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD', '4TB SSD', '1TB SSD + 2TB HDD', '2 x 1TB SSD'],
+    storage_type: ['SSD', 'SSD + HDD'],
+    gpu: ['Intel UHD Graphics', 'Intel HD Graphics', 'Intel Iris Xe', 'Intel Graphics', 'AMD Radeon Graphics', 'RTX 5060', 'RTX 5080', 'RTX 5090'],
+    gpu_memory: ['8GB', '16GB', '32GB', 'Shared'],
+    screen_size: ['23.8', '27'],
+    resolution: ['1920x1080'],
+    aspect_ratio: ['16:9'],
+    keyboard_mouse: ['Included', 'Not included'],
+    color: ['Black', 'Silver', 'White'],
   },
 }
 

@@ -241,6 +241,7 @@ const ATTRIBUTE_COLLECTION_BY_SLUG: Record<string, AttributeCollection> = {
   'gaming-desks': 'gaming_desks',
   webcams: 'webcams',
   'ai-workstations': 'ai_workstations',
+  desktops: 'desktops',
 }
 
 function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
@@ -397,6 +398,7 @@ const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   endurance: 'endurance',
   iops: 'iops',
   gpu_model: 'gpu_model',
+  gpu_memory: 'gpu_memory',
   architecture: 'architecture',
   memory: 'memory',
   memory_bandwidth: 'memory_bandwidth',
