@@ -146,6 +146,13 @@ export const ATTRIBUTE_SHORT_VALUE_MAP: AttributeShortValueMap = {
     },
   },
   mice: {},
+  laptop_bags: {},
+  headsets: {},
+  keyboards: {},
+  controllers: {},
+  docking_stations: {},
+  connectivity: {},
+  storage: {},
 }
 
 function normalizeValue(raw: string): string {

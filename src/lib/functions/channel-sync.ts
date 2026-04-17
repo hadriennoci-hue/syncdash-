@@ -5,7 +5,7 @@ import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
-import { ATTRIBUTE_OPTIONS } from '@/lib/constants/product-attribute-options'
+import { ATTRIBUTE_OPTIONS, type AttributeCollection } from '@/lib/constants/product-attribute-options'
 import { deriveLaptopVariantAxes } from '@/lib/utils/laptop-variant-axes'
 import type { PriceSnapshot } from '@/lib/connectors/types'
 
@@ -215,6 +215,23 @@ function collectProductAttributeValues(
 
 const LAPTOP_COLLECTION_SLUGS = new Set(['laptops', 'gaming-laptops', 'work-laptops'])
 const MONITOR_COLLECTION_SLUGS = new Set(['monitors', 'gaming-monitors', 'ultrawide-monitors'])
+const ATTRIBUTE_COLLECTION_BY_SLUG: Record<string, AttributeCollection> = {
+  laptops: 'laptops',
+  'gaming-laptops': 'laptops',
+  'work-laptops': 'laptops',
+  monitors: 'monitor',
+  'gaming-monitors': 'monitor',
+  'ultrawide-monitors': 'monitor',
+  'foldable-monitors': 'monitor',
+  mice: 'mice',
+  'laptop-bags': 'laptop_bags',
+  'headsets-earbuds': 'headsets',
+  keyboards: 'keyboards',
+  controllers: 'controllers',
+  'docking-stations': 'docking_stations',
+  connectivity: 'connectivity',
+  storage: 'storage',
+}
 
 function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ handle: string; type: 'laptops' | 'monitor' }> {
   const targets: Array<{ handle: string; type: 'laptops' | 'monitor' }> = []
@@ -231,15 +248,15 @@ function detectKomputerzzCollectionTargets(product: EligibleProduct): Array<{ ha
   return Array.from(dedup.values())
 }
 
-function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; isDisplay: boolean; isMice: boolean } {
-  let isLaptop = false
-  let isDisplay = false
-  let isMice = false
+function detectAttributeCollections(product: EligibleProduct): Set<AttributeCollection> {
+  const collections = new Set<AttributeCollection>()
   for (const pc of product.categories) {
     if (!pc.category) continue
     const name = normalizeText(pc.category.name ?? '')
     const slug = normalizeText(pc.category.slug ?? '')
-    if (name.includes('laptop') || slug.includes('laptop')) isLaptop = true
+    const mapped = ATTRIBUTE_COLLECTION_BY_SLUG[slug]
+    if (mapped) collections.add(mapped)
+    if (name.includes('laptop') || slug.includes('laptop')) collections.add('laptops')
     if (
       name.includes('display')
       || name.includes('monitor')
@@ -247,7 +264,7 @@ function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; i
       || slug.includes('display')
       || slug.includes('monitor')
       || slug.includes('ecran')
-    ) isDisplay = true
+    ) collections.add('monitor')
     if (
       name.includes('mouse')
       || name.includes('mice')
@@ -255,20 +272,19 @@ function detectCollectionTypes(product: EligibleProduct): { isLaptop: boolean; i
       || slug.includes('mouse')
       || slug.includes('mice')
       || slug.includes('muis')
-    ) isMice = true
+    ) collections.add('mice')
   }
-  return { isLaptop, isDisplay, isMice }
+  return collections
 }
 
 function collectCoincartAttributeValues(product: EligibleProduct): Record<string, string[]> {
-  const { isLaptop, isDisplay, isMice } = detectCollectionTypes(product)
-  if (!isLaptop && !isDisplay && !isMice) return {}
+  const collections = detectAttributeCollections(product)
+  if (collections.size === 0) return {}
 
-  const allowedKeys = new Set<string>([
-    ...(isLaptop ? Object.keys(ATTRIBUTE_OPTIONS.laptops) : []),
-    ...(isDisplay ? Object.keys(ATTRIBUTE_OPTIONS.monitor) : []),
-    ...(isMice ? Object.keys(ATTRIBUTE_OPTIONS.mice) : []),
-  ])
+  const allowedKeys = new Set<string>()
+  for (const collection of collections) {
+    for (const key of Object.keys(ATTRIBUTE_OPTIONS[collection])) allowedKeys.add(key)
+  }
   return collectProductAttributeValues(product, allowedKeys)
 }
 
@@ -315,6 +331,61 @@ const SHOPIFY_PRODUCT_ATTRIBUTE_KEY_MAP: Record<string, string> = {
   wrist_support: 'wrist_support',
   compatibility: 'compatibility',
   color: 'color',
+  laptop_size: 'laptop_size',
+  capacity: 'capacity',
+  carry_style: 'carry_style',
+  water_resistant: 'water_resistant',
+  compartments: 'compartments',
+  features: 'features',
+  connector: 'connector',
+  driver_size: 'driver_size',
+  sound: 'sound',
+  microphone: 'microphone',
+  frequency_response: 'frequency_response',
+  impedance: 'impedance',
+  sensitivity: 'sensitivity',
+  wireless_range: 'wireless_range',
+  controls: 'controls',
+  design: 'design',
+  cable_length: 'cable_length',
+  weight: 'weight',
+  layout: 'layout',
+  switch_type: 'switch_type',
+  numeric_keypad: 'numeric_keypad',
+  anti_ghosting: 'anti_ghosting',
+  platform_compatibility: 'platform_compatibility',
+  vibration: 'vibration',
+  sensors: 'sensors',
+  triggers: 'triggers',
+  charging: 'charging',
+  phone_fit: 'phone_fit',
+  host_connection: 'host_connection',
+  video_outputs: 'video_outputs',
+  max_displays: 'max_displays',
+  usb_ports: 'usb_ports',
+  ethernet: 'ethernet',
+  power_delivery: 'power_delivery',
+  card_reader: 'card_reader',
+  audio: 'audio',
+  wireless_standard: 'wireless_standard',
+  cellular: 'cellular',
+  max_speed: 'max_speed',
+  users: 'users',
+  sim_support: 'sim_support',
+  usb: 'usb',
+  security: 'security',
+  ruggedness: 'ruggedness',
+  ports: 'ports',
+  pack_size: 'pack_size',
+  qos: 'qos',
+  interface: 'interface',
+  read_speed: 'read_speed',
+  write_speed: 'write_speed',
+  form_factor: 'form_factor',
+  heatsink: 'heatsink',
+  dram_cache: 'dram_cache',
+  endurance: 'endurance',
+  iops: 'iops',
 }
 
 function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct): Record<string, string[]> {

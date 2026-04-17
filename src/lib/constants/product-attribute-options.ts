@@ -1,4 +1,14 @@
-﻿export type AttributeCollection = 'laptops' | 'monitor' | 'mice'
+﻿export type AttributeCollection =
+  | 'laptops'
+  | 'monitor'
+  | 'mice'
+  | 'laptop_bags'
+  | 'headsets'
+  | 'keyboards'
+  | 'controllers'
+  | 'docking_stations'
+  | 'connectivity'
+  | 'storage'
 export type AttributeBrand = 'acer' | 'predator'
 
 type AttributeOptionsMap = Record<string, string[]>
@@ -84,6 +94,106 @@ export const ATTRIBUTE_OPTIONS: Record<AttributeCollection, AttributeOptionsMap>
     wrist_support: ['Yes'],
     compatibility: ['Windows 7+', 'Mac OS'],
     color: ['Black', 'Gray'],
+  },
+  laptop_bags: {
+    product_subtype: ['Backpack', 'Sleeve', 'Carrying case', 'Luggage'],
+    laptop_size: ['11.6"', '14"', '15.6"', '16"', '17"', '18"', '22"'],
+    capacity: ['25L', '25L + 2.5L'],
+    carry_style: ['Backpack', 'Sleeve', 'Briefcase', '3-in-1', 'Luggage'],
+    material: ['rPET', 'Synthetic fabric', 'Durable fabric', 'PU leather', 'Aluminum alloy'],
+    water_resistant: ['Yes'],
+    compartments: ['Laptop compartment', 'Front pocket', 'Organizer', 'Power adapter sleeve', 'Multiple compartments'],
+    features: ['TSA lock', 'Detachable hanger', 'Silent wheels', 'Trolley strap', 'Reinforced base', 'Antimicrobial material', 'Detachable crossbody bag'],
+    weight: ['0.4kg', '0.6kg'],
+    color: ['Black', 'Gray', 'Green'],
+  },
+  headsets: {
+    product_subtype: ['Headset', 'Gaming headset', 'Earbuds', 'Conference headset', 'Office headset'],
+    connection: ['Wired USB-A', '3.5mm audio', 'USB + 3.5mm audio', '2.4GHz Wireless + Bluetooth 5.2', 'Bluetooth 5.3'],
+    connector: ['USB-A', 'USB-C', '3.5mm audio jack'],
+    driver_size: ['8mm', '30mm', '50mm'],
+    sound: ['Stereo', '7.1 surround'],
+    microphone: ['Built-in microphone', 'Detachable microphone', 'Detachable omnidirectional microphone', 'Omnidirectional microphone', 'Flexible boom microphone', 'ENC microphone'],
+    frequency_response: ['20Hz-20kHz'],
+    impedance: ['21 ohm', '32 ohm'],
+    sensitivity: ['105dB', '115dB'],
+    battery_life: ['4 hours', '12 hours', '14 hours with case', '240 minutes'],
+    charging_time: ['2.5 hours'],
+    wireless_range: ['10m'],
+    lighting: ['RGB', 'Multicolor RGB'],
+    controls: ['Touch controls', 'In-line control', 'USB control box'],
+    design: ['In-ear', 'Over-ear', 'Adjustable headband', 'Soft foam ear pads'],
+    cable_length: ['1200mm', '1450mm', '2m'],
+    weight: ['160g'],
+    color: ['Black'],
+  },
+  keyboards: {
+    product_subtype: ['Gaming keyboard'],
+    layout: ['80%'],
+    switch_type: ['Membrane'],
+    numeric_keypad: ['No'],
+    anti_ghosting: ['19-key'],
+    lighting: ['Three-zone RGB'],
+    keystroke_life: ['5 million keystrokes'],
+    connection: ['Wired'],
+  },
+  controllers: {
+    product_subtype: ['Gaming controller', 'Mobile gaming controller'],
+    connection: ['Bluetooth 5.0', 'USB-C'],
+    platform_compatibility: ['Windows', 'Android', 'iPhone 15 series', 'Android 9.0+'],
+    vibration: ['Dual vibration motors'],
+    sensors: ['Motion sensor'],
+    buttons: ['15 buttons'],
+    triggers: ['Analog triggers'],
+    features: ['Turbo button', 'Interchangeable joysticks', 'Foldable design', 'LED indicators'],
+    charging: ['18W fast charging'],
+    phone_fit: ['Up to 21.08cm'],
+    weight: ['114.8g'],
+  },
+  docking_stations: {
+    product_subtype: ['Docking station', 'Docking stand', 'Laptop stand with hub', 'USB-C dongle'],
+    host_connection: ['USB-C'],
+    video_outputs: ['HDMI', 'DisplayPort', 'VGA', '2 x HDMI + DP'],
+    max_displays: ['3'],
+    usb_ports: ['4 x USB-A + 2 x USB-C', '3 x USB-A + USB-C', '3 x USB 3.0'],
+    ethernet: ['RJ45', 'Gigabit Ethernet'],
+    power_delivery: ['60W', '100W'],
+    card_reader: ['SD/TF'],
+    audio: ['3.5mm audio'],
+    compatibility: ['Chromebook', 'Windows', 'Mac OS', 'Android', 'Linux', 'Chrome'],
+    laptop_size: ['11.6"-15.6"'],
+    material: ['Aluminum alloy'],
+  },
+  connectivity: {
+    product_subtype: ['5G mobile hotspot', '5G dongle', '5G router', 'Wi-Fi mesh router', 'USB-C dongle'],
+    wireless_standard: ['Wi-Fi 6', 'Wi-Fi 6E', 'Wi-Fi 7'],
+    cellular: ['5G', '5G SA/NSA'],
+    max_speed: ['2.7Gbps', '3.5Gbps', '5Gbps data transfer'],
+    users: ['16 devices', '20 devices', '32 devices', '128 devices', '256 concurrent capable'],
+    sim_support: ['Nano SIM', 'SIM + eSIM + vSIM', 'vSIM', 'TRI-SIM'],
+    ethernet: ['Ethernet', 'WAN', 'RJ45'],
+    usb: ['USB-C', 'USB 3.1 Type-C', '2 x USB 3.2 + 2 x USB 2.0'],
+    video_outputs: ['2 x HDMI + DP'],
+    battery: ['6460mAh', '6500mAh', '8000mAh', 'Up to 28 hours'],
+    security: ['WPA3', 'VPN', 'Trend Micro Home Network Security'],
+    ruggedness: ['MIL-STD-810H', 'IP54', 'IP68'],
+    ports: ['SD/TF', '2 x HDMI', 'DisplayPort', 'RJ45', '3.5mm audio'],
+    pack_size: ['Single pack', 'Dual pack', 'Triple pack'],
+    qos: ['Hybrid QoS', 'Intel Killer Prioritization Engine'],
+  },
+  storage: {
+    product_subtype: ['External SSD', 'Internal SSD'],
+    capacity: ['1TB', '2TB', '4TB'],
+    interface: ['USB 3.2 Gen2x2 Type-C', 'PCIe Gen5x4 NVMe'],
+    read_speed: ['2000MB/s', '14000MB/s'],
+    write_speed: ['2000MB/s', '13000MB/s'],
+    form_factor: ['Portable', 'M.2'],
+    heatsink: ['Active heatsink + fan'],
+    dram_cache: ['2GB', '4GB'],
+    endurance: ['1600TBW', '3200TBW'],
+    iops: ['2000K / 1600K IOPS'],
+    lighting: ['RGB'],
+    compatibility: ['Multi-platform'],
   },
 }
 
