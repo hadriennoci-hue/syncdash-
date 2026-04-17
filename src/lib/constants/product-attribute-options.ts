@@ -9,6 +9,16 @@
   | 'docking_stations'
   | 'connectivity'
   | 'storage'
+  | 'graphics_cards'
+  | 'projectors'
+  | 'audio'
+  | 'cameras'
+  | 'electric_scooters'
+  | 'gaming_chairs'
+  | 'gaming_consoles'
+  | 'gaming_desks'
+  | 'webcams'
+  | 'ai_workstations'
 export type AttributeBrand = 'acer' | 'predator'
 
 type AttributeOptionsMap = Record<string, string[]>
@@ -194,6 +204,118 @@ export const ATTRIBUTE_OPTIONS: Record<AttributeCollection, AttributeOptionsMap>
     iops: ['2000K / 1600K IOPS'],
     lighting: ['RGB'],
     compatibility: ['Multi-platform'],
+  },
+  graphics_cards: {
+    product_subtype: ['Graphics card'],
+    gpu_model: ['Intel Arc A750', 'Intel Arc B570', 'Radeon RX 9060 XT', 'Radeon RX 9070', 'Radeon RX 9070 XT'],
+    architecture: ['Intel Xe', 'AMD RDNA 4'],
+    memory: ['8GB GDDR6', '10GB GDDR6', '16GB GDDR6'],
+    memory_bandwidth: ['640GB/s'],
+    gpu_clock: ['2.2GHz'],
+    board_power: ['250W', '340W'],
+    interface: ['PCIe 5.0 x16'],
+    max_resolution: ['8K', '7680x4320'],
+    display_support: ['Up to 4 displays'],
+    ports: ['HDMI 2.0 + 3 x DisplayPort 2.0', 'HDMI 2.1 + DisplayPort 2.1', '3 x DisplayPort 2.1 + 1 x HDMI 2.1a', '2 x DisplayPort 2.1 + 1 x HDMI 2.1a'],
+    cooling: ['Hybrid cooling + vapor chamber', 'FrostBlade cooling', 'Triple FrostBlade 4.0 + vapor chamber', 'Dual FrostBlade fans'],
+    upscaling: ['XeSS', 'FidelityFX Super Resolution 4'],
+    ray_tracing: ['Yes'],
+    color: ['Black', 'White'],
+  },
+  projectors: {
+    product_subtype: ['Projector'],
+    resolution: ['SVGA 800x600', 'XGA 1024x768', 'WXGA 1280x800', 'HD 1280x720', 'FWVGA 854x480', 'FHD 1920x1080', '4K UHD 3840x2160'],
+    contrast_ratio: ['1000:1', '5000:1', '10000:1', '13000:1', '20000:1', '50000:1', '2000000:1'],
+    aspect_ratio: ['4:3', '16:9', '16:10'],
+    throw_ratio: ['1.12-1.47', '1.15-1.5', '1.3', '1.4', '1.49-1.64', '1.5-1.66', '1.54-1.72', '1.55-1.70', '1.94-2.16', '1.96-2.15'],
+    brightness: ['100 lm', '135 ANSI lm', '500 ANSI lm', '800 ANSI lm', '2700 ANSI lm', '3200 ANSI lm', '4000 ANSI lm', '4500 ANSI lm', '4800 ANSI lm', '5000 ANSI lm', '5500 ANSI lm'],
+    lamp_life: ['5000h / 10000h', '20000h / 30000h', '30000h', '50000h'],
+    battery: ['5200mAh'],
+    wireless_projection: ['Yes'],
+    speaker: ['Bluetooth speaker'],
+    durability: ['IP6X', '24/7 operation'],
+    color: ['Black', 'White', 'Blue'],
+  },
+  audio: {
+    product_subtype: ['Soundbar'],
+    connection: ['USB'],
+    sound: ['2.0 stereo'],
+    size: ['16.5"'],
+    power: ['USB-powered'],
+    lighting: ['RGB'],
+    platform_compatibility: ['Windows', 'Android'],
+  },
+  cameras: {
+    product_subtype: ['3D camera'],
+    resolution: ['8MP per eye'],
+    aperture: ['f/2.0'],
+    focal_length: ['3.0mm'],
+    field_of_view: ['80 degrees'],
+    display: ['2.41" touchscreen'],
+    focus: ['Auto focus', 'Touch focus'],
+    stabilization: ['EIS', '6-axis gyroscopic stabilization', 'IMU stabilization'],
+    streaming: ['YouTube 3D', 'Teams', 'Zoom', 'Google Meet'],
+    compatibility: ['Acer SpatialLabs', 'Apple Vision Pro', 'VR/AR headsets', '3D projectors'],
+    weather_resistant: ['Yes'],
+  },
+  electric_scooters: {
+    product_subtype: ['Electric scooter'],
+    max_speed: ['20km/h'],
+    range: ['35km'],
+    charging_time: ['4 hours'],
+    brakes: ['Front and rear disc brakes'],
+    suspension: ['Front and rear suspension'],
+    motor: ['48V / 350W hub motor'],
+  },
+  gaming_chairs: {
+    product_subtype: ['Gaming chair'],
+    backrest: ['90-160 degrees'],
+    armrests: ['1D adjustable', '4D adjustable'],
+    pillows: ['Head pillow', 'Head and back pillows'],
+    max_load: ['170kg'],
+    weight: ['19kg'],
+  },
+  gaming_consoles: {
+    product_subtype: ['Handheld gaming console'],
+    operating_system: ['Win 11 Home'],
+    processor: ['AMD Ryzen 7 8840HS'],
+    screen_size: ['7"'],
+    resolution: ['1920x1080'],
+    refresh_rate: ['144'],
+    ram: ['16'],
+    ram_type: ['LPDDR5X'],
+    storage: ['1TB SSD'],
+    gpu: ['Radeon 780M'],
+  },
+  gaming_desks: {
+    product_subtype: ['Gaming desk'],
+    lighting: ['RGB'],
+    features: ['Headset hook', 'Drink holder', 'Cable cutouts'],
+  },
+  webcams: {
+    product_subtype: ['Webcam'],
+    resolution: ['FHD 1080p'],
+    frame_rate: ['30fps'],
+    field_of_view: ['80 degrees'],
+    microphone: ['Noise-reducing microphone'],
+    privacy_cover: ['Yes'],
+    compatibility: ['Windows', 'Linux', 'Mac'],
+  },
+  ai_workstations: {
+    product_subtype: ['AI mini workstation'],
+    processor: ['NVIDIA Grace Blackwell GB10'],
+    processor_cores: ['20'],
+    ai_performance: ['1 PFLOP FP4'],
+    memory: ['128GB LPDDR5X unified'],
+    storage: ['4TB PCIe 4.0 NVMe SSD'],
+    operating_system: ['NVIDIA DGX OS'],
+    ethernet: ['10GbE RJ45'],
+    ports: ['HDMI 2.1b', '4 x USB-C 3.2 Gen 2x2'],
+    chassis_volume: ['1.2L'],
+    dimensions: ['150x150x50.5mm'],
+    weight: ['1.2kg'],
+    power_adapter: ['240W'],
+    model_size: ['Up to 200B parameters', 'Up to 405B parameters with two units'],
   },
 }
 

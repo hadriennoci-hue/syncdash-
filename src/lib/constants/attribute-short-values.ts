@@ -153,6 +153,16 @@ export const ATTRIBUTE_SHORT_VALUE_MAP: AttributeShortValueMap = {
   docking_stations: {},
   connectivity: {},
   storage: {},
+  graphics_cards: {},
+  projectors: {},
+  audio: {},
+  cameras: {},
+  electric_scooters: {},
+  gaming_chairs: {},
+  gaming_consoles: {},
+  gaming_desks: {},
+  webcams: {},
+  ai_workstations: {},
 }
 
 function normalizeValue(raw: string): string {
