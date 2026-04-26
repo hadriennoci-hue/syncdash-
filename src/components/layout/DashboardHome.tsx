@@ -322,7 +322,7 @@ export function DashboardHome() {
             label: labels[platform] ?? platform,
             progress: 0,
             status: 'idle' as const,
-            message: 'Waiting',
+            message: platform === 'libre_market' || platform === 'xmr_bazaar' ? 'Queued for runner' : 'Queued',
             total: platform === 'libre_market' || platform === 'xmr_bazaar' ? browserTotals[platform] : undefined,
             processed: 0,
             failed: 0,
@@ -569,6 +569,21 @@ export function DashboardHome() {
             result?: ChannelSyncResult
             results?: ChannelSyncResult[]
             message?: string
+          }
+
+          if (name === 'push_start') {
+            setPushBars((prev) => Object.fromEntries(
+              Object.entries(prev).map(([platform, bar]) => [
+                platform,
+                {
+                  ...bar,
+                  status: bar.status === 'success' ? 'success' : 'running',
+                  message: platform === 'libre_market' || platform === 'xmr_bazaar'
+                    ? 'Queued for runner'
+                    : 'Preparing push...',
+                },
+              ])
+            ))
           }
 
           if (name === 'platform_start' && parsed.platform) {

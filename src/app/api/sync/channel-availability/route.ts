@@ -9,6 +9,12 @@ import { salesChannels } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
 import { findUnsavedChannelRows } from '@/lib/functions/channel-unsaved'
 import { ensureFreshShopifyToken } from '@/lib/functions/tokens'
+import {
+  createChannelPushJob,
+  finishChannelPushJob,
+  markChannelPushJobError,
+  updateChannelPushJobProgress,
+} from '@/lib/functions/channel-push-jobs'
 import type { Platform } from '@/types/platform'
 
 
@@ -26,6 +32,8 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body)
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
   const platforms = parsed.data.platforms as Platform[]
+  const platform = platforms[0]
+  let lastProgress = { processedTargets: 0, totalTargets: 0, blockedOnSku: null as string | null }
 
   for (const platform of platforms) {
     const issues = await findUnsavedChannelRows(platform)
@@ -57,12 +65,52 @@ export async function POST(req: NextRequest) {
     .set({ lastPush: startedAt })
     .where(inArray(salesChannels.id, platforms))
 
-  const results = await syncChannelAvailability(
-    platforms,
-    parsed.data.triggeredBy,
-    { protectRecentChannelEditsHours: parsed.data.protectRecentChannelEditsHours }
-  )
+  const job = await createChannelPushJob(platform, parsed.data.triggeredBy)
 
-  return apiResponse(results)
+  try {
+    const results = await syncChannelAvailability(
+      platforms,
+      parsed.data.triggeredBy,
+      {
+        protectRecentChannelEditsHours: parsed.data.protectRecentChannelEditsHours,
+        onPlatformProgress: async ({ processedTargets, totalTargets, lastProductIds, lastStatus, message }) => {
+          lastProgress = {
+            processedTargets,
+            totalTargets,
+            blockedOnSku: lastStatus === 'error' ? (lastProductIds[0] ?? null) : null,
+          }
+          await updateChannelPushJobProgress(job.id, {
+            processedTargets,
+            totalTargets,
+            lastProductIds,
+            lastStatus,
+            detail: message,
+          })
+        },
+      }
+    )
+
+    const result = results[0]
+    const errorsCount = (result?.errors.length ?? 0) + (result?.incomplete?.length ?? 0)
+    const blockedOnSku = result?.errors[0]?.split(':')[0]
+      ?? result?.incomplete?.[0]?.sku
+      ?? lastProgress.blockedOnSku
+      ?? null
+    await finishChannelPushJob(job.id, {
+      status: errorsCount > 0 ? 'error' : 'success',
+      processedTargets: lastProgress.processedTargets,
+      totalTargets: lastProgress.totalTargets,
+      errorsCount,
+      detail: result?.errors[0]
+        ?? (result?.incomplete?.[0]
+          ? `Incomplete: ${result.incomplete[0].sku}`
+          : `${result?.statusUpdated ?? 0} updated, ${result?.newProductsCreated ?? 0} created, ${result?.zeroedOutOfStock ?? 0} zeroed`),
+      blockedOnSku,
+    })
+
+    return apiResponse(results)
+  } catch (err) {
+    await markChannelPushJobError(job.id, err instanceof Error ? err.message : 'Unknown error')
+    throw err
+  }
 }
-

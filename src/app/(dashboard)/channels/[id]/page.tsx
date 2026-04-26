@@ -20,8 +20,24 @@ interface Channel {
   enabled:       number
   config:        ChannelConfig | null
   lastPush:      string | null
+  pushJob:       ChannelPushJob | null
   counts:        { synced: number; pending: number; failed: number; total: number }
   products:      Product[]
+}
+
+interface ChannelPushJob {
+  id: string
+  status: 'running' | 'success' | 'error' | string
+  startedAt: string
+  finishedAt: string | null
+  touched: number
+  errorsCount: number
+  detail: string | null
+  processedTargets: number
+  totalTargets: number | null
+  lastProductIds: string[]
+  lastStatus: 'success' | 'error' | null
+  blockedOnSku: string | null
 }
 
 interface Product {
@@ -70,6 +86,10 @@ function handleCopyCmd() {
   const { data, isLoading } = useQuery({
     queryKey: ['channel', params.id],
     queryFn:  () => apiFetch(`/api/channels/${params.id}?page=1&perPage=1000`),
+    refetchInterval: (query) => {
+      const channel = query.state.data?.data as Channel | undefined
+      return channel?.pushJob?.status === 'running' ? 5000 : false
+    },
   })
 
   const products: Product[] = useMemo(
@@ -161,6 +181,11 @@ function handleCopyCmd() {
 
   const isBrowser       = c.connectorType === 'browser'
   const hasProductTable = !isBrowser || products.length > 0
+  const pushJob = c.pushJob
+  const pushJobStarted = pushJob?.startedAt ? new Date(pushJob.startedAt) : null
+  const pushJobElapsedMinutes = pushJobStarted
+    ? Math.max(0, Math.round((Date.now() - pushJobStarted.getTime()) / 60000))
+    : null
 
   return (
     <div className="space-y-3 w-full max-w-none pb-16">
@@ -203,6 +228,57 @@ function handleCopyCmd() {
           </div>
         </div>
       </div>
+
+      {pushJob && (
+        <div className={`border rounded p-3 text-xs space-y-2 ${
+          pushJob.status === 'running'
+            ? 'border-amber-400/60 bg-amber-50/40 dark:bg-amber-900/10'
+            : pushJob.status === 'error'
+              ? 'border-red-400/60 bg-red-50/40 dark:bg-red-900/10'
+              : 'border-emerald-400/60 bg-emerald-50/40 dark:bg-emerald-900/10'
+        }`}>
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-medium">
+              Push job:{' '}
+              <span className={
+                pushJob.status === 'running'
+                  ? 'text-amber-600'
+                  : pushJob.status === 'error'
+                    ? 'text-destructive'
+                    : 'text-emerald-600'
+              }>
+                {pushJob.status}
+              </span>
+            </p>
+            <p className="font-mono text-muted-foreground">
+              {pushJobStarted ? pushJobStarted.toLocaleString() : 'â€”'}
+            </p>
+          </div>
+          <div className="grid gap-1 sm:grid-cols-2">
+            <p className="text-muted-foreground">
+              Progress: <span className="font-mono text-foreground">{pushJob.processedTargets}/{pushJob.totalTargets ?? '?'}</span>
+            </p>
+            <p className="text-muted-foreground">
+              Errors: <span className="font-mono text-foreground">{pushJob.errorsCount}</span>
+            </p>
+            <p className="text-muted-foreground">
+              Current SKU: <span className="font-mono text-foreground">{pushJob.blockedOnSku ?? pushJob.lastProductIds[0] ?? 'â€”'}</span>
+            </p>
+            <p className="text-muted-foreground">
+              Elapsed: <span className="font-mono text-foreground">{pushJobElapsedMinutes != null ? `${pushJobElapsedMinutes} min` : 'â€”'}</span>
+            </p>
+          </div>
+          <p className="text-muted-foreground">
+            {pushJob.status === 'running'
+              ? 'Still running.'
+              : pushJob.status === 'error'
+                ? 'Blocked or finished with errors.'
+                : 'Finished.'}
+            {' '}
+            <span className="text-foreground">{pushJob.detail ?? 'No detail available.'}</span>
+          </p>
+        </div>
+      )}
 
       {/* Browser push command */}
       {isBrowser && showCmd && (

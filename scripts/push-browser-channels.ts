@@ -72,6 +72,7 @@ interface ProductDetail {
   images:      ProductImage[]
   prices:      Record<string, { price: number | null; compareAt: number | null } | undefined>
   platforms:   Record<string, { platformId: string; syncStatus: string } | undefined>
+  pushStatus?: Record<string, string | undefined>
 }
 interface ChannelProductSummary {
   sku: string
@@ -87,6 +88,10 @@ interface BrowserRunReport {
   failed: number
   errors: string[]
   dryRun: boolean
+}
+
+interface SyncJobCreateResponse {
+  data: { id: string; startedAt: string }
 }
 
 async function apiFetch(method: string, apiPath: string, body: unknown, token: string, base: string): Promise<Response> {
@@ -145,8 +150,26 @@ async function markDone(
   const res = await apiFetch('PATCH', `/api/products/${sku}/push-status`, {
     platform, status: 'done',
   }, token, base)
-  if (res.ok) console.log(`  âœ… ${sku}: pushed_${platform} = done`)
-  else console.log(`  âš ï¸  Failed to mark ${sku} done: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Failed to mark ${sku} done: HTTP ${res.status}${body ? ` ${body.slice(0, 300)}` : ''}`)
+  }
+
+  let verified = false
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const detail = await getProductDetail(sku, token, base)
+    if (detail.pushStatus?.[platform] === 'done') {
+      verified = true
+      break
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+  }
+
+  if (!verified) {
+    throw new Error(`Marked ${sku} done but API still reports pushed_${platform} != done`)
+  }
+
+  console.log(`  âœ… ${sku}: pushed_${platform} = done`)
 }
 
 async function upsertMappingOnly(
@@ -201,6 +224,80 @@ async function postProductProgress(
     status,
     message: message.slice(0, 4900),
     triggeredBy: 'agent',
+  }, token, base).catch(() => {})
+}
+
+async function createBrowserSyncJob(
+  platform: 'libre_market' | 'xmr_bazaar',
+  token: string,
+  base: string
+): Promise<string | null> {
+  try {
+    const res = await apiFetch('POST', '/api/sync/jobs', {
+      platform,
+      triggeredBy: 'agent',
+      jobType: 'browser_push',
+    }, token, base)
+    if (!res.ok) return null
+    const json = await res.json() as SyncJobCreateResponse
+    return json.data.id
+  } catch {
+    return null
+  }
+}
+
+async function updateBrowserSyncJobProgress(
+  jobId: string | null,
+  payload: {
+    processedTargets: number
+    totalTargets: number
+    lastProductIds: string[]
+    lastStatus: 'success' | 'error'
+    detail: string
+  },
+  token: string,
+  base: string
+): Promise<void> {
+  if (!jobId) return
+  await apiFetch('PATCH', '/api/sync/jobs', {
+    action: 'progress',
+    jobId,
+    ...payload,
+  }, token, base).catch(() => {})
+}
+
+async function finishBrowserSyncJob(
+  jobId: string | null,
+  report: BrowserRunReport,
+  detail: string,
+  blockedOnSku: string | null,
+  token: string,
+  base: string
+): Promise<void> {
+  if (!jobId) return
+  await apiFetch('PATCH', '/api/sync/jobs', {
+    action: 'finish',
+    jobId,
+    status: report.failed > 0 ? 'error' : 'success',
+    processedTargets: report.processed,
+    totalTargets: report.queued,
+    errorsCount: report.failed,
+    detail,
+    blockedOnSku,
+  }, token, base).catch(() => {})
+}
+
+async function failBrowserSyncJob(
+  jobId: string | null,
+  detail: string,
+  token: string,
+  base: string
+): Promise<void> {
+  if (!jobId) return
+  await apiFetch('PATCH', '/api/sync/jobs', {
+    action: 'error',
+    jobId,
+    detail,
   }, token, base).catch(() => {})
 }
 
@@ -951,16 +1048,21 @@ async function processPlatform(
   apiBase: string
 ): Promise<BrowserRunReport> {
   console.log(`\n${'='.repeat(50)}\n${platform.toUpperCase()}\n${'='.repeat(50)}`)
+  const jobId = await createBrowserSyncJob(platform, token, apiBase)
 
   const skus = await getQueuedSkus(platform, token, apiBase)
   if (skus.length === 0) {
     console.log('  Nothing queued.')
-    return { platform, queued: 0, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: IS_DRY_RUN }
+    const emptyReport = { platform, queued: 0, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: IS_DRY_RUN }
+    await finishBrowserSyncJob(jobId, emptyReport, 'Nothing queued', null, token, apiBase)
+    return emptyReport
   }
   console.log(`  ${skus.length} product(s) queued: ${skus.join(', ')}`)
   if (IS_DRY_RUN) {
     console.log('  [dry-run] Skipping.')
-    return { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: true }
+    const dryReport = { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: true }
+    await finishBrowserSyncJob(jobId, dryReport, 'Dry run only', null, token, apiBase)
+    return dryReport
   }
 
   // Fetch full product data for all queued SKUs
@@ -979,7 +1081,9 @@ async function processPlatform(
   }
   if (products.length === 0) {
     console.log('  No eligible products after checks.')
-    return { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: false }
+    const emptyEligibleReport = { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: false }
+    await finishBrowserSyncJob(jobId, emptyEligibleReport, 'No eligible products after checks', null, token, apiBase)
+    return emptyEligibleReport
   }
 
   const report: BrowserRunReport = {
@@ -1089,6 +1193,13 @@ async function processPlatform(
           token,
           apiBase
         )
+        await updateBrowserSyncJobProgress(jobId, {
+          processedTargets: report.processed,
+          totalTargets: report.queued,
+          lastProductIds: [product.id],
+          lastStatus: 'success',
+          detail: createdOrRemapped ? `Created ${product.id} -> ${platformId}` : `Updated ${product.id} -> ${platformId}`,
+        }, token, apiBase)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`    âŒ Failed: ${msg}`)
@@ -1096,6 +1207,13 @@ async function processPlatform(
         report.errors.push(`${product.id}: ${msg}`)
         report.processed++
         await postProductProgress(product.id, platform, 'error', msg, token, apiBase)
+        await updateBrowserSyncJobProgress(jobId, {
+          processedTargets: report.processed,
+          totalTargets: report.queued,
+          lastProductIds: [product.id],
+          lastStatus: 'error',
+          detail: `${product.id}: ${msg}`,
+        }, token, apiBase)
         await page.screenshot({
           path: path.join(process.cwd(), 'scripts', `error-${platform}-${product.id}.png`),
           fullPage: true,
@@ -1209,8 +1327,22 @@ async function processPlatform(
     if (platform === 'libre_market') await lmLogout(page)
     else await xmrLogout(page)
     console.log('\n  Logged out.')
+    await finishBrowserSyncJob(
+      jobId,
+      report,
+      report.failed > 0
+        ? (report.errors[0] ?? `Completed with ${report.failed} errors`)
+        : `Completed: ${report.processed}/${report.queued} processed`,
+      report.failed > 0 ? (report.errors[0]?.split(':')[0] ?? null) : null,
+      token,
+      apiBase
+    )
     return report
 
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await failBrowserSyncJob(jobId, message, token, apiBase)
+    throw err
   } finally {
     await page.waitForTimeout(2000)
     await browser.close()
@@ -1243,6 +1375,3 @@ async function main() {
 }
 
 main().catch((err) => { console.error(err); process.exit(1) })
-
-
-

@@ -5,6 +5,7 @@ import { db } from '@/lib/db/client'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
 import { products, salesChannels } from '@/lib/db/schema'
 import { eq, or, desc, sql } from 'drizzle-orm'
+import { getLatestChannelPushJob } from '@/lib/functions/channel-push-jobs'
 import type { Platform } from '@/types/platform'
 
 const WAREHOUSES = ['ireland', 'acer_store', 'poland', 'dropshipping'] as const
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     enabled:       channel.enabled,
     config:        channel.config ? JSON.parse(channel.config) : null,
     lastPush:      channel.lastPush,
+    pushJob:       await getLatestChannelPushJob(platform),
   }
 
   // Browser channels have no push columns yet — return metadata only

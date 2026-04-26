@@ -9,6 +9,12 @@ import { salesChannels } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
 import { findUnsavedChannelRows } from '@/lib/functions/channel-unsaved'
 import { ensureFreshShopifyToken } from '@/lib/functions/tokens'
+import {
+  createChannelPushJob,
+  finishChannelPushJob,
+  markChannelPushJobError,
+  updateChannelPushJobProgress,
+} from '@/lib/functions/channel-push-jobs'
 import type { Platform } from '@/types/platform'
 
 const schema = z.object({
@@ -36,9 +42,17 @@ export async function POST(req: NextRequest) {
     start(controller) {
       const results: ChannelSyncResult[] = []
       const push = (event: string, data: unknown) => controller.enqueue(encoder.encode(toSse(event, data)))
+      const platform = platforms[0]
+      let jobId: string | null = null
+      let lastProgress: { processedTargets: number; totalTargets: number; blockedOnSku?: string | null } = {
+        processedTargets: 0,
+        totalTargets: 0,
+      }
 
       void (async () => {
         push('push_start', { totalPlatforms: platforms.length, platforms })
+        const job = await createChannelPushJob(platform, parsed.data.triggeredBy)
+        jobId = job.id
         for (const platform of platforms) {
           const issues = await findUnsavedChannelRows(platform)
           if (issues.length > 0) {
@@ -71,7 +85,21 @@ export async function POST(req: NextRequest) {
             onPlatformStart: ({ platform, index, total }) => {
               push('platform_start', { platform, index, total })
             },
-            onPlatformProgress: ({ platform, index, total, processedTargets, totalTargets, lastProductIds, lastStatus, message }) => {
+            onPlatformProgress: async ({ platform, index, total, processedTargets, totalTargets, lastProductIds, lastStatus, message }) => {
+              lastProgress = {
+                processedTargets,
+                totalTargets,
+                blockedOnSku: lastStatus === 'error' ? (lastProductIds[0] ?? null) : null,
+              }
+              if (jobId) {
+                await updateChannelPushJobProgress(jobId, {
+                  processedTargets,
+                  totalTargets,
+                  lastProductIds,
+                  lastStatus,
+                  detail: message,
+                })
+              }
               push('platform_progress', {
                 platform,
                 index,
@@ -83,8 +111,26 @@ export async function POST(req: NextRequest) {
                 message,
               })
             },
-            onPlatformComplete: ({ platform, index, total, result }) => {
+            onPlatformComplete: async ({ platform, index, total, result }) => {
               results.push(result)
+              if (jobId) {
+                const errorsCount = result.errors.length + (result.incomplete?.length ?? 0)
+                const blockedOnSku = result.errors[0]?.split(':')[0]
+                  ?? result.incomplete?.[0]?.sku
+                  ?? lastProgress.blockedOnSku
+                  ?? null
+                await finishChannelPushJob(jobId, {
+                  status: errorsCount > 0 ? 'error' : 'success',
+                  processedTargets: lastProgress.processedTargets,
+                  totalTargets: lastProgress.totalTargets,
+                  errorsCount,
+                  detail: result.errors[0]
+                    ?? (result.incomplete?.[0]
+                      ? `Incomplete: ${result.incomplete[0].sku}`
+                      : `${result.statusUpdated} updated, ${result.newProductsCreated} created, ${result.zeroedOutOfStock} zeroed`),
+                  blockedOnSku,
+                })
+              }
               push('platform_result', { platform, index, total, result })
             },
           }
@@ -93,6 +139,9 @@ export async function POST(req: NextRequest) {
         push('push_done', { results: finalResults })
         controller.close()
       })().catch((err) => {
+        if (jobId) {
+          void markChannelPushJobError(jobId, err instanceof Error ? err.message : 'Unknown error')
+        }
         push('stream_error', { message: err instanceof Error ? err.message : 'Unknown error' })
         controller.close()
       })
