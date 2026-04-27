@@ -4,18 +4,20 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { adsAccounts, adsCampaigns, adsCreatives, productImages, products } from '@/lib/db/schema'
+import { adsAccounts, adsCampaigns, adsCreatives, productImages, products, socialMediaPosts } from '@/lib/db/schema'
 
-const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product'])
+const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product', 'x_promoted_tweet'])
 
 const createSchema = z.object({
-  providerId: z.enum(['google_ads', 'meta_ads', 'tiktok_ads']),
+  providerId: z.enum(['google_ads', 'x_ads', 'tiktok_ads']),
   accountPk: z.number().int().positive(),
   name: z.string().min(1).max(255),
   objective: z.string().min(1).max(120),
   destinationType: destinationTypeSchema,
   productSku: z.string().min(1),
   destinationUrl: z.string().url().optional(),
+  promotedTweetId: z.string().regex(/^\d+$/).optional(),
+  socialPostPk: z.number().int().positive().optional(),
   status: z.enum(['draft', 'approved', 'scheduled', 'live', 'paused', 'completed', 'canceled']).default('draft'),
   startAt: z.string().datetime().optional(),
   endAt: z.string().datetime().optional(),
@@ -46,6 +48,8 @@ export async function GET(req: NextRequest) {
     accountPk: adsCampaigns.accountPk,
     providerId: adsAccounts.providerId,
     accountName: adsAccounts.accountName,
+    accountExternalId: adsAccounts.accountExternalId,
+    accountConfigJson: adsAccounts.configJson,
     name: adsCampaigns.name,
     objective: adsCampaigns.objective,
     status: adsCampaigns.status,
@@ -58,6 +62,8 @@ export async function GET(req: NextRequest) {
     destinationType: adsCampaigns.destinationType,
     productSku: adsCampaigns.productSku,
     destinationUrl: adsCampaigns.destinationUrl,
+    promotedTweetId: adsCampaigns.promotedTweetId,
+    socialPostPk: adsCampaigns.socialPostPk,
     destinationPending: adsCampaigns.destinationPending,
     targetingJson: adsCampaigns.targetingJson,
     trackingJson: adsCampaigns.trackingJson,
@@ -117,7 +123,40 @@ export async function GET(req: NextRequest) {
   }
 
   const withImages = rows.map((r) => ({
-    ...r,
+    campaignPk: r.campaignPk,
+    accountPk: r.accountPk,
+    providerId: r.providerId,
+    accountName: r.accountName,
+    accountExternalId: r.accountExternalId,
+    name: r.name,
+    objective: r.objective,
+    status: r.status,
+    providerCampaignId: r.providerCampaignId,
+    startAt: r.startAt,
+    endAt: r.endAt,
+    budgetMode: r.budgetMode,
+    budgetAmountCents: r.budgetAmountCents,
+    currencyCode: r.currencyCode,
+    destinationType: r.destinationType,
+    productSku: r.productSku,
+    destinationUrl: r.destinationUrl,
+    promotedTweetId: r.promotedTweetId,
+    socialPostPk: r.socialPostPk,
+    destinationPending: r.destinationPending,
+    targetingJson: r.targetingJson,
+    trackingJson: r.trackingJson,
+    notes: r.notes,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    accountDummyMode: (() => {
+      if (!r.accountConfigJson) return false
+      try {
+        const parsed = JSON.parse(r.accountConfigJson) as Record<string, unknown>
+        return parsed.dummyMode === 1 || parsed.dummyMode === true
+      } catch {
+        return false
+      }
+    })(),
     productImageUrl: r.productSku ? (imageMap.get(r.productSku) ?? null) : null,
     creativePrimaryText: creativeMap.get(r.campaignPk)?.primaryText ?? null,
     creativeHeadline: creativeMap.get(r.campaignPk)?.headline ?? null,
@@ -162,9 +201,32 @@ export async function POST(req: NextRequest) {
     return apiError('NOT_FOUND', `product SKU ${data.productSku} not found`, 404)
   }
 
-  const destinationPending = data.destinationUrl ? 0 : 1
+  if (data.socialPostPk) {
+    const post = await db.query.socialMediaPosts.findFirst({
+      where: eq(socialMediaPosts.postPk, data.socialPostPk),
+      columns: { postPk: true },
+    })
+    if (!post) {
+      return apiError('NOT_FOUND', `social post ${data.socialPostPk} not found`, 404)
+    }
+  }
+
+  const hasXTweetRef = !!(data.promotedTweetId || data.socialPostPk)
+  if (data.providerId === 'x_ads' && !hasXTweetRef) {
+    return apiError('VALIDATION_ERROR', 'x_ads campaigns require promotedTweetId or socialPostPk', 400)
+  }
+  if (data.providerId === 'x_ads' && data.destinationType !== 'x_promoted_tweet') {
+    return apiError('VALIDATION_ERROR', 'x_ads campaigns must use destinationType=x_promoted_tweet', 400)
+  }
+  if (data.providerId !== 'x_ads' && data.destinationType === 'x_promoted_tweet') {
+    return apiError('VALIDATION_ERROR', 'x_promoted_tweet is only valid for x_ads campaigns', 400)
+  }
+
+  const destinationPending = data.providerId === 'x_ads'
+    ? (hasXTweetRef ? 0 : 1)
+    : (data.destinationUrl ? 0 : 1)
   if (data.status === 'scheduled' && destinationPending === 1) {
-    return apiError('VALIDATION_ERROR', 'Cannot create scheduled campaign without destinationUrl', 400)
+    return apiError('VALIDATION_ERROR', 'Cannot create scheduled campaign while destination is pending', 400)
   }
 
   const now = new Date().toISOString()
@@ -183,6 +245,8 @@ export async function POST(req: NextRequest) {
     destinationType: data.destinationType,
     productSku: data.productSku,
     destinationUrl: data.destinationUrl ?? null,
+    promotedTweetId: data.promotedTweetId ?? null,
+    socialPostPk: data.socialPostPk ?? null,
     destinationPending,
     notes: data.notes ?? null,
     createdBy: data.createdBy,

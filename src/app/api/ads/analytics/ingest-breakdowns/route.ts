@@ -34,7 +34,7 @@ const segmentMetricSchema = z.object({
 })
 
 const bodySchema = z.object({
-  providerId: z.enum(['google_ads', 'meta_ads', 'tiktok_ads']),
+  providerId: z.enum(['google_ads', 'x_ads', 'tiktok_ads']),
   accountPk: z.number().int().positive(),
   creativeMetrics: z.array(creativeMetricSchema).default([]),
   segmentMetrics: z.array(segmentMetricSchema).default([]),

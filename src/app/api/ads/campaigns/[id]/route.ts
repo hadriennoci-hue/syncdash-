@@ -4,9 +4,9 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError, apiResponse } from '@/lib/utils/api-response'
 import { db } from '@/lib/db/client'
-import { adsCampaigns, adsCreatives, products } from '@/lib/db/schema'
+import { adsCampaigns, adsCreatives, adsAccounts, products, socialMediaPosts } from '@/lib/db/schema'
 
-const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product'])
+const destinationTypeSchema = z.enum(['shopify_komputerzz_product', 'tiktok_shop_product', 'x_promoted_tweet'])
 
 const nullableIsoDatetime = z.union([z.string().datetime(), z.literal(''), z.null()]).transform((value) => {
   if (value === '' || value == null) return null
@@ -29,6 +29,11 @@ const patchSchema = z.object({
     if (value === '' || value == null) return null
     return value
   }).optional(),
+  promotedTweetId: z.union([z.string().regex(/^\d+$/), z.literal(''), z.null()]).transform((value) => {
+    if (value === '' || value == null) return null
+    return value
+  }).optional(),
+  socialPostPk: z.union([z.number().int().positive(), z.null()]).optional(),
   targeting: nullableJsonObject.optional(),
   tracking: nullableJsonObject.optional(),
   notes: z.union([z.string().max(2000), z.null()]).optional(),
@@ -66,13 +71,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: eq(adsCampaigns.campaignPk, campaignPk),
     columns: {
       campaignPk: true,
+      accountPk: true,
       destinationType: true,
       productSku: true,
       destinationUrl: true,
+      promotedTweetId: true,
+      socialPostPk: true,
     },
   })
   if (!existing) {
     return apiError('NOT_FOUND', `campaign ${campaignPk} not found`, 404)
+  }
+
+  const account = await db.query.adsAccounts.findFirst({
+    where: eq(adsAccounts.accountPk, existing.accountPk),
+    columns: { providerId: true },
+  })
+  if (!account) {
+    return apiError('NOT_FOUND', `ads account ${existing.accountPk} not found`, 404)
   }
 
   const nextProductSku = parsed.data.productSku === undefined ? existing.productSku : parsed.data.productSku
@@ -86,8 +102,35 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  const nextSocialPostPk = parsed.data.socialPostPk === undefined ? existing.socialPostPk : parsed.data.socialPostPk
+  if (nextSocialPostPk) {
+    const post = await db.query.socialMediaPosts.findFirst({
+      where: eq(socialMediaPosts.postPk, nextSocialPostPk),
+      columns: { postPk: true },
+    })
+    if (!post) {
+      return apiError('NOT_FOUND', `social post ${nextSocialPostPk} not found`, 404)
+    }
+  }
+
   const nextDestinationUrl = parsed.data.destinationUrl === undefined ? existing.destinationUrl : parsed.data.destinationUrl
-  const destinationPending = nextDestinationUrl ? 0 : 1
+  const nextDestinationType = parsed.data.destinationType === undefined ? existing.destinationType : parsed.data.destinationType
+  const nextPromotedTweetId = parsed.data.promotedTweetId === undefined ? existing.promotedTweetId : parsed.data.promotedTweetId
+  const hasXTweetRef = !!(nextPromotedTweetId || nextSocialPostPk)
+
+  if (account.providerId === 'x_ads' && !hasXTweetRef) {
+    return apiError('VALIDATION_ERROR', 'x_ads campaigns require promotedTweetId or socialPostPk', 400)
+  }
+  if (account.providerId === 'x_ads' && nextDestinationType !== 'x_promoted_tweet') {
+    return apiError('VALIDATION_ERROR', 'x_ads campaigns must use destinationType=x_promoted_tweet', 400)
+  }
+  if (account.providerId !== 'x_ads' && nextDestinationType === 'x_promoted_tweet') {
+    return apiError('VALIDATION_ERROR', 'x_promoted_tweet is only valid for x_ads campaigns', 400)
+  }
+
+  const destinationPending = account.providerId === 'x_ads'
+    ? (hasXTweetRef ? 0 : 1)
+    : (nextDestinationUrl ? 0 : 1)
   const now = new Date().toISOString()
 
   await db.update(adsCampaigns).set({
@@ -101,6 +144,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     destinationType: parsed.data.destinationType,
     productSku: parsed.data.productSku,
     destinationUrl: parsed.data.destinationUrl,
+    promotedTweetId: parsed.data.promotedTweetId,
+    socialPostPk: parsed.data.socialPostPk,
     destinationPending,
     targetingJson: parsed.data.targeting === undefined ? undefined : (parsed.data.targeting ? JSON.stringify(parsed.data.targeting) : null),
     trackingJson: parsed.data.tracking === undefined ? undefined : (parsed.data.tracking ? JSON.stringify(parsed.data.tracking) : null),

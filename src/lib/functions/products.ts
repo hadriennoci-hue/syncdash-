@@ -49,6 +49,7 @@ interface CreateProductInput {
   title: string
   ean?: string
   description?: string
+  metaDescription?: string
   tags?: string[]
   vendor?: string
   productType?: string
@@ -88,6 +89,7 @@ export async function createProduct(
     title:       input.title,
     ean:         input.ean ?? null,
     description: cleanDescription(input.description),
+    metaDescription: cleanDescription(input.metaDescription),
     tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
     status:      'active',
     taxCode:     input.taxCode ?? null,
@@ -102,6 +104,7 @@ export async function createProduct(
       title:       input.title,
       ean:         input.ean ?? null,
       description: cleanDescription(input.description),
+      metaDescription: cleanDescription(input.metaDescription),
       tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
       updatedAt:   new Date().toISOString(),
     },
@@ -166,6 +169,7 @@ export async function createProduct(
         ean:         input.ean ?? null,
         title:       input.title,
         description: cleanDescription(input.description),
+        metaDescription: cleanDescription(input.metaDescription),
         status:      'active',
         vendor:      input.vendor ?? null,
         productType: input.productType ?? null,
@@ -221,6 +225,7 @@ interface UpdateProductInput {
   fields: {
     title?: string
     description?: string
+    metaDescription?: string
     tags?: string[]
     status?: 'active' | 'archived'
     isFeatured?: boolean
@@ -250,6 +255,7 @@ export async function updateProduct(
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
   if (input.fields.description !== undefined) d1Update.description = cleanDescription(input.fields.description)
+  if (input.fields.metaDescription !== undefined) d1Update.metaDescription = cleanDescription(input.fields.metaDescription)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
@@ -333,6 +339,7 @@ export async function updateProduct(
       await connector.updateProduct(mapping.platformId, {
         title:       input.fields.title,
         description: cleanDescription(input.fields.description),
+        metaDescription: cleanDescription(input.fields.metaDescription),
         status:      input.fields.status,
         categoryIds: input.fields.categoryIds,
       })
@@ -361,6 +368,7 @@ interface UpdateProductLocalInput {
   fields: {
     title?: string
     description?: string
+    metaDescription?: string
     tags?: string[]
     status?: 'active' | 'archived'
     isFeatured?: boolean
@@ -378,6 +386,7 @@ export async function updateProductLocal(
   const d1Update: Record<string, unknown> = { updatedAt: new Date().toISOString() }
   if (input.fields.title !== undefined)       d1Update.title = input.fields.title
   if (input.fields.description !== undefined) d1Update.description = cleanDescription(input.fields.description)
+  if (input.fields.metaDescription !== undefined) d1Update.metaDescription = cleanDescription(input.fields.metaDescription)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0

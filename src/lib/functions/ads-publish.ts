@@ -3,6 +3,7 @@ import { db } from '@/lib/db/client'
 import { adsAccounts, adsCampaigns, adsPublishJobs } from '@/lib/db/schema'
 import { logOperation } from '@/lib/functions/log'
 import { getGoogleAdsAccessToken } from '@/lib/functions/google-ads'
+import { publishXAdsCampaign } from '@/lib/functions/x-ads'
 
 type AdsPublishSummary = {
   enabled: boolean
@@ -226,11 +227,7 @@ async function markJob(jobPk: number, status: string, patch: {
 }
 
 export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
-  const enabled = process.env.GOOGLE_ADS_PUBLISH_ENABLED === '1'
   const errors: string[] = []
-  if (!enabled) {
-    return { enabled, scanned: 0, published: 0, failed: 0, skipped: 0, errors }
-  }
 
   const now = new Date().toISOString()
   const dueJobs = await db.select({
@@ -252,12 +249,17 @@ export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
     ))
     .orderBy(asc(adsPublishJobs.scheduledFor), asc(adsPublishJobs.jobPk))
 
+  const enabled = (
+    process.env.GOOGLE_ADS_PUBLISH_ENABLED === '1'
+    || dueJobs.some((job) => job.providerId === 'x_ads')
+  )
+
   let published = 0
   let failed = 0
   let skipped = 0
 
   for (const job of dueJobs) {
-    if (job.providerId !== 'google_ads' || job.targetType !== 'campaign' || job.action !== 'publish') {
+    if (job.targetType !== 'campaign' || job.action !== 'publish') {
       skipped += 1
       await markJob(job.jobPk, 'error', {
         lastError: `Unsupported ads publish job provider=${job.providerId} targetType=${job.targetType} action=${job.action}`,
@@ -276,7 +278,24 @@ export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
     }).where(eq(adsPublishJobs.jobPk, job.jobPk))
 
     try {
-      const result = await publishGoogleAdsCampaign(job)
+      let result: { providerCampaignId: string; response: unknown; request: unknown }
+      let platform = job.providerId
+      if (job.providerId === 'google_ads') {
+        if (process.env.GOOGLE_ADS_PUBLISH_ENABLED !== '1') {
+          skipped += 1
+          await markJob(job.jobPk, 'queued', {
+            lastError: 'Google Ads publishing is disabled',
+            finishedAt: new Date().toISOString(),
+          })
+          continue
+        }
+        result = await publishGoogleAdsCampaign(job)
+      } else if (job.providerId === 'x_ads') {
+        result = await publishXAdsCampaign(job)
+      } else {
+        throw new Error(`Unsupported ads publish job provider=${job.providerId}`)
+      }
+
       const finishedAt = new Date().toISOString()
       await markJob(job.jobPk, 'success', {
         requestJson: JSON.stringify(result.request),
@@ -285,7 +304,7 @@ export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
       })
       published += 1
       await logOperation({
-        platform: 'google_ads',
+        platform,
         action: 'ads_publish',
         status: 'success',
         message: `jobPk=${job.jobPk} campaignPk=${job.targetPk} providerCampaignId=${result.providerCampaignId}`,
@@ -301,7 +320,7 @@ export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
         finishedAt: new Date().toISOString(),
       })
       await logOperation({
-        platform: 'google_ads',
+        platform: job.providerId,
         action: 'ads_publish',
         status: 'error',
         message: `jobPk=${job.jobPk} campaignPk=${job.targetPk}: ${message}`,

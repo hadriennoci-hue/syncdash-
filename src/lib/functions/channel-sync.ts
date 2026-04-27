@@ -3,11 +3,12 @@ import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
 import { eq, or, gt } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
+import { getProductTranslations, logProductTranslationSync } from './product-translations'
 import { refreshShopifyToken, type ShopifyPlatform } from './tokens'
 import type { Platform, TriggeredBy, ImageInput } from '@/types/platform'
 import { ATTRIBUTE_OPTIONS, type AttributeCollection } from '@/lib/constants/product-attribute-options'
 import { deriveLaptopVariantAxes } from '@/lib/utils/laptop-variant-axes'
-import type { PriceSnapshot } from '@/lib/connectors/types'
+import type { PriceSnapshot, ProductTranslationPayload } from '@/lib/connectors/types'
 
 function priceChanged(
   desired: { price: number | null; compareAt: number | null },
@@ -92,10 +93,19 @@ function isSlugTitleRecoverable(connector: unknown): connector is SlugTitleRecov
   return !!connector && typeof (connector as SlugTitleRecoverable).findProductIdBySlugOrTitle === 'function'
 }
 
+type TranslationCapableConnector = {
+  syncProductTranslations: (productGid: string, translations: ProductTranslationPayload[]) => Promise<void>
+}
+
+function isTranslationCapableConnector(connector: unknown): connector is TranslationCapableConnector {
+  return !!connector && typeof (connector as TranslationCapableConnector).syncProductTranslations === 'function'
+}
+
 interface EligibleProduct {
   id:                      string
   title:                   string
   description:             string | null
+  metaDescription:         string | null
   ean:                     string | null
   variantGroupId:          string | null
   vendor:                  string | null
@@ -1135,6 +1145,7 @@ async function pushPlatform(
           ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
           title: target.titleOverride ?? primary.title,
           description: primary.description,
+          metaDescription: primary.metaDescription,
           status: 'active',
           vendor: primary.vendor,
           productType: primary.productType,
@@ -1325,6 +1336,26 @@ async function pushPlatform(
           )
           if (Object.keys(attrs).length === 0) continue
           await callWithShopifyAuthRetry(() => (connector as any).syncCollectionAttributeValues(target.handle, attrs))
+        }
+      }
+
+      if (platform === 'shopify_komputerzz' && finalPlatformId && isTranslationCapableConnector(connector)) {
+        const translations = await getProductTranslations(primary.id)
+        if (translations.length > 0) {
+          const translationConnector = connector
+          try {
+            await callWithShopifyAuthRetry(() => translationConnector.syncProductTranslations(finalPlatformId!, translations))
+            await logProductTranslationSync(
+              primary.id,
+              platform,
+              'success',
+              `Synced ${translations.length} locale(s) to Shopify`,
+              triggeredBy
+            )
+          } catch (translationErr) {
+            const message = translationErr instanceof Error ? translationErr.message : String(translationErr)
+            await logProductTranslationSync(primary.id, platform, 'error', message, triggeredBy)
+          }
         }
       }
 

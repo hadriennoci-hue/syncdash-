@@ -1,7 +1,8 @@
 import { shopifyLimiter } from '@/lib/utils/rate-limiter'
+import { toShopifyDescriptionHtml } from '@/lib/utils/description'
 import type {
   PlatformConnector, RawProduct, RawVariant, RawImage, RawCollection,
-  RawMetafield, ProductPayload, HealthCheckResult, WarehouseStockOptions, PriceSnapshot,
+  RawMetafield, ProductPayload, HealthCheckResult, WarehouseStockOptions, PriceSnapshot, ProductTranslationPayload,
 } from './types'
 import type { ImageInput } from '@/types/platform'
 
@@ -78,6 +79,28 @@ export class ShopifyConnector implements PlatformConnector {
     const n = Number(gid.split('/').pop() ?? '')
     if (!Number.isFinite(n) || n <= 0) throw new Error(`Invalid Shopify GID: ${gid}`)
     return n
+  }
+
+  private async fetchShopLocales(): Promise<Set<string>> {
+    const query = `query ShopLocales { shopLocales { locale } }`
+    const data = await this.graphql<{ shopLocales: Array<{ locale: string }> }>(query)
+    return new Set(data.shopLocales.map((locale) => locale.locale.toLowerCase()))
+  }
+
+  private async fetchTranslatableDigests(resourceId: string): Promise<Map<string, string>> {
+    const query = `
+      query ResourceDigests($resourceId: ID!) {
+        translatableResource(resourceId: $resourceId) {
+          translatableContent { key digest }
+        }
+      }
+    `
+    const data = await this.graphql<{
+      translatableResource: {
+        translatableContent: Array<{ key: string; digest: string }>
+      } | null
+    }>(query, { resourceId })
+    return new Map((data.translatableResource?.translatableContent ?? []).map((item) => [item.key, item.digest]))
   }
 
   /**
@@ -473,13 +496,15 @@ export class ShopifyConnector implements PlatformConnector {
         }
       }
     `
+    const descriptionHtml = toShopifyDescriptionHtml(data.description)
     const productInput: Record<string, unknown> = {
       title:           data.title,
-      descriptionHtml: data.description ?? '',
+      descriptionHtml,
       status:          data.status.toUpperCase(),
       category:        data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
       productOptions,
     }
+    if (data.metaDescription?.trim()) productInput.seo = { description: data.metaDescription.trim() }
     if (data.vendor)      productInput.vendor = data.vendor
     if (data.productType) productInput.productType = data.productType
 
@@ -560,13 +585,15 @@ export class ShopifyConnector implements PlatformConnector {
         }
       }
     `
+    const descriptionHtml = toShopifyDescriptionHtml(data.description)
     const productInput: Record<string, unknown> = {
       title:           data.title,
-      descriptionHtml: data.description ?? '',
+      descriptionHtml,
       status:          data.status.toUpperCase(),
       // Shopify product taxonomy category (tax classification). Always Electronics.
       category:        data.shopifyCategory ?? SHOPIFY_ELECTRONICS_CATEGORY_GID,
     }
+    if (data.metaDescription?.trim()) productInput.seo = { description: data.metaDescription.trim() }
     if (data.vendor)      productInput.vendor = data.vendor
     if (data.productType) productInput.productType = data.productType
 
@@ -638,7 +665,8 @@ export class ShopifyConnector implements PlatformConnector {
     `
     const productInput: Record<string, unknown> = { id: platformId }
     if (data.title)                     productInput.title = data.title
-    if (data.description !== undefined) productInput.descriptionHtml = data.description ?? ''
+    if (data.description !== undefined) productInput.descriptionHtml = toShopifyDescriptionHtml(data.description)
+    if (data.metaDescription !== undefined) productInput.seo = { description: data.metaDescription?.trim() || null }
     if (data.status)                    productInput.status = data.status.toUpperCase()
     if (data.vendor)                    productInput.vendor = data.vendor
 
@@ -674,6 +702,67 @@ export class ShopifyConnector implements PlatformConnector {
 
   async updateProductForSku(platformId: string, _sku: string, data: Partial<ProductPayload>): Promise<void> {
     await this.updateProduct(platformId, data)
+  }
+
+  async syncProductTranslations(productGid: string, translations: ProductTranslationPayload[]): Promise<void> {
+    const trimmedTranslations = translations
+      .map((translation) => ({
+        locale: translation.locale.trim().toLowerCase(),
+        title: translation.title?.trim() || null,
+        description: translation.description?.trim() || null,
+        metaTitle: translation.metaTitle?.trim() || null,
+        metaDescription: translation.metaDescription?.trim() || null,
+      }))
+      .filter((translation) => (
+        translation.locale
+        && (translation.title || translation.description || translation.metaTitle || translation.metaDescription)
+      ))
+
+    if (trimmedTranslations.length === 0) return
+
+    const locales = await this.fetchShopLocales()
+    const digests = await this.fetchTranslatableDigests(productGid)
+    const mutation = `
+      mutation RegisterTranslations($resourceId: ID!, $translations: [TranslationInput!]!) {
+        translationsRegister(resourceId: $resourceId, translations: $translations) {
+          userErrors { message }
+        }
+      }
+    `
+
+    for (const translation of trimmedTranslations) {
+      if (!locales.has(translation.locale)) continue
+
+      const payload: Array<{ key: string; value: string; locale: string; translatableContentDigest: string }> = []
+      const pushField = (key: string, value: string | null | undefined) => {
+        const digest = digests.get(key)
+        const trimmed = value?.trim()
+        if (!digest || !trimmed) return
+        payload.push({
+          key,
+          value: key === 'body_html' ? toShopifyDescriptionHtml(trimmed) : trimmed,
+          locale: translation.locale,
+          translatableContentDigest: digest,
+        })
+      }
+
+      pushField('title', translation.title)
+      pushField('body_html', translation.description)
+      pushField('meta_title', translation.metaTitle)
+      pushField('meta_description', translation.metaDescription)
+
+      if (payload.length === 0) continue
+
+      const result = await this.graphql<{
+        translationsRegister: {
+          userErrors: Array<{ message: string }>
+        }
+      }>(mutation, { resourceId: productGid, translations: payload })
+
+      if (result.translationsRegister.userErrors.length > 0) {
+        throw new Error(result.translationsRegister.userErrors.map((error) => error.message).join(', '))
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

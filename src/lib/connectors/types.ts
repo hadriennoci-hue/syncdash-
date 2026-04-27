@@ -67,7 +67,7 @@ export interface RawMetafield {
 //
 // Required fields for a SHOPIFY push (createProduct):
 //   - title           → product name
-//   - description     → full HTML description
+//   - description     → canonical description text; Shopify converts this to HTML at push time
 //   - price           → via variants[0].price
 //   - sku             → via variants[0].sku
 //   - status          → 'active' (published + in stock) or 'archived'
@@ -79,7 +79,7 @@ export interface RawMetafield {
 //
 // Required fields for a WOOCOMMERCE push (createProduct):
 //   - title           → product name (name)
-//   - description     → full HTML description
+//   - description     → channel description content
 //   - price           → regular_price
 //   - sku             → set separately via variant or product sku field
 //   - status          → 'active' maps to 'publish'
@@ -99,6 +99,7 @@ export interface ProductPayload {
   ean?: string | null
   title: string
   description: string | null
+  metaDescription?: string | null
   status: 'active' | 'archived'
   vendor: string | null       // maps to WooCommerce brand attribute + Shopify vendor field
   productType: string | null
@@ -117,6 +118,14 @@ export interface ProductPayload {
   // Used by Coincart2 connector to push key/value lists on each product push.
   attributeValues?: Record<string, string[]>
   replaceVariants?: boolean
+}
+
+export interface ProductTranslationPayload {
+  locale: string
+  title?: string | null
+  description?: string | null
+  metaTitle?: string | null
+  metaDescription?: string | null
 }
 
 export interface VariantPayload {
@@ -197,6 +206,10 @@ export interface PlatformConnector {
   syncProductAttributeMetafields?(
     productGid: string,
     attributes: Record<string, string[]>
+  ): Promise<void>
+  syncProductTranslations?(
+    productGid: string,
+    translations: ProductTranslationPayload[]
   ): Promise<void>
   healthCheck(): Promise<HealthCheckResult>
 }

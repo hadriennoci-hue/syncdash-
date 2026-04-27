@@ -22,6 +22,7 @@ export const products = sqliteTable('products', {
   id:               text('id').primaryKey(), // SKU
   title:            text('title').notNull(),
   description:      text('description'),
+  metaDescription:  text('meta_description'),
   tags:             text('tags'), // JSON array string (up to 10 one-word tags)
   status:           text('status').notNull().default('active'), // 'active' | 'archived'
   taxCode:              text('tax_code'),
@@ -86,6 +87,17 @@ export const productPrices = sqliteTable('product_prices', {
   compareAt: real('compare_at'),
   updatedAt: text('updated_at').notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
+
+export const productTranslations = sqliteTable('product_translations', {
+  productId:        text('product_id').notNull().references(() => products.id),
+  locale:           text('locale').notNull(),
+  title:            text('title'),
+  description:      text('description'),
+  metaTitle:        text('meta_title'),
+  metaDescription:  text('meta_description'),
+  createdAt:        text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt:        text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.productId, t.locale] }) }))
 
 export const productMetafields = sqliteTable('product_metafields', {
   id:        text('id').primaryKey(),
@@ -699,6 +711,8 @@ export const adsCampaigns = sqliteTable('ads_campaigns', {
   destinationType:     text('destination_type'),
   productSku:          text('product_sku'),
   destinationUrl:      text('destination_url'),
+  promotedTweetId:     text('promoted_tweet_id'),
+  socialPostPk:        integer('social_post_pk').references(() => socialMediaPosts.postPk),
   destinationPending:  integer('destination_pending').notNull().default(0),
   notes:               text('notes'),
   createdBy:           text('created_by').notNull().default('human'),
@@ -921,6 +935,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   variants:         many(productVariants),
   images:           many(productImages),
   prices:           many(productPrices),
+  translations:     many(productTranslations),
   metafields:       many(productMetafields),
   platformMappings: many(platformMappings),
   categories:       many(productCategories),
@@ -944,6 +959,10 @@ export const productImagesRelations = relations(productImages, ({ one }) => ({
 
 export const productPricesRelations = relations(productPrices, ({ one }) => ({
   product: one(products, { fields: [productPrices.productId], references: [products.id] }),
+}))
+
+export const productTranslationsRelations = relations(productTranslations, ({ one }) => ({
+  product: one(products, { fields: [productTranslations.productId], references: [products.id] }),
 }))
 
 export const platformMappingsRelations = relations(platformMappings, ({ one }) => ({
