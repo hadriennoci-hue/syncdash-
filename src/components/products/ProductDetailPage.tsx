@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { apiFetch, apiPatch, apiDelete } from '@/lib/utils/api-fetch'
+import { apiFetch, apiPatch, apiDelete, apiPut } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
@@ -12,6 +12,21 @@ interface AttributeRow {
   name: string
   value: string
 }
+
+type ProductTranslationRow = {
+  locale: string
+  title: string | null
+  description: string | null
+  metaDescription: string | null
+}
+
+type TranslationFormState = {
+  title: string
+  description: string
+  metaDescription: string
+}
+
+const TRANSLATION_LOCALES = ['fr', 'de', 'es', 'it'] as const
 
 export function ProductDetailPage({ sku }: { sku: string }) {
   const qc = useQueryClient()
@@ -26,13 +41,17 @@ export function ProductDetailPage({ sku }: { sku: string }) {
   })
 
   const [description, setDescription] = useState('')
+  const [metaDescription, setMetaDescription] = useState('')
   const [savingDesc, setSavingDesc] = useState(false)
+  const [savingMetaDescription, setSavingMetaDescription] = useState(false)
   const [tagsInput, setTagsInput] = useState('')
   const [savingTags, setSavingTags] = useState(false)
   const [tagsError, setTagsError] = useState('')
   const [savingCollections, setSavingCollections] = useState(false)
   const [selectedCollections, setSelectedCollections] = useState<string[]>([])
   const [collectionFilter, setCollectionFilter] = useState('')
+  const [translationForms, setTranslationForms] = useState<Record<string, TranslationFormState>>({})
+  const [savingTranslations, setSavingTranslations] = useState<Record<string, boolean>>({})
 
   async function setPushStatus(platform: Platform, status: 'N' | '2push' | 'done') {
     await apiPatch(`/api/products/${sku}/push-status`, { platform, status })
@@ -55,6 +74,19 @@ export function ProductDetailPage({ sku }: { sku: string }) {
       qc.invalidateQueries({ queryKey: ['product', sku] })
     } finally {
       setSavingDesc(false)
+    }
+  }
+
+  async function saveMetaDescription() {
+    setSavingMetaDescription(true)
+    try {
+      await apiPatch(`/api/products/${sku}/local`, {
+        fields: { metaDescription },
+        triggeredBy: 'human',
+      })
+      qc.invalidateQueries({ queryKey: ['product', sku] })
+    } finally {
+      setSavingMetaDescription(false)
     }
   }
 
@@ -91,15 +123,55 @@ export function ProductDetailPage({ sku }: { sku: string }) {
     }
   }
 
+  async function saveTranslation(locale: string) {
+    const form = translationForms[locale]
+    if (!form) return
+
+    setSavingTranslations((prev) => ({ ...prev, [locale]: true }))
+    try {
+      if (!form.title.trim() && !form.description.trim() && !form.metaDescription.trim()) {
+        await apiDelete(`/api/products/${sku}/translations`, {
+          locale,
+          triggeredBy: 'human',
+        })
+      } else {
+        await apiPut(`/api/products/${sku}/translations`, {
+          translations: [{
+            locale,
+            title: form.title.trim() || null,
+            description: form.description.trim() || null,
+            metaDescription: form.metaDescription.trim() || null,
+          }],
+          triggeredBy: 'human',
+        })
+      }
+      qc.invalidateQueries({ queryKey: ['product', sku] })
+    } finally {
+      setSavingTranslations((prev) => ({ ...prev, [locale]: false }))
+    }
+  }
+
   const p = data?.data
   const collections = (collectionData?.data ?? []) as Array<{ id: string; name: string; platform: string }>
 
   useEffect(() => {
     if (!p) return
     setDescription(p.description ?? '')
+    setMetaDescription(p.metaDescription ?? '')
     setTagsInput((p.tags ?? []).join(', '))
     setSelectedCollections((p.collections ?? []).map((c: any) => c.id))
-  }, [p?.description, p?.collections, p])
+    const nextTranslations: Record<string, TranslationFormState> = {}
+    const incoming = Array.isArray(p.translations) ? p.translations as ProductTranslationRow[] : []
+    for (const locale of TRANSLATION_LOCALES) {
+      const row = incoming.find((item) => item.locale === locale)
+      nextTranslations[locale] = {
+        title: row?.title ?? '',
+        description: row?.description ?? '',
+        metaDescription: row?.metaDescription ?? '',
+      }
+    }
+    setTranslationForms(nextTranslations)
+  }, [p?.description, p?.metaDescription, p?.collections, p?.translations, p])
 
   const filteredCollections = useMemo(() => {
     const q = collectionFilter.trim().toLowerCase()
@@ -265,6 +337,81 @@ export function ProductDetailPage({ sku }: { sku: string }) {
           className="w-full text-xs border border-border rounded p-2 bg-background"
           placeholder="Enter product description..."
         />
+      </section>
+
+      <section className="border border-border rounded p-3 space-y-1 text-xs">
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Meta Description</h2>
+          <button
+            onClick={saveMetaDescription}
+            disabled={savingMetaDescription}
+            className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
+          >
+            {savingMetaDescription ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <textarea
+          value={metaDescription}
+          onChange={(e) => setMetaDescription(e.target.value)}
+          rows={3}
+          className="w-full text-xs border border-border rounded p-2 bg-background"
+          placeholder="Canonical English SEO meta description for Shopify..."
+        />
+      </section>
+
+      <section className="border border-border rounded p-3 space-y-3 text-xs">
+        <div>
+          <h2 className="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Translations</h2>
+          <p className="text-[10px] text-muted-foreground mt-1">Shopify fields only: title, body_html, meta_description.</p>
+        </div>
+        <div className="space-y-3">
+          {TRANSLATION_LOCALES.map((locale) => {
+            const form = translationForms[locale] ?? { title: '', description: '', metaDescription: '' }
+            return (
+              <div key={locale} className="border border-border rounded p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-medium uppercase">{locale}</h3>
+                  <button
+                    onClick={() => saveTranslation(locale)}
+                    disabled={!!savingTranslations[locale]}
+                    className="text-[10px] px-2 py-1 rounded border border-border hover:bg-accent disabled:opacity-50"
+                  >
+                    {savingTranslations[locale] ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+                <input
+                  value={form.title}
+                  onChange={(e) => setTranslationForms((prev) => ({
+                    ...prev,
+                    [locale]: { ...form, title: e.target.value },
+                  }))}
+                  className="w-full text-xs border border-border rounded p-2 bg-background"
+                  placeholder={`${locale} title`}
+                />
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setTranslationForms((prev) => ({
+                    ...prev,
+                    [locale]: { ...form, description: e.target.value },
+                  }))}
+                  rows={5}
+                  className="w-full text-xs border border-border rounded p-2 bg-background"
+                  placeholder={`${locale} description`}
+                />
+                <textarea
+                  value={form.metaDescription}
+                  onChange={(e) => setTranslationForms((prev) => ({
+                    ...prev,
+                    [locale]: { ...form, metaDescription: e.target.value },
+                  }))}
+                  rows={3}
+                  className="w-full text-xs border border-border rounded p-2 bg-background"
+                  placeholder={`${locale} meta description`}
+                />
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       <section className="border border-border rounded p-3 space-y-1 text-xs">
