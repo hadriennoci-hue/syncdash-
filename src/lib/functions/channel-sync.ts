@@ -1114,6 +1114,15 @@ async function pushPlatform(
         }
 
         if (platform === 'shopify_komputerzz') {
+          await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, {
+            ...identityPatch,
+            title: primary.title,
+            description: primary.description,
+            metaDescription: primary.metaDescription,
+            status: 'active',
+            vendor: primary.vendor,
+            productType: primary.productType,
+          }))
           stockBatch.push({ platformId, sku: primary.id, quantity: totalStock })
           if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
             await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))

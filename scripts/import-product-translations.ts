@@ -131,13 +131,50 @@ function cleanDescription(input: string): string {
     /angebot endet in:?/i,
     /oferta termina en:?/i,
     /offerta termina tra:?/i,
+    /questa offerta terminer[aà] in:?/i,
     /^\d+\s*(jours|heures|minutes|secondes|days|hours|minutes|seconds)$/i,
     /^\d+\s*(tage|stunden|minuten|sekunden)$/i,
     /^\d+\s*(dias|horas|minutos|segundos)$/i,
     /^\d+\s*(giorni|ore|minuti|secondi)$/i,
+    /^\d+\s*(jours|heures|minutes|secondes|tage|stunden|minuten|sekunden|dias|horas|minutos|segundos|giorni|ore|minuti|secondi)$/i,
+    /^en stock$/i,
+    /^agotado$/i,
+    /^automatiquement appliqu[ée] sur votre panier$/i,
+    /^aplicado autom[aá]ticamente en la cesta$/i,
+    /^\(livraison\s*:.*\)$/i,
+    /^\(entrega.*\)$/i,
+    /^pagar como nuevo cliente/i,
+    /^crear una cuenta/i,
+    /^ver estado de orden/i,
+    /^rastrear historial de orden/i,
+    /^comprar m[aá]s r[aá]pidamente/i,
+    /^pagar usando su cuenta/i,
+    /^direcci[oó]n de correo electr[oó]nico$/i,
+    /^contraseñ?a$/i,
+    /^iniciar sesi[oó]n$/i,
+    /^cargando\.\.\.$/i,
+    /^effettua il checkout come nuovo cliente/i,
+    /^i numerosi vantaggi di creare un account/i,
+    /^controlla l'ordine/i,
+    /^traccia lo storico/i,
+    /^effettua il checkout pi[uù] velocemente/i,
+    /^00(?:jours|heures|minutes|secondes|tage|stunden|minuten|sekunden|d[ií]as|horas|minutos|segundos|min\.?)$/i,
   ]
 
-  const cleanedLines = normalizePlainText(input)
+  const cutFromPatterns = [
+    /ten en cuenta que la pestaña/i,
+    /effettua il checkout come nuovo cliente/i,
+    /pagar como nuevo cliente/i,
+  ]
+
+  const normalized = normalizePlainText(input)
+  const cutIndex = cutFromPatterns
+    .map((pattern) => normalized.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const truncated = typeof cutIndex === 'number' ? normalized.slice(0, cutIndex) : normalized
+
+  const cleanedLines = truncated
     .split('\n')
     .map((line) => line.replace(/^[\s*-]+/, '').trim())
     .filter((line) => line.length > 0)
@@ -146,9 +183,54 @@ function cleanDescription(input: string): string {
   return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
+function cleanDescriptionV2(input: string): string {
+  const cleaned = cleanDescription(input)
+  const noisePatterns = [
+    /^le prix le plus bas/i,
+    /^disponible$/i,
+    /^funktionen$/i,
+    /^technische informationen/i,
+    /^kompatibilit[aä]t/i,
+    /^garantie$/i,
+    /^resoluci[oó]n ultraelevada/i,
+    /^ricarica superveloce/i,
+    /^trasferimento dati ad alta velocit[aà]/i,
+    /^gigabit ethernet/i,
+    /^prodotto 2 in 1 dal design unico/i,
+    /^hub usb-c supporta fino a tre schermi/i,
+  ]
+
+  const cutFromPatterns = [
+    /ten en cuenta que la pestaña/i,
+    /effettua il checkout come nuovo cliente/i,
+    /pagar como nuevo cliente/i,
+  ]
+
+  const cutIndex = cutFromPatterns
+    .map((pattern) => cleaned.search(pattern))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const truncated = typeof cutIndex === 'number' ? cleaned.slice(0, cutIndex) : cleaned
+
+  const lines = truncated
+    .split('\n')
+    .map((line) => line
+      .replace(/\[[^\]]+\]\(([^)]+)\)/g, '$1')
+      .replace(/\*+/g, '')
+      .replace(/^[\s*-]+/, '')
+      .trim())
+    .filter(Boolean)
+    .filter((line) => !/^\d+[.,]\d{2}\s*€$/i.test(line))
+    .filter((line) => !/^\d+\s*€\s*(de r[ée]duction|de descuento)$/i.test(line))
+    .filter((line) => !/^\(consegna.*\)$/i.test(line))
+    .filter((line) => !noisePatterns.some((pattern) => pattern.test(line)))
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function requirePlainTextFields(data: PageExtract | TranslationFields): TranslationFields {
   const title = normalizePlainText(data.title)
-  const description = cleanDescription(normalizePlainText(data.description))
+  const description = cleanDescriptionV2(normalizePlainText(data.description))
   const metaDescription = normalizePlainText(data.metaDescription)
 
   if (!title) throw new Error('Missing translated title')
@@ -287,6 +369,9 @@ async function aiTranslate(product: ProductApiResponse['data'], targetLocale: Lo
     `Translate the following Acer product content into locale ${targetLocale}.`,
     'Output strict JSON with keys: title, description, metaDescription.',
     'Rules:',
+    '- Translate only the information explicitly present in the source title, source description, and source meta description below.',
+    '- Do not add features, specs, materials, benefits, compatibility claims, or marketing details that are not explicitly present in the source text for this same SKU.',
+    '- If source meta description is missing, derive it only by compressing the same source title and source description. Do not invent new facts.',
     '- Keep brand names, model names, SKUs, units, capacities, and technical specs unchanged.',
     '- Description must be plain text with paragraph breaks using newline characters only.',
     '- No HTML, markdown, bullets, or commentary.',
