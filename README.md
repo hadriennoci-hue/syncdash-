@@ -2,6 +2,11 @@
 
 Rules and patterns for AI assistants working on this codebase.
 
+## Reminder: 2026-05-23
+
+- Resume product translation rollout after Firecrawl credits reset.
+- Follow the restart note: [translation-restart-2026-05-23.md](/C:/syncdash/docs/translation-restart-2026-05-23.md)
+
 ## 1) Fast Start (Read First)
 
 - Project: `Wizhard` (internal product sync dashboard)
