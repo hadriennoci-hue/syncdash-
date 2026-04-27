@@ -279,7 +279,7 @@ export async function runAdsPublishCron(): Promise<AdsPublishSummary> {
 
     try {
       let result: { providerCampaignId: string; response: unknown; request: unknown }
-      let platform = job.providerId
+      const platform = job.providerId
       if (job.providerId === 'google_ads') {
         if (process.env.GOOGLE_ADS_PUBLISH_ENABLED !== '1') {
           skipped += 1
