@@ -467,6 +467,16 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  private async syncLegacySeoDescription(productGid: string, metaDescription: string | null | undefined): Promise<void> {
+    const numericId = this.gidToNumericId(productGid)
+    await this.rest('PUT', `/products/${numericId}.json`, {
+      product: {
+        id: numericId,
+        metafields_global_description_tag: metaDescription?.trim() || '',
+      },
+    })
+  }
+
   private async createVariableProductViaGraphQL(data: ProductPayload): Promise<string> {
     // Build option dimensions from variant payloads
     const optionBuckets = new Map<string, Set<string>>()
@@ -562,6 +572,10 @@ export class ShopifyConnector implements PlatformConnector {
       throw new Error(bulkResult.productVariantsBulkCreate.userErrors.map((e) => e.message).join(', '))
     }
 
+    if (data.metaDescription !== undefined) {
+      await this.syncLegacySeoDescription(productId, data.metaDescription)
+    }
+
     await this.publishToOnlineStore(productId)
     return productId
   }
@@ -644,6 +658,10 @@ export class ShopifyConnector implements PlatformConnector {
       }).catch(() => {})
     }
 
+    if (data.metaDescription !== undefined) {
+      await this.syncLegacySeoDescription(productId, data.metaDescription)
+    }
+
     await this.publishToOnlineStore(productId)
     return productId
   }
@@ -695,6 +713,10 @@ export class ShopifyConnector implements PlatformConnector {
           barcode: data.ean ?? null,
         }).catch(() => {})
       }
+    }
+
+    if (data.metaDescription !== undefined) {
+      await this.syncLegacySeoDescription(platformId, data.metaDescription)
     }
 
     await this.publishToOnlineStore(platformId)

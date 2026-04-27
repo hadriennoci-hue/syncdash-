@@ -10,6 +10,7 @@ const patchSchema = z.object({
   fields: z.object({
     title:       z.string().optional(),
     description: z.string().optional(),
+    metaDescription: z.string().optional(),
     tags:        z.array(tagSchema).max(10).optional(),
     status:      z.enum(['active', 'archived']).optional(),
     isFeatured:  z.boolean().optional(),
