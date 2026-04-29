@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
           return {
             warehouseId: 'acer_store',
             productsUpdated: 0,
+            productsCreated: 0,
+            existingProductsUpdated: 0,
+            zeroedAbsent: 0,
             errors: [],
             syncedAt: new Date().toISOString(),
             queued: true,
@@ -32,6 +35,9 @@ export async function POST(req: NextRequest) {
           return {
             warehouseId: warehouse.id,
             productsUpdated: 0,
+            productsCreated: 0,
+            existingProductsUpdated: 0,
+            zeroedAbsent: 0,
             errors: [],
             syncedAt: new Date().toISOString(),
             skipped: true,
@@ -43,6 +49,9 @@ export async function POST(req: NextRequest) {
         return {
           warehouseId:     warehouse.id,
           productsUpdated: 0,
+          productsCreated: 0,
+          existingProductsUpdated: 0,
+          zeroedAbsent: 0,
           errors:          [err instanceof Error ? err.message : 'Unknown error'],
           syncedAt:        new Date().toISOString(),
         }

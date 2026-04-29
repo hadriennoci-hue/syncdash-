@@ -33,6 +33,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return apiResponse({
         warehouseId: 'acer_store',
         productsUpdated: 0,
+        productsCreated: 0,
+        existingProductsUpdated: 0,
+        zeroedAbsent: 0,
         errors: [],
         syncedAt: new Date().toISOString(),
         queued: true,
@@ -43,6 +46,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return apiResponse({
         warehouseId: params.id,
         productsUpdated: 0,
+        productsCreated: 0,
+        existingProductsUpdated: 0,
+        zeroedAbsent: 0,
         errors: [],
         syncedAt: new Date().toISOString(),
         skipped: true,

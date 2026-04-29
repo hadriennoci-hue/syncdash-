@@ -69,7 +69,9 @@
     "runner:acer": "npx tsx scripts/local-acer-runner.ts --prod --headless",
     "runner:acer:local": "npx tsx scripts/local-acer-runner.ts --local --headless",
     "runner:acer:once": "npx tsx scripts/local-acer-runner.ts --once --prod --headless",
-    "competitors:backfill": "npx tsx scripts/backfill-competitor-prices.ts"
+    "competitors:backfill": "npx tsx scripts/backfill-competitor-prices.ts",
+    "translations:report": "npx tsx scripts/report-product-translation-coverage.ts",
+    "translations:discover-sources": "npx tsx scripts/discover-product-translation-sources.ts"
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^1.9.0",

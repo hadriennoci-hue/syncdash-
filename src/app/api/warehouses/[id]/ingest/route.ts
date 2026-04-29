@@ -15,7 +15,7 @@ const snapshotSchema = z.object({
 })
 
 const bodySchema = z.object({
-  snapshots:   z.array(snapshotSchema).min(1).max(2000),
+  snapshots:   z.array(snapshotSchema).min(1).max(5000),
   triggeredBy: z.enum(['human', 'agent', 'system']).default('agent'),
 })
 

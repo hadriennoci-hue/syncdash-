@@ -1,0 +1,741 @@
+{
+  "summary": {
+    "generatedAt": "2026-04-27T14:54:52.096Z",
+    "statusFilter": "active",
+    "totalProducts": 20,
+    "localeSummary": {
+      "fr": {
+        "found": 5,
+        "missing": 15,
+        "errors": 0,
+        "direct": 0,
+        "search": 5
+      },
+      "de": {
+        "found": 2,
+        "missing": 18,
+        "errors": 0,
+        "direct": 1,
+        "search": 1
+      },
+      "es": {
+        "found": 5,
+        "missing": 15,
+        "errors": 0,
+        "direct": 1,
+        "search": 4
+      },
+      "it": {
+        "found": 4,
+        "missing": 16,
+        "errors": 0,
+        "direct": 1,
+        "search": 3
+      }
+    },
+    "fullyCoveredByAcer": 2,
+    "needingAiFallbackForAtLeastOneLocale": 18
+  },
+  "rows": [
+    {
+      "sku": "HP.DSCAB.015",
+      "title": "Acer USB Type-C 13 in 1 Docking Stand",
+      "acerStoreSourceUrl": "https://store.acer.com/en-ie/acer-usb-type-c-13-in-1-docking-stand-hp-dscab-015",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "found",
+          "url": "https://store.acer.com/fr-fr/acer-usb-type-c-13-in-1-docking-stand-hp-dscab-015-fr",
+          "method": "search",
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "found",
+          "url": "https://store.acer.com/de-de/acer-usb-type-c-13-in-1-docking-stand-hp-dscab-015",
+          "method": "direct",
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "found",
+          "url": "https://store.acer.com/es-es/acer-usb-type-c-13-in-1-docking-stand-hp-dscab-015",
+          "method": "direct",
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "found",
+          "url": "https://store.acer.com/it-it/acer-usb-type-c-13-in-1-docking-stand-hp-dscab-015",
+          "method": "direct",
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "FF.G2VTA.001",
+      "title": "Acer Wi-Fi 5G Mobile Hotspot | Acer Connect M6E",
+      "acerStoreSourceUrl": "https://store.acer.com/nl-be/acer-wi-fi-5g-mobiele-hotspot-acer-connect-m6eff-g2vta-001",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "found",
+          "url": "https://store.acer.com/fr-fr/acer-portable-hotspot-wi-fi-5g-acer-connect-m6eff-g2vta-001",
+          "method": "search",
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "found",
+          "url": "https://store.acer.com/es-es/acer-movil-hotspot-wi-fi-5g-acer-connect-m6eff-g2vta-001",
+          "method": "search",
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "GP.BAG11.034",
+      "title": "Acer Urban Backpack Grey / Green",
+      "acerStoreSourceUrl": null,
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "HP.EXPBG.020",
+      "title": "Acer Vertical Mouse Smart Fit",
+      "acerStoreSourceUrl": "https://store.acer.com/nl-be/acer-smart-fit-verticale-muis",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "found",
+          "url": "https://store.acer.com/fr-fr/business/accessoires/souris-claviers-de-souris",
+          "method": "search",
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "found",
+          "url": "https://store.acer.com/de-de/acer-smart-fit-vertikale-maus",
+          "method": "search",
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "found",
+          "url": "https://store.acer.com/es-es/acer-raton-vertical-smart-fit?srsltid=AfmBOoriGc_LF1Nc2VvYLx0dQ3BIWs9yjoH8-Sy524oZnQI9-pl7JHHg",
+          "method": "search",
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "found",
+          "url": "https://store.acer.com/it-it/acer-mouse-verticale-smart-fit",
+          "method": "search",
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "GP.OTH11.074",
+      "title": "Acer Nitro Gaming Controller for Smartphones",
+      "acerStoreSourceUrl": "https://store.acer.com/nl-be/acer-nitro-draadloze-gaming-controller-gp-oth11-06f-2",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "found",
+          "url": "https://store.acer.com/fr-fr/acer-nitro-manette-de-jeu-mobile-pour-telephone-gp-oth11-074",
+          "method": "search",
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "found",
+          "url": "https://store.acer.com/es-es/acer-nitro-mando-de-juegos-para-smartphones-gp-oth11-074?srsltid=AfmBOoqdk3iv7kem4nd3B_M37EpxVee87NEHnTSiCWeHrEALUMNzwg4g",
+          "method": "search",
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "found",
+          "url": "https://store.acer.com/it-it/acer-nitro-gaming-controller-per-smarthpone-gp-oth11-074",
+          "method": "search",
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "GP.BAG11.07U",
+      "title": "Predator Utility Urban backpack 16\"",
+      "acerStoreSourceUrl": null,
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "GP.HDS11.01P",
+      "title": "Predator Galea 330",
+      "acerStoreSourceUrl": null,
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "GP.MCE11.03S",
+      "title": "Predator Cestus 333 Gaming Mouse",
+      "acerStoreSourceUrl": "https://store.acer.com/nl-be/predator-cestus-333-gamingmuis-gp-mce11-03s",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "DT.R6LEH.002",
+      "title": "Veriton AI Mini Workstation VGN100",
+      "acerStoreSourceUrl": "https://store.acer.com/en-ie/acer-veriton-ai-mini-workstation-vgn100-black",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "found",
+          "url": "https://store.acer.com/fr-fr/acer-veriton-station-de-travail-ia-compacte-vgn100-noir",
+          "method": "search",
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "found",
+          "url": "https://store.acer.com/es-es/acer-veriton-estacion-de-trabajo-ai-mini-vgn100-negro?srsltid=AfmBOoqvRpv16R-dbB6IYu7lSideS3oqJfhImFq0oZNuV1pRXuiuR0AI",
+          "method": "search",
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "found",
+          "url": "https://store.acer.com/it-it/acer-veriton-mini-workstation-con-ai-vgn100-nero",
+          "method": "search",
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "DQ.BM5EQ.003",
+      "title": "Acer Aspire C 24 All-in-One Computer | C24-195ES | White",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/acer-aspire-c-24-all-in-one-tietokone-c24-195es-valkoinen-dq-bm5eq-003",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "DQ.BMGEQ.003",
+      "title": "Acer Aspire C 27 All-in-One Computer | C27-195ES | White",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/acer-aspire-c-27-all-in-one-tietokone-c27-195es-valkoinen-dq-bmgeq-003",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NX.KSAED.00A",
+      "title": "Acer Aspire 15 Laptop | A15-51M",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/acer-aspire-15-kannettava-tietokone-a15-51m-harmaa-nx-ksaed-00a",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NX.JFVED.008",
+      "title": "Acer Aspire 14 AI OLED Laptop | A14-52M",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/acer-aspire-14-ai-oled-kannettava-tietokone-a14-52m-harmaa",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QVYED.00G",
+      "title": "Predator Helios 18 AI Gaming Laptop | PH18-73",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-18-ai-pelikannettava-ph18-73-musta",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QW0ED.006",
+      "title": "Predator Helios 16 AI Gaming Laptop | PH16-73",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-16-ai-oled-pelikannettava-ph16-73-musta",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QX9ED.003",
+      "title": "Predator Helios Neo 16S AI OLED Gaming Laptop | PHN16S-71",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-neo-16s-ai-oled-pelikannettava-phn16s-71-musta",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QXAED.007",
+      "title": "Predator Helios Neo 16S AI OLED Gaming Laptop | PHN16S-71",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-neo-16s-ai-oled-pelikannettava-phn16s-71-musta-nh-qxaed-007",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QVEED.006",
+      "title": "Predator Helios Neo 18 AI Gaming Laptop | PHN18-72",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-neo-18-ai-pelikannettava-phn18-72-musta-nh-qveed-006",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QYXED.00J",
+      "title": "Acer Nitro V 16 AI Gaming Laptop | ANV16-42",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/acer-nitro-v-16-ai-pelikannettava-anv16-42-musta",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    },
+    {
+      "sku": "NH.QX3ED.007",
+      "title": "Predator Helios Neo 16 AI Gaming Laptop | PHN16-73",
+      "acerStoreSourceUrl": "https://store.acer.com/fi-fi/predator-helios-neo-16-ai-pelikannettava-phn16-73-musta-nh-qx3ed-007",
+      "locales": {
+        "fr": {
+          "locale": "fr",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "de": {
+          "locale": "de",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "es": {
+          "locale": "es",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        },
+        "it": {
+          "locale": "it",
+          "status": "missing",
+          "url": null,
+          "method": null,
+          "error": null
+        }
+      }
+    }
+  ]
+}

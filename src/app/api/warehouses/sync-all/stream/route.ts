@@ -7,6 +7,9 @@ import { requestRunnerWake } from '@/lib/functions/runner-signal'
 interface WarehouseSyncResult {
   warehouseId: string
   productsUpdated: number
+  productsCreated: number
+  existingProductsUpdated: number
+  zeroedAbsent: number
   errors: string[]
   syncedAt: string
   skipped?: boolean
@@ -51,6 +54,9 @@ export async function GET(req: NextRequest) {
               const queued: WarehouseSyncResult & { queued: boolean; message: string } = {
                 warehouseId: 'acer_store',
                 productsUpdated: 0,
+                productsCreated: 0,
+                existingProductsUpdated: 0,
+                zeroedAbsent: 0,
                 errors: [],
                 syncedAt: new Date().toISOString(),
                 queued: true,
@@ -73,6 +79,9 @@ export async function GET(req: NextRequest) {
               const skipped: WarehouseSyncResult = {
                 warehouseId: warehouse.id,
                 productsUpdated: 0,
+                productsCreated: 0,
+                existingProductsUpdated: 0,
+                zeroedAbsent: 0,
                 errors: [],
                 syncedAt: new Date().toISOString(),
                 skipped: true,
@@ -108,6 +117,9 @@ export async function GET(req: NextRequest) {
             const fallback: WarehouseSyncResult = {
               warehouseId: warehouse.id,
               productsUpdated: 0,
+              productsCreated: 0,
+              existingProductsUpdated: 0,
+              zeroedAbsent: 0,
               errors: [err instanceof Error ? err.message : 'Unknown error'],
               syncedAt: new Date().toISOString(),
             }

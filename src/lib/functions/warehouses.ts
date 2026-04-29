@@ -31,6 +31,9 @@ import { generateId } from '@/lib/utils/id'
 interface SyncResult {
   warehouseId: string
   productsUpdated: number
+  productsCreated: number
+  existingProductsUpdated: number
+  zeroedAbsent: number
   errors: string[]
   syncedAt: string
 }
@@ -74,6 +77,8 @@ export async function applyWarehouseSnapshots(
 
   const errors: string[] = []
   let productsUpdated = 0
+  let productsCreated = 0
+  let existingProductsUpdated = 0
 
   const isAcerSource = warehouseId === 'ireland' || warehouseId === 'acer_store'
   if (isAcerSource) {
@@ -88,13 +93,34 @@ export async function applyWarehouseSnapshots(
   const skusInBatch = snapshots.map(s => s.sku).filter(Boolean)
   const PREFETCH_CHUNK = 80 // stay safely under D1's variable limit
   const existingStockMap = new Map<string, { sourceUrl: string | null }>()
+  const existingPositiveSkuSet = new Set<string>()
   if (isAcerSource && skusInBatch.length > 0) {
     for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
       const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
-      const rows = await db.select({ productId: warehouseStock.productId, sourceUrl: warehouseStock.sourceUrl })
+      const rows = await db.select({
+        productId: warehouseStock.productId,
+        sourceUrl: warehouseStock.sourceUrl,
+        quantity: warehouseStock.quantity,
+      })
         .from(warehouseStock)
         .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
-      for (const row of rows) existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
+      for (const row of rows) {
+        existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
+        if ((row.quantity ?? 0) > 0) existingPositiveSkuSet.add(row.productId)
+      }
+    }
+  } else if (skusInBatch.length > 0) {
+    for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
+      const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
+      const rows = await db.select({
+        productId: warehouseStock.productId,
+        quantity: warehouseStock.quantity,
+      })
+        .from(warehouseStock)
+        .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
+      for (const row of rows) {
+        if ((row.quantity ?? 0) > 0) existingPositiveSkuSet.add(row.productId)
+      }
     }
   }
 
@@ -125,6 +151,7 @@ export async function applyWarehouseSnapshots(
     }
   }
 
+  const finalPositiveSkuSet = new Set<string>()
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
     if (snap.quantity <= 0) {
@@ -138,6 +165,7 @@ export async function applyWarehouseSnapshots(
     }
 
     try {
+      const existedBefore = existingProductIds.has(snap.sku)
       await db.insert(products)
         .values({
           id: snap.sku,
@@ -196,9 +224,17 @@ export async function applyWarehouseSnapshots(
         },
       })
       productsUpdated++
+      if (existedBefore) existingProductsUpdated++
+      else productsCreated++
+      finalPositiveSkuSet.add(snap.sku)
     } catch (err) {
       errors.push(`${snap.sku}: ${err instanceof Error ? err.message : 'Unknown'}`)
     }
+  }
+
+  let zeroedAbsent = 0
+  for (const sku of existingPositiveSkuSet) {
+    if (!finalPositiveSkuSet.has(sku)) zeroedAbsent++
   }
 
   // For each platform, mark existing mapped products as 2push so the channel
@@ -226,11 +262,11 @@ export async function applyWarehouseSnapshots(
   await logOperation({
     action:      'sync_warehouse',
     status:      errors.length === 0 ? 'success' : 'error',
-    message:     `warehouse=${warehouseId} updated=${productsUpdated} errors=${errors.length}`,
+    message:     `warehouse=${warehouseId} updated=${productsUpdated} created=${productsCreated} existing=${existingProductsUpdated} zeroed=${zeroedAbsent} errors=${errors.length}`,
     triggeredBy,
   })
 
-  return { warehouseId, productsUpdated, errors, syncedAt }
+  return { warehouseId, productsUpdated, productsCreated, existingProductsUpdated, zeroedAbsent, errors, syncedAt }
 }
 
 // ---------------------------------------------------------------------------

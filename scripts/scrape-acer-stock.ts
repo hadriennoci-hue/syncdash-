@@ -13,6 +13,7 @@
  */
 
 import { chromium } from 'playwright'
+import { Agent, fetch as undiciFetch } from 'undici'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -113,6 +114,14 @@ const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'
   : (DEV_VARS['WIZHARD_URL'] ?? 'https://wizhard.store')
 const TOKEN = DEV_VARS['AGENT_BEARER_TOKEN'] ?? ''
+const INGEST_TIMEOUT_MS = 300_000
+const INGEST_MAX_RETRIES = 3
+const INGEST_RETRY_DELAY_MS = 5_000
+const INGEST_DISPATCHER = new Agent({
+  headersTimeout: INGEST_TIMEOUT_MS,
+  bodyTimeout: INGEST_TIMEOUT_MS,
+  connectTimeout: 30_000,
+})
 
 function getAccessHeaders(): Record<string, string> {
   const id     = DEV_VARS['CF_ACCESS_CLIENT_ID'] ?? DEV_VARS['CLOUDFLARE_ACCESS_CLIENT_ID'] ?? ''
@@ -272,30 +281,53 @@ interface Snapshot {
 }
 
 async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
-  // Send in batches of 50 — D1 prefetch query uses inArray(skus) which hits
-  // D1's ~100 bound-parameter limit at higher batch sizes.
-  const BATCH = 50
-  for (let i = 0; i < snapshots.length; i += BATCH) {
-    const batch = snapshots.slice(i, i + BATCH)
-    const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${TOKEN}`,
-        ...getAccessHeaders(),
-      },
-      body: JSON.stringify({ snapshots: batch, triggeredBy: 'agent' }),
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`Ingest API error ${res.status}: ${text}`)
-    }
-    const result = await res.json() as { data: { productsUpdated: number; errors: string[] } }
-    log(`  ✅ Batch ${Math.floor(i / BATCH) + 1}: ${result.data.productsUpdated} updated, ${result.data.errors.length} errors`)
-    if (result.data.errors.length > 0) {
-      result.data.errors.slice(0, 5).forEach(e => log(`    ⚠️  ${e}`))
+  let lastError: unknown = null
+
+  for (let attempt = 1; attempt <= INGEST_MAX_RETRIES; attempt++) {
+    try {
+      const res = await undiciFetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+          ...getAccessHeaders(),
+        },
+        body: JSON.stringify({ snapshots, triggeredBy: 'agent' }),
+        dispatcher: INGEST_DISPATCHER,
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`Ingest API error ${res.status}: ${text}`)
+      }
+      const result = await res.json() as {
+        data: {
+          productsUpdated: number
+          productsCreated?: number
+          existingProductsUpdated?: number
+          zeroedAbsent?: number
+          errors: string[]
+        }
+      }
+      log(
+        `  Ingested: ${result.data.productsUpdated} updated ` +
+        `(created=${result.data.productsCreated ?? 0}, existing=${result.data.existingProductsUpdated ?? 0}, zeroed=${result.data.zeroedAbsent ?? 0}), ` +
+        `${result.data.errors.length} errors`
+      )
+      if (result.data.errors.length > 0) {
+        result.data.errors.slice(0, 10).forEach(e => log(`    WARNING ${e}`))
+      }
+      return
+    } catch (error) {
+      lastError = error
+      const message = error instanceof Error ? error.message : String(error)
+      if (attempt >= INGEST_MAX_RETRIES) break
+      log(`  Ingest attempt ${attempt}/${INGEST_MAX_RETRIES} failed: ${message}`)
+      log(`  Retrying in ${Math.round(INGEST_RETRY_DELAY_MS / 1000)}s...`)
+      await new Promise(resolve => setTimeout(resolve, INGEST_RETRY_DELAY_MS))
     }
   }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
 // ---------------------------------------------------------------------------

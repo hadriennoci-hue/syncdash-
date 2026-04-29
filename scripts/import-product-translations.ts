@@ -271,32 +271,34 @@ async function putTranslation(productSku: string, targetLocale: Locale, translat
   )
 }
 
+async function validateLocaleProductUrl(app: FirecrawlApp, url: string, expectedSku: string): Promise<boolean> {
+  const result = await app.scrapeUrl(url, {
+    formats: ['extract'],
+    extract: {
+      prompt: `Check whether this is the Acer Store product page for SKU ${expectedSku}. Return the exact SKU and title if present, otherwise return nulls.`,
+      schema: {
+        type: 'object',
+        properties: {
+          sku: { type: ['string', 'null'] },
+          title: { type: ['string', 'null'] },
+        },
+      } as never,
+    },
+  })
+
+  if (!result.success) return false
+  const extract = (result as { extract?: { sku?: string | null } }).extract
+  return normalizePlainText(extract?.sku).toUpperCase() === expectedSku.toUpperCase()
+}
+
 async function firecrawlFindLocaleUrl(product: ProductApiResponse['data'], targetLocale: Locale): Promise<string | null> {
   if (!FIRECRAWL_API_KEY) throw new Error('FIRECRAWL_API_KEY missing')
   const app = new FirecrawlApp({ apiKey: FIRECRAWL_API_KEY })
   const localeStore = localeStoreMap[targetLocale]
   const directCandidate = product.acerStoreSourceUrl?.replace(/store\.acer\.com\/[a-z]{2}-[a-z]{2}\//i, `store.acer.com/${localeStore}/`) ?? null
 
-  if (directCandidate) {
-    const direct = await app.scrapeUrl(directCandidate, {
-      formats: ['extract'],
-      extract: {
-        prompt: `Check whether this is the Acer Store product page for SKU ${product.id}. Return the exact SKU and title if present, otherwise return nulls.`,
-        schema: {
-          type: 'object',
-          properties: {
-            sku: { type: ['string', 'null'] },
-            title: { type: ['string', 'null'] },
-          },
-        } as never,
-      },
-    })
-    if (direct.success) {
-      const directExtract = (direct as { extract?: { sku?: string | null } }).extract
-      if (normalizePlainText(directExtract?.sku).toUpperCase() === product.id.toUpperCase()) {
-        return directCandidate
-      }
-    }
+  if (directCandidate && await validateLocaleProductUrl(app, directCandidate, product.id)) {
+    return directCandidate
   }
 
   const q = `site:store.acer.com/${localeStore} "${product.id}" Acer`
@@ -321,6 +323,7 @@ async function firecrawlFindLocaleUrl(product: ProductApiResponse['data'], targe
   const url = normalizePlainText(extracted?.productUrl)
   if (!url) return null
   if (!url.includes(`store.acer.com/${localeStore}`)) return null
+  if (!await validateLocaleProductUrl(app, url, product.id)) return null
   return url
 }
 
@@ -352,7 +355,7 @@ async function firecrawlExtractTranslation(product: ProductApiResponse['data'], 
   if (!page.success) throw new Error(`Firecrawl scrape failed for ${sourceUrl}`)
   const extract = (page as { extract?: PageExtract }).extract ?? {}
   const foundSku = normalizePlainText(extract.sku).toUpperCase()
-  if (foundSku && foundSku !== product.id.toUpperCase()) {
+  if (foundSku !== product.id.toUpperCase()) {
     throw new Error(`Locale Acer page mismatch: expected ${product.id}, got ${foundSku}`)
   }
 
