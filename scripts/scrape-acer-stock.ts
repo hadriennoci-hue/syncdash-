@@ -117,6 +117,7 @@ const TOKEN = DEV_VARS['AGENT_BEARER_TOKEN'] ?? ''
 const INGEST_TIMEOUT_MS = 300_000
 const INGEST_MAX_RETRIES = 3
 const INGEST_RETRY_DELAY_MS = 5_000
+const INGEST_CHUNK_SIZE = 100
 const INGEST_DISPATCHER = new Agent({
   headersTimeout: INGEST_TIMEOUT_MS,
   bodyTimeout: INGEST_TIMEOUT_MS,
@@ -213,10 +214,14 @@ function extractProductsFromPage(): Omit<AcerProduct, 'descLocale'>[] {
       }
     }
 
-    // Stock detection by CSS class (works across all languages/locales)
+    // Stock detection by CSS class (works across all languages/locales).
+    // "Coming Soon" cards are visible listings but not sellable stock.
+    const hasComingSoon = stockEl?.classList.contains('comingsoon') ?? false
+    const hasUnavailable = stockEl?.classList.contains('unavailable') ?? false
+    const hasOutOfStock = stockEl?.classList.contains('out-of-stock') ?? false
+    const hasAvailable = stockEl?.classList.contains('available') ?? false
     const inStock = !stockEl
-      || stockEl.classList.contains('available')
-      || (!stockEl.classList.contains('unavailable') && !stockEl.classList.contains('out-of-stock'))
+      || (!hasComingSoon && (hasAvailable || (!hasUnavailable && !hasOutOfStock)))
 
     // Short description — Acer Magento 2 renders listing-page bullets in ul.clearfix
     let description: string | null = null
@@ -282,52 +287,64 @@ interface Snapshot {
 
 async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   let lastError: unknown = null
+  const runId = globalThis.crypto.randomUUID()
+  const totalChunks = Math.ceil(snapshots.length / INGEST_CHUNK_SIZE)
 
-  for (let attempt = 1; attempt <= INGEST_MAX_RETRIES; attempt++) {
-    try {
-      const res = await undiciFetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${TOKEN}`,
-          ...getAccessHeaders(),
-        },
-        body: JSON.stringify({ snapshots, triggeredBy: 'agent' }),
-        dispatcher: INGEST_DISPATCHER,
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`Ingest API error ${res.status}: ${text}`)
-      }
-      const result = await res.json() as {
-        data: {
-          productsUpdated: number
-          productsCreated?: number
-          existingProductsUpdated?: number
-          zeroedAbsent?: number
-          errors: string[]
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const chunkNumber = chunkIndex + 1
+    const chunk = snapshots.slice(chunkIndex * INGEST_CHUNK_SIZE, (chunkIndex + 1) * INGEST_CHUNK_SIZE)
+
+    for (let attempt = 1; attempt <= INGEST_MAX_RETRIES; attempt++) {
+      try {
+        const res = await undiciFetch(`${BASE_URL}/api/warehouses/acer_store/ingest`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${TOKEN}`,
+            ...getAccessHeaders(),
+          },
+          body: JSON.stringify({
+            snapshots: chunk,
+            triggeredBy: 'agent',
+            runId,
+            chunkIndex: chunkNumber,
+            totalChunks,
+          }),
+          dispatcher: INGEST_DISPATCHER,
+        })
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(`Ingest API error ${res.status}: ${text}`)
         }
+        const result = await res.json() as {
+          data: {
+            productsUpdated: number
+            productsCreated?: number
+            existingProductsUpdated?: number
+            zeroedAbsent?: number
+            errors: string[]
+            complete?: boolean
+          }
+        }
+        log(
+          `  Ingest chunk ${chunkNumber}/${totalChunks}: ${result.data.productsUpdated} updated ` +
+          `(created=${result.data.productsCreated ?? 0}, existing=${result.data.existingProductsUpdated ?? 0}, zeroed=${result.data.zeroedAbsent ?? 0}), ` +
+          `${result.data.errors.length} errors${result.data.complete ? ' [complete]' : ''}`
+        )
+        if (result.data.errors.length > 0) {
+          result.data.errors.slice(0, 10).forEach(e => log(`    WARNING ${e}`))
+        }
+        break
+      } catch (error) {
+        lastError = error
+        const message = error instanceof Error ? error.message : String(error)
+        if (attempt >= INGEST_MAX_RETRIES) throw lastError instanceof Error ? lastError : new Error(String(lastError))
+        log(`  Ingest chunk ${chunkNumber}/${totalChunks} attempt ${attempt}/${INGEST_MAX_RETRIES} failed: ${message}`)
+        log(`  Retrying in ${Math.round(INGEST_RETRY_DELAY_MS / 1000)}s...`)
+        await new Promise(resolve => setTimeout(resolve, INGEST_RETRY_DELAY_MS))
       }
-      log(
-        `  Ingested: ${result.data.productsUpdated} updated ` +
-        `(created=${result.data.productsCreated ?? 0}, existing=${result.data.existingProductsUpdated ?? 0}, zeroed=${result.data.zeroedAbsent ?? 0}), ` +
-        `${result.data.errors.length} errors`
-      )
-      if (result.data.errors.length > 0) {
-        result.data.errors.slice(0, 10).forEach(e => log(`    WARNING ${e}`))
-      }
-      return
-    } catch (error) {
-      lastError = error
-      const message = error instanceof Error ? error.message : String(error)
-      if (attempt >= INGEST_MAX_RETRIES) break
-      log(`  Ingest attempt ${attempt}/${INGEST_MAX_RETRIES} failed: ${message}`)
-      log(`  Retrying in ${Math.round(INGEST_RETRY_DELAY_MS / 1000)}s...`)
-      await new Promise(resolve => setTimeout(resolve, INGEST_RETRY_DELAY_MS))
     }
   }
-
-  throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +402,8 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
         if (!existing) {
           productMap.set(p.sku, { ...p, descLocale: p.description ? catLocale : null })
         } else {
+          // Stock: if any scanned locale has the exact SKU available, keep it in stock.
+          existing.inStock = existing.inStock || p.inStock
           // URL: top-4 locales always overwrite; others only set if new SKU (handled above)
           if (isTop4) existing.url = p.url
           // Price: keep lowest across all stores in this batch

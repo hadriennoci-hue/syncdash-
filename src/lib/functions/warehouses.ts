@@ -9,7 +9,7 @@ const isBlockedAcerSku = (sku: string) =>
 
 import { db } from '@/lib/db/client'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, gt, inArray, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
 import type { WarehouseStockProgress, WarehouseStockSnapshot } from '@/lib/connectors/types'
 import { logOperation } from './log'
@@ -42,6 +42,14 @@ interface SyncWarehouseOptions {
   onProgress?: (event: WarehouseStockProgress) => void
 }
 
+interface ApplyWarehouseSnapshotsOptions {
+  resetExisting?: boolean
+  updateWarehouseSynced?: boolean
+  logOperation?: boolean
+  existingPositiveSkus?: string[]
+  finalPositiveSkus?: string[]
+}
+
 // ---------------------------------------------------------------------------
 // Source URL priority — higher number = higher priority.
 // For acer_store: top-4 locales always overwrite existing URL in D1.
@@ -64,16 +72,37 @@ function isEnglishAcerSource(sourceUrl: string | null): boolean {
 // Called by syncWarehouse (connector path) and ingestWarehouseSnapshots (script path).
 // ---------------------------------------------------------------------------
 
+export async function getPositiveWarehouseSkus(warehouseId: string): Promise<string[]> {
+  const rows = await db.select({ productId: warehouseStock.productId })
+    .from(warehouseStock)
+    .where(and(eq(warehouseStock.warehouseId, warehouseId), gt(warehouseStock.quantity, 0)))
+  return rows.map(row => row.productId)
+}
+
 export async function applyWarehouseSnapshots(
   warehouseId: string,
   snapshots: WarehouseStockSnapshot[],
   triggeredBy: TriggeredBy = 'system',
+  options: ApplyWarehouseSnapshotsOptions = {},
 ): Promise<SyncResult> {
+  const {
+    resetExisting = true,
+    updateWarehouseSynced = true,
+    logOperation: shouldLogOperation = true,
+    existingPositiveSkus,
+    finalPositiveSkus,
+  } = options
+
   // A warehouse scan is treated as the full current truth for that warehouse.
   // Reset all existing quantities to zero first, then upsert scanned snapshots.
-  await db.update(warehouseStock)
-    .set({ quantity: 0, updatedAt: new Date().toISOString() })
-    .where(eq(warehouseStock.warehouseId, warehouseId))
+  const existingPositiveSkuSet = new Set(
+    existingPositiveSkus ?? (resetExisting ? await getPositiveWarehouseSkus(warehouseId) : [])
+  )
+  if (resetExisting) {
+    await db.update(warehouseStock)
+      .set({ quantity: 0, updatedAt: new Date().toISOString() })
+      .where(eq(warehouseStock.warehouseId, warehouseId))
+  }
 
   const errors: string[] = []
   let productsUpdated = 0
@@ -93,7 +122,6 @@ export async function applyWarehouseSnapshots(
   const skusInBatch = snapshots.map(s => s.sku).filter(Boolean)
   const PREFETCH_CHUNK = 80 // stay safely under D1's variable limit
   const existingStockMap = new Map<string, { sourceUrl: string | null }>()
-  const existingPositiveSkuSet = new Set<string>()
   if (isAcerSource && skusInBatch.length > 0) {
     for (let i = 0; i < skusInBatch.length; i += PREFETCH_CHUNK) {
       const chunk = skusInBatch.slice(i, i + PREFETCH_CHUNK)
@@ -106,7 +134,6 @@ export async function applyWarehouseSnapshots(
         .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
       for (const row of rows) {
         existingStockMap.set(row.productId, { sourceUrl: row.sourceUrl })
-        if ((row.quantity ?? 0) > 0) existingPositiveSkuSet.add(row.productId)
       }
     }
   } else if (skusInBatch.length > 0) {
@@ -118,9 +145,7 @@ export async function applyWarehouseSnapshots(
       })
         .from(warehouseStock)
         .where(and(eq(warehouseStock.warehouseId, warehouseId), inArray(warehouseStock.productId, chunk)))
-      for (const row of rows) {
-        if ((row.quantity ?? 0) > 0) existingPositiveSkuSet.add(row.productId)
-      }
+      void rows
     }
   }
 
@@ -151,7 +176,7 @@ export async function applyWarehouseSnapshots(
     }
   }
 
-  const finalPositiveSkuSet = new Set<string>()
+  const finalPositiveSkuSet = new Set(finalPositiveSkus ?? [])
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
     if (snap.quantity <= 0) {
@@ -255,16 +280,20 @@ export async function applyWarehouseSnapshots(
   }
 
   const syncedAt = new Date().toISOString()
-  await db.update(warehouses)
-    .set({ lastSynced: syncedAt })
-    .where(eq(warehouses.id, warehouseId))
+  if (updateWarehouseSynced) {
+    await db.update(warehouses)
+      .set({ lastSynced: syncedAt })
+      .where(eq(warehouses.id, warehouseId))
+  }
 
-  await logOperation({
-    action:      'sync_warehouse',
-    status:      errors.length === 0 ? 'success' : 'error',
-    message:     `warehouse=${warehouseId} updated=${productsUpdated} created=${productsCreated} existing=${existingProductsUpdated} zeroed=${zeroedAbsent} errors=${errors.length}`,
-    triggeredBy,
-  })
+  if (shouldLogOperation) {
+    await logOperation({
+      action:      'sync_warehouse',
+      status:      errors.length === 0 ? 'success' : 'error',
+      message:     `warehouse=${warehouseId} updated=${productsUpdated} created=${productsCreated} existing=${existingProductsUpdated} zeroed=${zeroedAbsent} errors=${errors.length}`,
+      triggeredBy,
+    })
+  }
 
   return { warehouseId, productsUpdated, productsCreated, existingProductsUpdated, zeroedAbsent, errors, syncedAt }
 }
