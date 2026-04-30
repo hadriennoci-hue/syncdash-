@@ -17,6 +17,7 @@ import { chromium, type Browser, type BrowserContext } from 'playwright'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { inferProductCollection } from '@/lib/utils/product-collection'
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ const BASE_URL = IS_LOCAL
   ? 'http://127.0.0.1:8787'
   : (DEV_VARS['WIZHARD_URL'] ?? 'https://wizhard.store')
 const TOKEN = process.env.AGENT_BEARER_TOKEN ?? DEV_VARS['AGENT_BEARER_TOKEN'] ?? ''
+const logContext = new AsyncLocalStorage<string>()
 
 function getAccessHeaders(): Record<string, string> {
   const id     = DEV_VARS['CF_ACCESS_CLIENT_ID'] ?? DEV_VARS['CLOUDFLARE_ACCESS_CLIENT_ID'] ?? ''
@@ -63,7 +65,11 @@ function getAccessHeaders(): Record<string, string> {
 }
 
 function tsNow(): string { return new Date().toISOString() }
-function log(msg: string): void { console.log(`[acer-img ${tsNow()}] ${msg}`) }
+function log(msg: string): void {
+  const prefix = logContext.getStore()
+  const formatted = prefix ? `${prefix} ${msg}` : msg
+  console.log(`[acer-img ${tsNow()}] ${formatted}`)
+}
 
 // ---------------------------------------------------------------------------
 // Wizhard API helpers
@@ -224,7 +230,11 @@ function needsFilling(row: StockRow): boolean {
 }
 
 /** Assign a shopify_tiktok collection to a product (D1 only, no platform push). */
-async function assignCollection(sku: string, category: InternalCategory): Promise<void> {
+async function assignCollection(
+  sku: string,
+  category: InternalCategory,
+  logger: (message: string) => void = log,
+): Promise<void> {
   const collectionId = tiktokCollectionMap.get(category)
   if (!collectionId) {
     log(`  ⚠️  [no-collection] "${category}" has no mapped shopify_tiktok collection — assign manually`)
@@ -1546,6 +1556,7 @@ async function processProduct(
   const sourceLocale = detectLocale(sourceUrl)
   const fields = new Set<FillField>()
   const details: FillAuditMessage['details'] = { mode: MODE }
+  logContext.enterWith(`[${index}/${total}] ${sku}`)
 
   // ------------------------------------------------------------------
   // Step 1: Determine which URL to use for content extraction.
