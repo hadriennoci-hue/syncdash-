@@ -34,7 +34,7 @@ interface PushBarState {
 }
 
 interface DashboardSummary {
-  warehouses: Array<{ id: string; label: string; refsInStock: number }>
+  warehouses: Array<{ id: string; label: string; refsInStock: number; refsTotal: number }>
   channels: Array<{
     id: string
     label: string
@@ -100,6 +100,7 @@ function WarehouseCard({
   sub,
   href,
   refsInStock,
+  refsTotal,
   occ,
   inc,
 }: {
@@ -107,6 +108,7 @@ function WarehouseCard({
   sub: string
   href: string
   refsInStock: number | null
+  refsTotal: number | null
   occ: number
   inc: number
 }) {
@@ -125,6 +127,9 @@ function WarehouseCard({
       <p className="mt-1.5 font-mono text-[10px] text-[#8FA0C7]">occupied {occ}% - incoming {inc}%</p>
       {refsInStock != null && (
         <p className="mt-1.5 font-mono text-xs font-bold text-[#35A7FF]">{refsInStock} refs in stock</p>
+      )}
+      {refsTotal != null && (
+        <p className="mt-1 font-mono text-[10px] text-[#8FA0C7]">{refsTotal} refs scraped/listed</p>
       )}
     </Link>
   )
@@ -734,8 +739,9 @@ export function DashboardHome() {
       WAREHOUSES.map((w) => {
         const found = warehouseData.find((x) => x.id === w.id)
         const refsInStock = found?.refsInStock ?? null
+        const refsTotal = found?.refsTotal ?? null
         const { occ, inc } = getProgress(refsInStock ?? 0, maxStock, w.id)
-        return { ...w, label: found?.label ?? w.label, refsInStock, occ, inc }
+        return { ...w, label: found?.label ?? w.label, refsInStock, refsTotal, occ, inc }
       }),
     [warehouseData, maxStock],
   )
@@ -810,7 +816,10 @@ export function DashboardHome() {
                   <div className="mt-2 space-y-0.5">
                     {scanError && <p className="font-mono text-[10px] text-[#FF5C7A]">{scanError}</p>}
                     {scanResult?.map((r) => (
-                      <p key={r.warehouseId} className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : 'text-[#35F2A1]'}`}>
+                      <p
+                        key={r.warehouseId}
+                        className={`font-mono text-[10px] ${r.errors.length ? 'text-[#FF5C7A]' : r.queued ? 'text-[#F2A135]' : 'text-[#35F2A1]'}`}
+                      >
                         {r.warehouseId}: {r.errors[0] ?? r.message ?? `${r.productsUpdated} updated`}
                       </p>
                     ))}

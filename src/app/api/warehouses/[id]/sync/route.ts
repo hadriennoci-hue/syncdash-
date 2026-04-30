@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         errors: [],
         syncedAt: new Date().toISOString(),
         queued: true,
-        message: 'ACER stock scan queued on local runner',
+        message: 'ACER stock scan queued on local runner (async; refresh after runner completion)',
       })
     }
     if (params.id === 'dropshipping') {

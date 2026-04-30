@@ -112,9 +112,11 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // Count refs in stock per warehouse (quantity > 0)
+  // Count refs in stock per warehouse (quantity > 0) and total refs per warehouse.
   const stockCounts: Record<string, number> = {}
+  const totalWarehouseRefs: Record<string, number> = {}
   for (const row of stockRows) {
+    totalWarehouseRefs[row.warehouseId] = (totalWarehouseRefs[row.warehouseId] ?? 0) + 1
     if (row.quantity > 0) {
       stockCounts[row.warehouseId] = (stockCounts[row.warehouseId] ?? 0) + 1
     }
@@ -165,8 +167,9 @@ export async function GET(req: NextRequest) {
   return apiResponse({
     warehouses: ACTIVE_WAREHOUSES.map((id) => ({
       id,
-      label:      WAREHOUSE_LABELS[id],
+      label: WAREHOUSE_LABELS[id],
       refsInStock: stockCounts[id] ?? 0,
+      refsTotal: totalWarehouseRefs[id] ?? 0,
     })),
     channels: channelRows.map((ch) => ({
       id:            ch.id,

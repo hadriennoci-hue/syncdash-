@@ -133,6 +133,19 @@ function getAccessHeaders(): Record<string, string> {
 
 function tsNow(): string { return new Date().toISOString() }
 function log(msg: string): void { console.log(`[acer-stock ${tsNow()}] ${msg}`) }
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -432,7 +445,22 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
     }
   }
 
-  await browser.close()
+  log('Crawl complete. Closing Playwright page/context/browser...')
+  try {
+    await withTimeout(page.close(), 10_000, 'page.close()')
+  } catch (err) {
+    log(`  WARNING page close failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  try {
+    await withTimeout(context.close(), 15_000, 'context.close()')
+  } catch (err) {
+    log(`  WARNING context close failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  try {
+    await withTimeout(browser.close(), 15_000, 'browser.close()')
+  } catch (err) {
+    log(`  WARNING browser close failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 
   const allProducts = Array.from(productMap.values())
 

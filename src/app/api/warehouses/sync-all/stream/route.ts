@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
                 errors: [],
                 syncedAt: new Date().toISOString(),
                 queued: true,
-                message: 'ACER stock scan queued on local runner',
+                message: 'ACER stock scan queued on local runner (async; dashboard result will stay queued until refresh)',
               }
               results.push(queued)
               push('progress', {
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
                 warehouseIndex: index + 1,
                 warehouseTotal: ordered.length,
                 stage: 'fetch_done',
-                message: 'ACER stock scan queued on local runner',
+                message: 'ACER stock scan queued on local runner (async; wait for runner completion, then refresh summary)',
                 current: 1,
                 total: 1,
               })
