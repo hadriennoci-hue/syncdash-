@@ -80,6 +80,7 @@ const patchSchema = z.object({
     metaDescription:      z.string().optional(),
     tags:                 z.array(tagSchema).max(10).optional(),
     status:               z.enum(['active', 'archived']).optional(),
+    pendingReview:        z.boolean().optional(),
     isFeatured:           z.boolean().optional(),
     categoryIds:          z.array(z.string()).optional(),
     collections:          z.array(z.string()).optional(),

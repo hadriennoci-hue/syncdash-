@@ -49,6 +49,11 @@ const IS_DRY_RUN = args.includes('--dry-run')
 const IS_HEADED  = args.includes('--headed')
 const MODE       = (args.find(a => a.startsWith('--mode='))?.split('=')[1] ?? 'replace') as 'replace' | 'add'
 const ONLY_SKU   = args.find(a => a.startsWith('--sku='))?.split('=')[1] ?? null
+const SKU_LIST   = (args.find(a => a.startsWith('--sku-list='))?.split('=')[1] ?? '')
+  .split(',')
+  .map(value => value.trim().toUpperCase())
+  .filter(Boolean)
+const TARGETED_SKUS = new Set([...(ONLY_SKU ? [ONLY_SKU.toUpperCase()] : []), ...SKU_LIST])
 const CONCURRENCY = 2  // simultaneous product pages — keep low to avoid rate limits
 
 const BASE_URL = IS_LOCAL
@@ -91,6 +96,7 @@ interface StockRow {
 type FillField =
   | 'description'
   | 'status'
+  | 'translation'
   | 'attributes'
   | 'collection'
   | 'variant_family'
@@ -113,6 +119,11 @@ interface FillResult {
   skipped: number
   errors: string[]
   fields: FillField[]
+  reviewReasons: string[]
+  finalImageCount: number
+  finalCategoryCount: number
+  finalPendingReview: boolean
+  finalStatus: 'active' | 'archived' | null
 }
 
 async function writeFillAudit(
@@ -255,6 +266,30 @@ function needsCollectionOnly(row: StockRow): boolean {
 
 function needsFilling(row: StockRow): boolean {
   return needsBrowserFill(row) || needsCollectionOnly(row)
+}
+
+function normalizePlainText(input: string | null | undefined): string | null {
+  const normalized = (input ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+  return normalized || null
+}
+
+function mapSourceLocaleToTranslationLocale(sourceLocale: string | null): string | null {
+  if (!sourceLocale) return null
+  return /^[a-z]{2}$/i.test(sourceLocale) ? sourceLocale.toLowerCase() : null
+}
+
+function buildMetaDescription(title: string | null, description: string | null): string | null {
+  const raw = normalizePlainText(description)?.replace(/\n+/g, ' ') ?? ''
+  if (raw) return raw.slice(0, 320)
+  const fallback = normalizePlainText(title)
+  return fallback ? fallback.slice(0, 320) : null
 }
 
 /** Assign a shopify_tiktok collection to a product (D1 only, no platform push). */
@@ -1271,7 +1306,9 @@ function mapSpecs(
 interface ProductPageData {
   images:      Array<{ url: string; alt: string }>
   specs:       Record<string, string>
+  title:       string | null
   description: string | null
+  metaDescription: string | null
 }
 
 /** Extract images and spec table from the product page in a single visit */
@@ -1363,7 +1400,17 @@ async function extractProductData(
         break
       }
 
-      return { images, specs, description }
+      const title =
+        document.querySelector('h1.page-title span.base')?.textContent?.trim()
+        || document.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim()
+        || document.title?.trim()
+        || null
+
+      const metaDescription =
+        document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim()
+        || null
+
+      return { images, specs, title, description, metaDescription }
     })
   } finally {
     await page.close()
@@ -1525,7 +1572,7 @@ function generateTags(
 
 async function uploadProductInfo(
   sku: string,
-  fields: { description?: string; status?: 'active' | 'archived'; categoryIds?: string[]; tags?: string[] },
+  fields: { description?: string; status?: 'active' | 'archived'; pendingReview?: boolean; categoryIds?: string[]; tags?: string[] },
 ): Promise<void> {
   // Note: omit `platforms` entirely (not []) — Zod schema requires min(1) if present.
   // Omitting means D1-only update, no platform push.
@@ -1539,6 +1586,32 @@ async function uploadProductInfo(
     body: JSON.stringify({ fields, triggeredBy: 'agent' }),
   })
   if (!res.ok) throw new Error(`Product PATCH ${res.status}: ${await res.text()}`)
+}
+
+async function uploadProductTranslation(
+  sku: string,
+  locale: string,
+  fields: { title?: string | null; description?: string | null; metaDescription?: string | null },
+): Promise<void> {
+  if (!fields.title && !fields.description && !fields.metaDescription) return
+  const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}/translations`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${TOKEN}`,
+      ...getAccessHeaders(),
+    },
+    body: JSON.stringify({
+      translations: [{
+        locale,
+        ...(fields.title ? { title: fields.title } : {}),
+        ...(fields.description ? { description: fields.description } : {}),
+        ...(fields.metaDescription ? { metaDescription: fields.metaDescription } : {}),
+      }],
+      triggeredBy: 'agent',
+    }),
+  })
+  if (!res.ok) throw new Error(`Translation PUT ${res.status}: ${await res.text()}`)
 }
 
 async function autoLinkVariantFamily(sku: string): Promise<{
@@ -1600,7 +1673,17 @@ async function processProduct(
   let needsTranslation = false
   let pageData: ProductPageData | null = null
   const finalize = async (status: 'success' | 'error', ok: number, skipped: number, errors: string[]): Promise<FillResult> => {
-    const result: FillResult = { ok, skipped, errors, fields: Array.from(fields) }
+    const result: FillResult = {
+      ok,
+      skipped,
+      errors,
+      fields: Array.from(fields),
+      reviewReasons: [],
+      finalImageCount: existing.hasImages ? 1 : ok,
+      finalCategoryCount: existing.hasCategory ? 1 : 0,
+      finalPendingReview: true,
+      finalStatus: needsTranslation ? 'archived' : null,
+    }
     await writeFillAudit(sku, status, {
       fields: result.fields,
       sourceUrl,
@@ -1849,6 +1932,328 @@ async function processProduct(
   return finalize(errors.length > 0 ? 'error' : 'success', uploaded, skipped, errors)
 }
 
+async function processProductV2(
+  context: BrowserContext,
+  sku: string,
+  sourceUrl: string,
+  sourceName: string,
+  index: number,
+  total: number,
+  row: StockRow,
+): Promise<FillResult> {
+  log(`[${index}/${total}] ${sku} -> ${sourceUrl}`)
+
+  const sourceLocale = detectLocale(sourceUrl)
+  const translationLocale = mapSourceLocaleToTranslationLocale(sourceLocale)
+  const fields = new Set<FillField>()
+  const details: FillAuditMessage['details'] = { mode: MODE }
+  const reviewReasons = new Set<string>()
+  logContext.enterWith(`[${index}/${total}] ${sku}`)
+
+  let fetchLocale = sourceLocale
+  let needsTranslation = false
+  let pageData: ProductPageData | null = null
+  let localizedPageData: ProductPageData | null = null
+  let translationSaved = false
+  let finalImageCount = row.imageCount
+  let finalCategoryCount = row.categoryCount
+  let finalPendingReview = row.pendingReview > 0
+  let finalStatus: 'active' | 'archived' | null =
+    row.status === 'active' || row.status === 'archived' ? row.status : null
+
+  const finalize = async (status: 'success' | 'error', ok: number, skipped: number, errors: string[]): Promise<FillResult> => {
+    const result: FillResult = {
+      ok,
+      skipped,
+      errors,
+      fields: Array.from(fields),
+      reviewReasons: Array.from(reviewReasons),
+      finalImageCount,
+      finalCategoryCount,
+      finalPendingReview,
+      finalStatus,
+    }
+    await writeFillAudit(sku, status, {
+      fields: result.fields,
+      sourceUrl,
+      sourceLocale,
+      fetchLocale,
+      needsTranslation,
+      phase: 'browser-fill',
+      details: {
+        ...details,
+        reviewReasons: result.reviewReasons,
+        finalImageCount,
+        finalCategoryCount,
+        finalPendingReview,
+        ...(finalStatus ? { finalStatus } : {}),
+      },
+      errors,
+    })
+    return result
+  }
+
+  if (sourceLocale !== 'en') {
+    const enUrl = tryConstructEnglishUrl(sourceUrl)
+    if (enUrl) {
+      log(`  Trying en-ie first: ${enUrl}`)
+      try {
+        const enData = await extractProductData(context, enUrl)
+        if (enData.images.length > 0 || enData.description) {
+          pageData = enData
+          fetchLocale = 'en'
+          log(`  Found on en-ie - using English content`)
+        } else {
+          needsTranslation = true
+          log(`  en-ie page empty - product not in Irish store, falling back to ${sourceLocale} URL`)
+        }
+      } catch {
+        needsTranslation = true
+        log(`  en-ie fetch failed - falling back to ${sourceLocale} URL`)
+      }
+    } else {
+      needsTranslation = true
+      log(`  Cannot map URL to en-ie - will use foreign URL (locale=${sourceLocale})`)
+    }
+  }
+
+  if (!pageData) {
+    pageData = await extractProductData(context, sourceUrl)
+  }
+
+  if (translationLocale) {
+    if (translationLocale === fetchLocale) {
+      localizedPageData = pageData
+    } else {
+      try {
+        localizedPageData = await extractProductData(context, sourceUrl)
+      } catch (err) {
+        reviewReasons.add('translation_fetch_failed')
+        log(`  Translation page fetch failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
+  const { images: imageRefs, specs: rawSpecs, description } = pageData
+  details.imagesFound = imageRefs.length
+  details.specEntries = Object.keys(rawSpecs).length
+  log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
+
+  if (row.hasDescription) {
+    log(`  Description already present - skipping`)
+  } else if (description) {
+    try {
+      await uploadProductInfo(sku, {
+        description,
+        ...(needsTranslation ? { status: 'archived' } : {}),
+      })
+      fields.add('description')
+      details.descriptionLength = description.length
+      if (needsTranslation) {
+        fields.add('status')
+        details.status = 'archived'
+        finalStatus = 'archived'
+      }
+    } catch (err) {
+      reviewReasons.add('description_save_failed')
+      log(`  Description save failed: ${err instanceof Error ? err.message : err}`)
+    }
+  } else if (needsTranslation) {
+    try {
+      await uploadProductInfo(sku, { status: 'archived' })
+      fields.add('status')
+      details.status = 'archived'
+      finalStatus = 'archived'
+    } catch (err) {
+      reviewReasons.add('status_save_failed')
+      log(`  Status update failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  if (translationLocale) {
+    const translationTitle = normalizePlainText(localizedPageData?.title ?? sourceName)
+    const translationDescription = normalizePlainText(localizedPageData?.description)
+    const translationMetaDescription =
+      normalizePlainText(localizedPageData?.metaDescription)
+      ?? buildMetaDescription(translationTitle, translationDescription)
+
+    if (translationTitle || translationDescription || translationMetaDescription) {
+      try {
+        await uploadProductTranslation(sku, translationLocale, {
+          title: translationTitle,
+          description: translationDescription,
+          metaDescription: translationMetaDescription,
+        })
+        translationSaved = true
+        fields.add('translation')
+        details.translationLocale = translationLocale
+      } catch (err) {
+        reviewReasons.add('translation_save_failed')
+        log(`  Translation save failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
+  const category = detectCategory(sourceName, sourceUrl)
+  details.category = category
+  let linkedVariantFamily = false
+  let collectionAssigned = row.categoryCount > 0
+
+  if (row.attributeCount > 0) {
+    log(`  Attributes already present - skipping`)
+  } else if (category) {
+    const unmappedLabels: string[] = []
+    const attributes = mapSpecs(rawSpecs, category, fetchLocale, (label, value) => {
+      unmappedLabels.push(`"${label}" = "${value}"`)
+    })
+    if (unmappedLabels.length > 0) {
+      details.unmappedLabels = unmappedLabels
+      log(`  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${fetchLocale ?? '?'}):`)
+      for (const unmapped of unmappedLabels) log(`       ${unmapped}`)
+    }
+    if (category === 'laptops' || (category === 'input-device' && isKeyboardInputDevice(sourceName, sourceUrl))) {
+      const layout = detectKeyboardLayout(sourceUrl)
+      if (layout) {
+        attributes.push({ key: 'keyboard_layout', value: layout })
+        details.keyboardLayout = layout
+      }
+    }
+    if (attributes.length > 0) {
+      try {
+        await uploadAttributes(sku, attributes)
+        fields.add('attributes')
+        details.attributesCount = attributes.length
+        if (attributes.some((attr) => attr.key === 'keyboard_layout')) {
+          const family = await autoLinkVariantFamily(sku)
+          if (family.linked) {
+            linkedVariantFamily = true
+            fields.add('variant_family')
+            details.variantFamilySourceSku = family.sourceSku ?? 'existing laptop'
+            details.variantFamilySiblingSkus = family.siblingSkus ?? []
+          }
+        }
+      } catch (err) {
+        reviewReasons.add('attribute_save_failed')
+        log(`  Attributes failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
+  if (linkedVariantFamily) {
+    collectionAssigned = true
+    finalCategoryCount = Math.max(finalCategoryCount, 1)
+  } else if (category && row.categoryCount === 0) {
+    try {
+      await assignCollection(sku, category)
+      fields.add('collection')
+      collectionAssigned = true
+      finalCategoryCount = Math.max(finalCategoryCount, 1)
+    } catch (err) {
+      reviewReasons.add('collection_assignment_failed')
+      log(`  Collection assignment failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  const errors: string[] = []
+  let uploaded = 0
+  let skipped = 0
+
+  if (row.imageCount > 0) {
+    log(`  Images already present - skipping`)
+  } else if (imageRefs.length === 0) {
+    errors.push('No images found on page')
+  } else {
+    const downloads = await Promise.all(
+      imageRefs.map(async (ref, i) => {
+        const result = await downloadImage(ref.url)
+        if (!result) return null
+        const ext = ref.url.split('.').pop()?.split('?')[0] ?? 'jpg'
+        return {
+          buffer: result.buffer,
+          mimeType: result.mimeType,
+          filename: `${sku}-${i}.${ext}`,
+          alt: ref.alt || sku,
+        }
+      })
+    )
+    const files = downloads.filter((file): file is NonNullable<typeof file> => file !== null)
+    skipped = downloads.length - files.length
+    details.imageDownloadFailures = skipped
+    if (files.length === 0) {
+      errors.push('All image downloads failed')
+    } else {
+      const batchSize = 10
+      for (let offset = 0; offset < files.length; offset += batchSize) {
+        const batch = files.slice(offset, offset + batchSize)
+        const batchMode = offset === 0 ? MODE : 'add'
+        try {
+          const result = await uploadImages(sku, batch, batchMode)
+          uploaded += result.urls.length
+          if (result.errors.length > 0) errors.push(...result.errors)
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err))
+        }
+      }
+      details.imagesUploaded = uploaded
+      if (uploaded > 0) {
+        fields.add('images')
+        finalImageCount = uploaded
+      }
+    }
+  }
+
+  if (category) {
+    const attrsForTags = mapSpecs(rawSpecs, category, fetchLocale)
+    if (category === 'laptops' || (category === 'input-device' && isKeyboardInputDevice(sourceName, sourceUrl))) {
+      const layout = detectKeyboardLayout(sourceUrl)
+      if (layout) attrsForTags.push({ key: 'keyboard_layout', value: layout })
+    }
+    const tags = generateTags(category, attrsForTags, sourceName, description)
+    if (tags.length > 0) {
+      try {
+        await uploadProductInfo(sku, { tags })
+        fields.add('tags')
+        details.tags = tags
+        details.tagCount = tags.length
+      } catch (err) {
+        reviewReasons.add('tag_save_failed')
+        log(`  Tag upload failed: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+  }
+
+  if (needsTranslation && !translationSaved) reviewReasons.add('needs_translation')
+  if (!collectionAssigned) reviewReasons.add('missing_collection')
+  if (finalImageCount <= 1) reviewReasons.add('low_image_count')
+  if (errors.length > 0) reviewReasons.add('fill_errors')
+
+  try {
+    if (reviewReasons.size === 0) {
+      await uploadProductInfo(sku, { status: 'active', pendingReview: false })
+      fields.add('status')
+      details.status = 'active'
+      finalStatus = 'active'
+      finalPendingReview = false
+    } else {
+      const workflowFields: { status?: 'active' | 'archived'; pendingReview: boolean } = { pendingReview: true }
+      if (needsTranslation) workflowFields.status = 'archived'
+      await uploadProductInfo(sku, workflowFields)
+      if (workflowFields.status) {
+        fields.add('status')
+        details.status = workflowFields.status
+        finalStatus = workflowFields.status
+      }
+      finalPendingReview = true
+    }
+  } catch (err) {
+    reviewReasons.add('workflow_update_failed')
+    errors.push(err instanceof Error ? err.message : String(err))
+    log(`  Workflow update failed: ${err instanceof Error ? err.message : err}`)
+  }
+
+  return finalize(errors.length > 0 ? 'error' : 'success', uploaded, skipped, errors)
+}
+
 // ---------------------------------------------------------------------------
 // Concurrency helper
 // ---------------------------------------------------------------------------
@@ -1878,17 +2283,17 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
     process.exit(1)
   }
 
-  log(`Target: ${BASE_URL}  mode: ${MODE}${ONLY_SKU ? `  sku: ${ONLY_SKU}` : ''}`)
+  log(`Target: ${BASE_URL}  mode: ${MODE}${TARGETED_SKUS.size > 0 ? `  targetedSkus: ${TARGETED_SKUS.size}` : ''}`)
 
   // Step 1 — fetch acer_store stock + shopify_tiktok collection map
   log('Fetching acer_store stock list and shopify_tiktok collections...')
   const [allRows] = await Promise.all([getAcerStockRows(), fetchTiktokCollectionMap()])
   const withUrl = allRows.filter(r => r.sourceUrl && r.sourceUrl !== 'null')
 
-  // When targeting a single SKU, skip the status filter (allow re-fill of any product)
+  // When targeting SKUs, skip the normal fill eligibility filter so we can re-apply workflow logic.
   const rows = withUrl
-    .filter(r => !ONLY_SKU || r.productId === ONLY_SKU)
-    .filter(r => ONLY_SKU || needsFilling(r))
+    .filter(r => TARGETED_SKUS.size === 0 || TARGETED_SKUS.has(r.productId.toUpperCase()))
+    .filter(r => TARGETED_SKUS.size > 0 || needsFilling(r))
 
   if (rows.length === 0) {
     log(`No products need filling (${withUrl.length} have Acer URLs — all complete or not pendingReview).`)
@@ -1910,7 +2315,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   }
 
   // Step 2 — Phase A: assign collections to products that only need that (no browser visit needed)
-  const collectionOnlyRows = rows.filter(r => needsCollectionOnly(r))
+  const collectionOnlyRows = TARGETED_SKUS.size > 0 ? [] : rows.filter(r => needsCollectionOnly(r))
   if (collectionOnlyRows.length > 0) {
     log(`\nPhase A — assigning collections (${collectionOnlyRows.length} product(s), no browser needed)`)
     for (const row of collectionOnlyRows) {
@@ -1935,7 +2340,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   }
 
   // Step 3 — Phase B: browser fill for products needing images / description / attributes
-  const browserRows = rows.filter(r => needsBrowserFill(r))
+  const browserRows = TARGETED_SKUS.size > 0 ? rows : rows.filter(r => needsBrowserFill(r))
   if (browserRows.length === 0) {
     await writeFillRunAudit('success', {
       startedAt,
@@ -1970,21 +2375,17 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   let totalOk = 0
   let totalErrors = 0
   let i = 0
+  const exceptionSkus = new Set<string>()
 
   const tasks = browserRows.map(row => async () => {
     const idx = ++i
     try {
-      const result = await processProduct(
-        context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, browserRows.length,
-        {
-          hasImages:     row.imageCount > 0,
-          hasDescription: row.hasDescription,
-          hasAttributes:  row.attributeCount > 0,
-          hasCategory:    row.categoryCount > 0,
-        },
+      const result = await processProductV2(
+        context, row.productId, row.sourceUrl!, row.sourceName ?? '', idx, browserRows.length, row,
       )
       totalOk += result.ok
       totalErrors += result.errors.length
+      if (result.reviewReasons.length > 0) exceptionSkus.add(row.productId)
     } catch (err) {
       log(`  ❌ ${row.productId}: ${err instanceof Error ? err.message : err}`)
       await writeFillAudit(row.productId, 'error', {
@@ -2014,7 +2415,12 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
     browserProducts: browserRows.length,
     imagesUploaded: totalOk,
     errors: totalErrors,
+    exceptionSkus: Array.from(exceptionSkus),
   })
+
+  if (exceptionSkus.size > 0) {
+    log(`Exception SKUs requiring review: ${Array.from(exceptionSkus).join(', ')}`)
+  }
 
   log(`\n✅ Done — ${totalOk} images uploaded, ${totalErrors} errors`)
 })().catch(async (err) => {

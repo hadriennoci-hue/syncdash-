@@ -228,6 +228,7 @@ interface UpdateProductInput {
     metaDescription?: string
     tags?: string[]
     status?: 'active' | 'archived'
+    pendingReview?: boolean
     isFeatured?: boolean
     categoryIds?: string[]
     variantGroupId?: string | null
@@ -258,6 +259,7 @@ export async function updateProduct(
   if (input.fields.metaDescription !== undefined) d1Update.metaDescription = cleanDescription(input.fields.metaDescription)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
+  if (input.fields.pendingReview !== undefined) d1Update.pendingReview = input.fields.pendingReview ? 1 : 0
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
   if ('variantGroupId' in input.fields)       d1Update.variantGroupId = input.fields.variantGroupId ?? null
 
@@ -371,6 +373,7 @@ interface UpdateProductLocalInput {
     metaDescription?: string
     tags?: string[]
     status?: 'active' | 'archived'
+    pendingReview?: boolean
     isFeatured?: boolean
     categoryIds?: string[]
   }
@@ -389,6 +392,7 @@ export async function updateProductLocal(
   if (input.fields.metaDescription !== undefined) d1Update.metaDescription = cleanDescription(input.fields.metaDescription)
   if (input.fields.tags !== undefined)        d1Update.tags = JSON.stringify(normalizeTags(input.fields.tags) ?? [])
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
+  if (input.fields.pendingReview !== undefined) d1Update.pendingReview = input.fields.pendingReview ? 1 : 0
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
 
   await db.update(products)
