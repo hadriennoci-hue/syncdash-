@@ -10,6 +10,7 @@ interface WarehouseSyncResult {
   warehouseId: string
   productsUpdated: number
   errors: string[]
+  syncedAt?: string
   queued?: boolean
   message?: string
 }
@@ -46,6 +47,27 @@ interface DashboardSummary {
   wizhard: { productsToFill: number }
   suppliers: { lastInvoiceDate: string | null }
   lastPush: string | null
+}
+
+interface RunnerLogRow {
+  createdAt?: string
+  status?: 'success' | 'error'
+  message?: string | null
+}
+
+interface AcerRunSummary {
+  startedAt?: string
+  finishedAt?: string
+  scrapedProducts?: number
+  inStockProducts?: number
+  outOfStockProducts?: number
+  snapshotCount?: number
+  productsConsidered?: number
+  collectionOnlyProducts?: number
+  browserProducts?: number
+  imagesUploaded?: number
+  errors?: number
+  error?: string
 }
 
 const WAREHOUSES = [
@@ -89,6 +111,15 @@ function getProgress(stock: number, maxStock: number, id: string) {
 function formatRevenue(cents: number | null | undefined) {
   const eur = cents != null ? Math.round(cents / 100) : 0
   return `${clamp(eur, 0, 999999)} EUR`
+}
+
+function parseAcerRunSummary(message?: string | null): AcerRunSummary | null {
+  if (!message) return null
+  try {
+    return JSON.parse(message) as AcerRunSummary
+  } catch {
+    return null
+  }
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -215,6 +246,10 @@ export function DashboardHome() {
 
   const [acerStock, setAcerStock] = useState<'idle' | 'sent'>('idle')
   const [acerFill,  setAcerFill]  = useState<'idle' | 'sent'>('idle')
+  const [pendingAcerStockRunAt, setPendingAcerStockRunAt] = useState<string | null>(null)
+  const [pendingAcerFillRunAt, setPendingAcerFillRunAt] = useState<string | null>(null)
+  const [acerStockNotice, setAcerStockNotice] = useState<string | null>(null)
+  const [acerFillNotice, setAcerFillNotice] = useState<string | null>(null)
 
   const [lastScan, setLastScan] = useState<string | null>(null)
   const [lastPush, setLastPush] = useState<string | null>(null)
@@ -226,6 +261,62 @@ export function DashboardHome() {
   useEffect(() => {
     setLastPush(summary?.lastPush ?? null)
   }, [summary?.lastPush])
+
+  useEffect(() => {
+    if (!pendingAcerStockRunAt && !pendingAcerFillRunAt) return
+
+    let cancelled = false
+
+    const pollRunnerCompletion = async () => {
+      try {
+        if (pendingAcerStockRunAt) {
+          const stockRes = await apiFetch<{ data: RunnerLogRow[] }>(
+            `/api/sync/logs?platform=acer_store&action=acer_stock_run&page=1&perPage=20`
+          )
+          const stockRow = (stockRes.data ?? []).find((row) => !!row.createdAt && row.createdAt >= pendingAcerStockRunAt)
+          if (stockRow && !cancelled) {
+            const payload = parseAcerRunSummary(stockRow.message)
+            const message = stockRow.status === 'error'
+              ? `ACER stock scan failed: ${payload?.error ?? 'unknown error'}`
+              : `ACER stock scan complete - ${payload?.scrapedProducts ?? payload?.snapshotCount ?? 0} scraped, ${payload?.inStockProducts ?? 0} in stock`
+            setAcerStockNotice(message)
+            setPendingAcerStockRunAt(null)
+            setScanResult((current) => current?.map((row) => (
+              row.warehouseId === 'acer_store'
+                ? { ...row, queued: false, message, productsUpdated: payload?.inStockProducts ?? row.productsUpdated }
+                : row
+            )) ?? current)
+            qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
+          }
+        }
+
+        if (pendingAcerFillRunAt) {
+          const fillRes = await apiFetch<{ data: RunnerLogRow[] }>(
+            `/api/sync/logs?platform=acer_store&action=acer_fill_run&page=1&perPage=20`
+          )
+          const fillRow = (fillRes.data ?? []).find((row) => !!row.createdAt && row.createdAt >= pendingAcerFillRunAt)
+          if (fillRow && !cancelled) {
+            const payload = parseAcerRunSummary(fillRow.message)
+            const message = fillRow.status === 'error'
+              ? `ACER fill failed: ${payload?.error ?? 'unknown error'}`
+              : `ACER fill complete - ${payload?.productsConsidered ?? 0} products, ${payload?.imagesUploaded ?? 0} images, ${payload?.errors ?? 0} errors`
+            setAcerFillNotice(message)
+            setPendingAcerFillRunAt(null)
+            qc.invalidateQueries({ queryKey: ['dashboard-summary'] })
+          }
+        }
+      } catch {
+        // Keep polling on transient API errors.
+      }
+    }
+
+    void pollRunnerCompletion()
+    const interval = window.setInterval(() => { void pollRunnerCompletion() }, 15000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [pendingAcerStockRunAt, pendingAcerFillRunAt, qc])
 
   async function ensureBrowserRunner() {
     const controller = new AbortController()
@@ -287,6 +378,11 @@ export function DashboardHome() {
         }
       }
       setScanResult(final ?? [])
+      const queuedAcer = (final ?? []).find((row) => row.warehouseId === 'acer_store' && row.queued)
+      if (queuedAcer?.syncedAt) {
+        setPendingAcerStockRunAt(queuedAcer.syncedAt)
+        setAcerStockNotice('ACER stock scan queued - waiting for local runner completion...')
+      }
       const now = new Date().toISOString()
       localStorage.setItem('lastStockScan', now)
       setLastScan(now)
@@ -725,9 +821,17 @@ export function DashboardHome() {
 
   async function wakeAcerRunner(runner: 'acer-stock' | 'acer-fill', reason: string) {
     const set = runner === 'acer-stock' ? setAcerStock : setAcerFill
+    const startedAt = new Date().toISOString()
     set('sent')
     try {
       await apiPost('/api/runner/wake', { runner, reason })
+      if (runner === 'acer-stock') {
+        setPendingAcerStockRunAt(startedAt)
+        setAcerStockNotice('ACER stock scan queued - waiting for local runner completion...')
+      } else {
+        setPendingAcerFillRunAt(startedAt)
+        setAcerFillNotice('ACER fill queued - waiting for local runner completion...')
+      }
     } catch { /* ignore */ }
     setTimeout(() => set('idle'), 4000)
   }
@@ -900,6 +1004,12 @@ export function DashboardHome() {
                   </button>
                 </div>
                 <p className="mt-1.5 font-mono text-[9px] text-[#8FA0C7]">Requires <span className="text-[#E6ECFF]">npm run runner:acer</span> running locally. Fills descriptions, attributes, collections, images, and tags.</p>
+                {(acerStockNotice || acerFillNotice) && (
+                  <div className="mt-2 space-y-0.5">
+                    {acerStockNotice && <p className="font-mono text-[10px] text-[#F2A135]">{acerStockNotice}</p>}
+                    {acerFillNotice && <p className="font-mono text-[10px] text-[#F2A135]">{acerFillNotice}</p>}
+                  </div>
+                )}
               </div>
 
               <div className="h-px bg-[#1E2A44]" />

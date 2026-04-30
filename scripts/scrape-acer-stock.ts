@@ -162,6 +162,35 @@ interface AcerProduct {
   descLocale:       string | null   // locale the description came from
 }
 
+async function writeRunAudit(
+  status: 'success' | 'error',
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (!TOKEN) return
+  try {
+    const res = await fetch(`${BASE_URL}/api/sync/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${TOKEN}`,
+        ...getAccessHeaders(),
+      },
+      body: JSON.stringify({
+        platform: 'acer_store',
+        action: 'acer_stock_run',
+        status,
+        message: JSON.stringify(payload),
+        triggeredBy: 'agent',
+      }),
+    })
+    if (!res.ok) {
+      log(`WARNING acer_stock_run log failed: ${res.status} ${await res.text()}`)
+    }
+  } catch (err) {
+    log(`WARNING acer_stock_run log failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // DOM extraction — runs inside the browser page
 // ---------------------------------------------------------------------------
@@ -365,6 +394,7 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 ;(async () => {
+  const startedAt = new Date().toISOString()
   if (!TOKEN && !IS_DRY) {
     log('❌ AGENT_BEARER_TOKEN not set in .dev.vars')
     process.exit(1)
@@ -489,5 +519,24 @@ async function ingestSnapshots(snapshots: Snapshot[]): Promise<void> {
   log(`\n📤 Ingesting ${snapshots.length} snapshots into ${BASE_URL}...`)
   await ingestSnapshots(snapshots)
 
+  await writeRunAudit('success', {
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    source: SOURCE,
+    categories: sortedCategories.map(u => u.replace('https://store.acer.com/', '')),
+    scrapedProducts: allProducts.length,
+    inStockProducts: snapshots.filter((snapshot) => snapshot.quantity > 0).length,
+    outOfStockProducts: snapshots.filter((snapshot) => snapshot.quantity <= 0).length,
+    snapshotCount: snapshots.length,
+  })
+
   log('\n✅ Done')
-})()
+})().catch(async (err) => {
+  const message = err instanceof Error ? err.message : String(err)
+  log(`\n❌ Failed: ${message}`)
+  await writeRunAudit('error', {
+    finishedAt: new Date().toISOString(),
+    error: message,
+  })
+  process.exit(1)
+})

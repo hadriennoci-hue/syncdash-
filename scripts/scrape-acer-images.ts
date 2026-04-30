@@ -145,6 +145,34 @@ async function writeFillAudit(
   }
 }
 
+async function writeFillRunAudit(
+  status: 'success' | 'error',
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/sync/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${TOKEN}`,
+        ...getAccessHeaders(),
+      },
+      body: JSON.stringify({
+        platform: 'acer_store',
+        action: 'acer_fill_run',
+        status,
+        message: JSON.stringify(payload),
+        triggeredBy: 'agent',
+      }),
+    })
+    if (!res.ok) {
+      log(`WARNING fill run audit log failed: ${res.status} ${await res.text()}`)
+    }
+  } catch (err) {
+    log(`WARNING fill run audit log failed: ${err instanceof Error ? err.message : err}`)
+  }
+}
+
 async function getAcerStockRows(): Promise<StockRow[]> {
   const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/stock?withProduct=1`, {
     headers: { Authorization: `Bearer ${TOKEN}`, ...getAccessHeaders() },
@@ -1844,6 +1872,7 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
 // ---------------------------------------------------------------------------
 
 ;(async () => {
+  const startedAt = new Date().toISOString()
   if (!TOKEN) {
     log('❌ AGENT_BEARER_TOKEN not set in .dev.vars')
     process.exit(1)
@@ -1908,6 +1937,18 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   // Step 3 — Phase B: browser fill for products needing images / description / attributes
   const browserRows = rows.filter(r => needsBrowserFill(r))
   if (browserRows.length === 0) {
+    await writeFillRunAudit('success', {
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      mode: MODE,
+      onlySku: ONLY_SKU,
+      productsConsidered: rows.length,
+      collectionOnlyProducts: collectionOnlyRows.length,
+      browserProducts: 0,
+      imagesUploaded: 0,
+      errors: 0,
+      note: 'all products already had images/description/attributes',
+    })
     log(`\n✅ Done — all products already had images/description/attributes. Collections assigned above.`)
     process.exit(0)
   }
@@ -1963,5 +2004,25 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
   await runConcurrent(tasks, CONCURRENCY)
   await browser.close()
 
+  await writeFillRunAudit(totalErrors > 0 ? 'error' : 'success', {
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    mode: MODE,
+    onlySku: ONLY_SKU,
+    productsConsidered: rows.length,
+    collectionOnlyProducts: collectionOnlyRows.length,
+    browserProducts: browserRows.length,
+    imagesUploaded: totalOk,
+    errors: totalErrors,
+  })
+
   log(`\n✅ Done — ${totalOk} images uploaded, ${totalErrors} errors`)
-})()
+})().catch(async (err) => {
+  const message = err instanceof Error ? err.message : String(err)
+  log(`\n❌ Failed — ${message}`)
+  await writeFillRunAudit('error', {
+    finishedAt: new Date().toISOString(),
+    error: message,
+  })
+  process.exit(1)
+})
