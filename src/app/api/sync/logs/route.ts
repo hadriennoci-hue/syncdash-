@@ -7,6 +7,17 @@ import { syncLog } from '@/lib/db/schema'
 import { eq, desc, and, SQL } from 'drizzle-orm'
 import { logOperation } from '@/lib/functions/log'
 
+type FillLogDetails = {
+  fields?: string[]
+  sourceUrl?: string
+  sourceLocale?: string | null
+  fetchLocale?: string | null
+  needsTranslation?: boolean
+  phase?: 'collection-only' | 'browser-fill'
+  details?: Record<string, unknown>
+  errors?: string[]
+}
+
 
 // GET — list sync log entries (paginated, filterable)
 export async function GET(req: NextRequest) {
@@ -18,12 +29,14 @@ export async function GET(req: NextRequest) {
   const perPage   = Math.min(parseInt(searchParams.get('perPage') ?? '100'), 500)
   const productId = searchParams.get('productId') ?? ''
   const platform  = searchParams.get('platform') ?? ''
+  const action    = searchParams.get('action') ?? ''
   const status    = searchParams.get('status') ?? ''
   const offset    = (page - 1) * perPage
 
   const conditions: SQL[] = []
   if (productId) conditions.push(eq(syncLog.productId, productId))
   if (platform)  conditions.push(eq(syncLog.platform, platform))
+  if (action)    conditions.push(eq(syncLog.action, action))
   if (status)    conditions.push(eq(syncLog.status, status as 'success' | 'error'))
 
   const where = conditions.length > 0 ? and(...conditions) : undefined
@@ -37,7 +50,19 @@ export async function GET(req: NextRequest) {
     db.select({ id: syncLog.id }).from(syncLog).where(where),
   ])
 
-  return paginatedResponse(rows, totalRows.length, page, perPage)
+  const parsedRows = rows.map((row) => {
+    let details: FillLogDetails | null = null
+    if (row.action === 'acer_fill' && row.message) {
+      try {
+        details = JSON.parse(row.message) as FillLogDetails
+      } catch {
+        details = null
+      }
+    }
+    return { ...row, details }
+  })
+
+  return paginatedResponse(parsedRows, totalRows.length, page, perPage)
 }
 
 const postSchema = z.object({

@@ -9,12 +9,13 @@ export default function SyncLogsPage() {
   const [page, setPage]       = useState(1)
   const [productId, setProductId] = useState('')
   const [platform, setPlatform]   = useState('')
+  const [action, setAction]       = useState('')
   const [status, setStatus]       = useState('')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['sync-logs', page, productId, platform, status],
+    queryKey: ['sync-logs', page, productId, platform, action, status],
     queryFn:  () => apiFetch(
-      `/api/sync/logs?page=${page}&perPage=100&productId=${encodeURIComponent(productId)}&platform=${platform}&status=${status}`
+      `/api/sync/logs?page=${page}&perPage=100&productId=${encodeURIComponent(productId)}&platform=${platform}&action=${encodeURIComponent(action)}&status=${status}`
     ),
   })
 
@@ -29,6 +30,8 @@ export default function SyncLogsPage() {
           placeholder="SKU..." className="text-xs border border-border rounded px-2 py-1 bg-background w-40" />
         <input value={platform} onChange={(e) => { setPlatform(e.target.value); setPage(1) }}
           placeholder="Platform..." className="text-xs border border-border rounded px-2 py-1 bg-background w-40" />
+        <input value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }}
+          placeholder="Action..." className="text-xs border border-border rounded px-2 py-1 bg-background w-40" />
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}
           className="text-xs border border-border rounded px-2 py-1 bg-background">
           <option value="">All statuses</option>

@@ -82,6 +82,63 @@ interface StockRow {
   categoryCount:  number
 }
 
+type FillField =
+  | 'description'
+  | 'status'
+  | 'attributes'
+  | 'collection'
+  | 'variant_family'
+  | 'images'
+  | 'tags'
+
+interface FillAuditMessage {
+  fields: FillField[]
+  sourceUrl: string
+  sourceLocale: string | null
+  fetchLocale: string | null
+  needsTranslation: boolean
+  phase: 'collection-only' | 'browser-fill'
+  details: Record<string, boolean | number | string | string[]>
+  errors: string[]
+}
+
+interface FillResult {
+  ok: number
+  skipped: number
+  errors: string[]
+  fields: FillField[]
+}
+
+async function writeFillAudit(
+  sku: string,
+  status: 'success' | 'error',
+  message: FillAuditMessage,
+): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/sync/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${TOKEN}`,
+        ...getAccessHeaders(),
+      },
+      body: JSON.stringify({
+        productId: sku,
+        platform: 'acer_store',
+        action: 'acer_fill',
+        status,
+        message: JSON.stringify(message),
+        triggeredBy: 'agent',
+      }),
+    })
+    if (!res.ok) {
+      log(`  WARNING fill audit log failed for ${sku}: ${res.status} ${await res.text()}`)
+    }
+  } catch (err) {
+    log(`  WARNING fill audit log failed for ${sku}: ${err instanceof Error ? err.message : err}`)
+  }
+}
+
 async function getAcerStockRows(): Promise<StockRow[]> {
   const res = await fetch(`${BASE_URL}/api/warehouses/acer_store/stock?withProduct=1`, {
     headers: { Authorization: `Bearer ${TOKEN}`, ...getAccessHeaders() },
@@ -1483,10 +1540,12 @@ async function processProduct(
   index: number,
   total: number,
   existing: { hasImages: boolean; hasDescription: boolean; hasAttributes: boolean; hasCategory: boolean },
-): Promise<{ ok: number; skipped: number; errors: string[] }> {
+): Promise<FillResult> {
   log(`[${index}/${total}] ${sku} → ${sourceUrl}`)
 
   const sourceLocale = detectLocale(sourceUrl)
+  const fields = new Set<FillField>()
+  const details: FillAuditMessage['details'] = { mode: MODE }
 
   // ------------------------------------------------------------------
   // Step 1: Determine which URL to use for content extraction.
@@ -1501,6 +1560,20 @@ async function processProduct(
   let fetchLocale = sourceLocale
   let needsTranslation = false
   let pageData: ProductPageData | null = null
+  const finalize = async (status: 'success' | 'error', ok: number, skipped: number, errors: string[]): Promise<FillResult> => {
+    const result: FillResult = { ok, skipped, errors, fields: Array.from(fields) }
+    await writeFillAudit(sku, status, {
+      fields: result.fields,
+      sourceUrl,
+      sourceLocale,
+      fetchLocale,
+      needsTranslation,
+      phase: 'browser-fill',
+      details,
+      errors,
+    })
+    return result
+  }
 
   if (sourceLocale !== 'en') {
     const enUrl = tryConstructEnglishUrl(sourceUrl)
@@ -1537,6 +1610,8 @@ async function processProduct(
   }
 
   const { images: imageRefs, specs: rawSpecs, description } = pageData
+  details.imagesFound = imageRefs.length
+  details.specEntries = Object.keys(rawSpecs).length
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
   let linkedVariantFamily = false
 
@@ -1553,7 +1628,11 @@ async function processProduct(
         // Archive products whose description is not in English
         ...(needsTranslation ? { status: 'archived' } : {}),
       })
+      fields.add('description')
+      details.descriptionLength = description.length
       if (needsTranslation) {
+        fields.add('status')
+        details.status = 'archived'
         log(`  📝 Foreign description saved (${fetchLocale ?? 'unknown'}) — product archived, needs translation`)
         log(`     ⚠️  [needs-translation] ${sku}: translate description then set status=active`)
       } else {
@@ -1566,6 +1645,8 @@ async function processProduct(
     // No description found AND not on en-ie — still archive it
     try {
       await uploadProductInfo(sku, { status: 'archived' })
+      fields.add('status')
+      details.status = 'archived'
       log(`  ⚠️  [needs-translation] ${sku}: no description found (foreign store only) — product archived until translation`)
     } catch (err) {
       log(`  ⚠️  Status update failed: ${err instanceof Error ? err.message : err}`)
@@ -1577,6 +1658,7 @@ async function processProduct(
   //   Skip entirely if attributes are already present in D1
   // ------------------------------------------------------------------
   const category = detectCategory(sourceName, sourceUrl)
+  details.category = category
   if (existing.hasAttributes) {
     log(`  ℹ️  Attributes already present — skipping`)
   } else if (category) {
@@ -1585,6 +1667,7 @@ async function processProduct(
       unmappedLabels.push(`"${label}" = "${value}"`)
     })
     if (unmappedLabels.length > 0) {
+      details.unmappedLabels = unmappedLabels
       log(`  ⚠️  [unmapped-labels] ${unmappedLabels.length} spec label(s) not in map (${category}, locale=${fetchLocale ?? '?'}):`)
       for (const u of unmappedLabels) log(`       ${u}`)
       log(`       → Add these to ${category === 'monitor' ? 'MONITOR_LABEL_MAPS' : 'LAPTOP_LABEL_MAPS'}[${fetchLocale ?? '?'}] if needed.`)
@@ -1594,6 +1677,7 @@ async function processProduct(
       const layout = detectKeyboardLayout(sourceUrl)
       if (layout) {
         attributes.push({ key: 'keyboard_layout', value: layout })
+        details.keyboardLayout = layout
         log(`  ⌨️  keyboard_layout = ${layout} (from ${detectFullLocale(sourceUrl) ?? sourceUrl})`)
       } else {
         log(`  ⚠️  keyboard_layout: no mapping for locale ${detectFullLocale(sourceUrl) ?? 'unknown'}`)
@@ -1602,12 +1686,17 @@ async function processProduct(
     if (attributes.length > 0) {
       try {
         await uploadAttributes(sku, attributes)
+        fields.add('attributes')
+        details.attributesCount = attributes.length
         log(`  📋 ${attributes.length} attributes saved (${category}, locale=${fetchLocale ?? 'unknown'})`)
 
         if (attributes.some((attr) => attr.key === 'keyboard_layout')) {
           const family = await autoLinkVariantFamily(sku)
           if (family.linked) {
             linkedVariantFamily = true
+            fields.add('variant_family')
+            details.variantFamilySourceSku = family.sourceSku ?? 'existing laptop'
+            details.variantFamilySiblingSkus = family.siblingSkus ?? []
             log(`  🔗 Variant family linked via ${family.sourceSku ?? 'existing laptop'}${family.siblingSkus?.length ? ` (${family.siblingSkus.join(', ')})` : ''}`)
           } else {
             log(`  ℹ️  No variant family match (${family.reason ?? 'none'})`)
@@ -1629,6 +1718,7 @@ async function processProduct(
   } else if (category && !existing.hasCategory) {
     try {
       await assignCollection(sku, category)
+      fields.add('collection')
     } catch (err) {
       log(`  ⚠️  Collection assignment failed: ${err instanceof Error ? err.message : err}`)
     }
@@ -1641,12 +1731,12 @@ async function processProduct(
   // ------------------------------------------------------------------
   if (existing.hasImages) {
     log(`  ℹ️  Images already present — skipping`)
-    return { ok: 0, skipped: 0, errors: [] }
+    return finalize('success', 0, 0, [])
   }
 
   if (imageRefs.length === 0) {
     log(`  ⚠️  No images found on page`)
-    return { ok: 0, skipped: 0, errors: ['No images found on page'] }
+    return finalize('error', 0, 0, ['No images found on page'])
   }
 
   const downloads = await Promise.all(
@@ -1665,9 +1755,10 @@ async function processProduct(
 
   const files = downloads.filter((d): d is NonNullable<typeof d> => d !== null)
   const skipped = downloads.length - files.length
+  details.imageDownloadFailures = skipped
   if (files.length === 0) {
     log(`  ❌ All downloads failed`)
-    return { ok: 0, skipped, errors: ['All image downloads failed'] }
+    return finalize('error', 0, skipped, ['All image downloads failed'])
   }
 
   const errors: string[] = []
@@ -1691,6 +1782,9 @@ async function processProduct(
   // Step 7: Generate + upload tags (always overwrite — improves as
   //   attributes fill in over successive runs)
   // ------------------------------------------------------------------
+  details.imagesUploaded = uploaded
+  if (uploaded > 0) fields.add('images')
+
   if (category) {
     // Re-run mapSpecs without warnings — pure function, cheap, no side effects.
     // Needed because attributes may have been skipped (existing.hasAttributes).
@@ -1703,6 +1797,9 @@ async function processProduct(
     if (tags.length > 0) {
       try {
         await uploadProductInfo(sku, { tags })
+        fields.add('tags')
+        details.tags = tags
+        details.tagCount = tags.length
         log(`  🏷️  Tags: ${tags.join(', ')}`)
       } catch (err) {
         log(`  ⚠️  Tag upload failed: ${err instanceof Error ? err.message : err}`)
@@ -1710,7 +1807,7 @@ async function processProduct(
     }
   }
 
-  return { ok: uploaded, skipped, errors }
+  return finalize(errors.length > 0 ? 'error' : 'success', uploaded, skipped, errors)
 }
 
 // ---------------------------------------------------------------------------
@@ -1781,6 +1878,16 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
       log(`  ${row.productId} → ${cat}`)
       try {
         await assignCollection(row.productId, cat)
+        await writeFillAudit(row.productId, 'success', {
+          fields: ['collection'],
+          sourceUrl: row.sourceUrl ?? '',
+          sourceLocale: row.sourceUrl ? detectLocale(row.sourceUrl) : null,
+          fetchLocale: null,
+          needsTranslation: false,
+          phase: 'collection-only',
+          details: { category: cat },
+          errors: [],
+        })
       } catch (err) {
         log(`  ❌ ${row.productId}: ${err instanceof Error ? err.message : err}`)
       }
@@ -1828,6 +1935,16 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, limit: number): 
       totalErrors += result.errors.length
     } catch (err) {
       log(`  ❌ ${row.productId}: ${err instanceof Error ? err.message : err}`)
+      await writeFillAudit(row.productId, 'error', {
+        fields: [],
+        sourceUrl: row.sourceUrl ?? '',
+        sourceLocale: row.sourceUrl ? detectLocale(row.sourceUrl) : null,
+        fetchLocale: null,
+        needsTranslation: false,
+        phase: 'browser-fill',
+        details: {},
+        errors: [err instanceof Error ? err.message : String(err)],
+      })
       totalErrors++
     }
   })

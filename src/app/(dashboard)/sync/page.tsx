@@ -23,6 +23,7 @@ export default function SyncPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-sm font-semibold">Daily Sync</h1>
         <div className="flex gap-2">
+          <Link href="/sync/fills" className="text-xs border border-border px-2 py-1 rounded hover:bg-accent">ACER fills</Link>
           <Link href="/sync/logs" className="text-xs border border-border px-2 py-1 rounded hover:bg-accent">Sync logs</Link>
           <button
             onClick={() => triggerSync.mutate()}
