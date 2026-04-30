@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { inferProductCollection } from '@/lib/utils/product-collection'
+import { inferCollection } from '@/lib/functions/collection-inference'
 
 interface ProductListItem {
   id: string
@@ -82,14 +82,15 @@ async function apiPatch(pathname: string, body: unknown): Promise<void> {
 async function fetchAllProductIds(): Promise<string[]> {
   const out: string[] = []
   let page = 1
+  const perPage = 500
 
   while (true) {
-    const res = await fetch(`${baseUrl}/api/products?page=${page}&perPage=200`, { headers: headers() })
+    const res = await fetch(`${baseUrl}/api/products?page=${page}&perPage=${perPage}`, { headers: headers() })
     if (!res.ok) throw new Error(`GET /api/products?page=${page} -> ${res.status} ${await res.text()}`)
     const json = await res.json() as { data: ProductListItem[]; meta?: { pagination?: { totalPages?: number } } }
-    out.push(...(json.data ?? []).map((row) => row.id))
-    const totalPages = json.meta?.pagination?.totalPages ?? page
-    if (page >= totalPages) break
+    const rows = json.data ?? []
+    out.push(...rows.map((row) => row.id))
+    if (rows.length < perPage) break
     page += 1
   }
 
@@ -123,14 +124,8 @@ async function main(): Promise<void> {
 
   await runConcurrent(productIds, 8, async (sku) => {
     const detail = await apiGet<ProductDetail>(`/api/products/${encodeURIComponent(sku)}`)
-    const desired = inferProductCollection({
-      title: detail.title,
-      sourceName: detail.acerStoreSourceName ?? null,
-      sourceUrl: detail.acerStoreSourceUrl ?? null,
-      price: detail.prices.coincart2?.price
-        ?? detail.prices.shopify_komputerzz?.price
-        ?? null,
-    })
+    const inferredSlug = inferCollection(detail.title)
+    const desired = inferredSlug ? { slug: inferredSlug, reason: 'title_inference' } : null
 
     checked += 1
     if (!desired) return

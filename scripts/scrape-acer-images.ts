@@ -211,6 +211,9 @@ const COLLECTION_MATCH_RULES: Array<{ cat: InternalCategory; keywords: string[] 
   { cat: 'desktops',     keywords: ['desktop', 'bureau', 'torre', 'veriton'] },
   { cat: 'audio',        keywords: ['audio', 'headset', 'headphone', 'casque', 'speaker'] },
   { cat: 'gpu',          keywords: ['gpu', 'graphic', 'carte graphique'] },
+  { cat: 'gaming-desks', keywords: ['gaming desk', 'desk'] },
+  { cat: 'electric-scooters', keywords: ['scooter'] },
+  { cat: 'accessories',  keywords: ['accessory', 'accessories', 'stylus', 'pen'] },
   { cat: 'input-device', keywords: ['input', 'mouse', 'keyboard', 'souris', 'clavier'] },
   { cat: 'cases',        keywords: ['case', 'bag', 'sleeve', 'housse', 'tasche'] },
   { cat: 'lifestyle',    keywords: ['lifestyle'] },
@@ -408,7 +411,7 @@ function tryConstructEnglishUrl(sourceUrl: string): string | null {
 // Category detection
 // ---------------------------------------------------------------------------
 
-type ProductCategory = 'monitor' | 'laptops' | 'tablets' | 'desktops' | 'audio' | 'gpu' | 'input-device' | 'cases' | 'lifestyle'
+type ProductCategory = 'monitor' | 'laptops' | 'tablets' | 'desktops' | 'audio' | 'gpu' | 'input-device' | 'cases' | 'lifestyle' | 'accessories' | 'gaming-desks' | 'electric-scooters'
 
 /** Categories for which we have attribute label maps and should scan spec tables. */
 const ATTRIBUTE_SCAN_CATEGORIES = new Set<ProductCategory>(['monitor', 'laptops'])
