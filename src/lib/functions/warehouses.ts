@@ -588,7 +588,8 @@ export async function overrideWarehouseStock(
 
   if (!warehouse) throw new Error(`Warehouse not found: ${warehouseId}`)
   const isStockWrite = override.quantity !== undefined || override.purchasePrice !== undefined
-  if (isStockWrite && !warehouse.canModifyStock) {
+  const canModifyStock = !!warehouse.canModifyStock || warehouse.id === 'dropshipping'
+  if (isStockWrite && !canModifyStock) {
     throw new Error(`Warehouse ${warehouseId} is read-only (canModifyStock = 0)`)
   }
 

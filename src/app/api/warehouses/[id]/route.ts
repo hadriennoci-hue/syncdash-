@@ -39,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     displayName:    warehouse.displayName,
     address:        warehouse.address,
     sourceType:     warehouse.sourceType,
-    canModifyStock: !!warehouse.canModifyStock,
+    canModifyStock: !!warehouse.canModifyStock || warehouse.id === 'dropshipping',
     autoSync:       !!warehouse.autoSync,
     lastSynced:     warehouse.lastSynced ?? lastUpdatedRow?.lastUpdated ?? null,
     createdAt:      warehouse.createdAt,

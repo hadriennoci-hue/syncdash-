@@ -41,13 +41,15 @@ interface ProductTranslationPlan {
   description: string | null
 }
 
-const TARGET_LOCALES: TargetLocale[] = ACER_TARGET_LOCALES
-
 const args = new Set(process.argv.slice(2))
 const DRY_RUN = args.has('--dry-run')
 const FORCE = args.has('--force')
 const CONCURRENCY = Number(process.argv.find((arg) => arg.startsWith('--concurrency='))?.split('=')[1] ?? '4') || 4
 const LIMIT = Number(process.argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] ?? '0') || null
+const LOCALES_ARG = process.argv.find((arg) => arg.startsWith('--locales='))?.split('=')[1] ?? ''
+const TARGET_LOCALES: TargetLocale[] = (LOCALES_ARG
+  ? LOCALES_ARG.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean)
+  : ACER_TARGET_LOCALES) as TargetLocale[]
 const ONLY_SKU = process.argv.find((arg) => arg.startsWith('--sku='))?.split('=')[1] ?? null
 const SKU_LIST = (process.argv.find((arg) => arg.startsWith('--sku-list='))?.split('=')[1] ?? '')
   .split(',')

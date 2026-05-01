@@ -51,6 +51,7 @@ export default function RoutingPage() {
           Set the priority of each warehouse for each sales channel.
           Priority 1 = primary (used first), 2 = secondary (fallback).
           <strong> 0 / NO = warehouse stock is FORBIDDEN on that channel.</strong>
+          Libre Market and XMR Bazaar use this matrix as their manual approval gate.
         </p>
       </div>
 
@@ -111,6 +112,7 @@ export default function RoutingPage() {
         <p>• Komputerzz: Ireland (1) → Acer Store (2) → Dropshipping (3) → Poland (NO)</p>
         <p>• eBay IE: Ireland (1) → Acer Store (2) → Dropshipping (3) → Poland (NO)</p>
         <p>• TikTok: Ireland (1) — Acer Store FORBIDDEN — Dropshipping FORBIDDEN — Poland (NO)</p>
+        <p>Libre Market / XMR Bazaar: only warehouses with a positive rule may create or keep listings.</p>
         <p className="text-muted-foreground/60 mt-1">Stock pushed daily = SUM of quantities from all allowed warehouses.</p>
       </div>
     </div>

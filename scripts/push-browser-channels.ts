@@ -69,15 +69,27 @@ interface ProductDetail {
   id:          string
   title:       string
   description: string | null
+  productType: string | null
   images:      ProductImage[]
   prices:      Record<string, { price: number | null; compareAt: number | null } | undefined>
   platforms:   Record<string, { platformId: string; syncStatus: string } | undefined>
   pushStatus?: Record<string, string | undefined>
+  translations?: Array<{
+    locale: string
+    title: string | null
+    description: string | null
+  }>
 }
 interface ChannelProductSummary {
   sku: string
   platformId: string | null
-  stock: { ireland: number | null; acer_store: number | null; poland: number | null }
+  stock: { ireland: number | null; acer_store: number | null; poland: number | null; dropshipping: number | null }
+}
+
+interface WarehouseRuleRow {
+  warehouseId: string
+  platform: string
+  priority: number
 }
 interface BrowserRunReport {
   platform: 'libre_market' | 'xmr_bazaar'
@@ -104,6 +116,36 @@ async function apiFetch(method: string, apiPath: string, body: unknown, token: s
     },
     ...(body !== null ? { body: JSON.stringify(body) } : {}),
   })
+}
+
+const XMR_LAPTOP_PREFIX = 'Brand new unopened. Please specify the keyboard layout you want, and your shipping country before ordering.\nLatest generation from ACER.'
+
+function pickTranslation(product: ProductDetail, locale: string): { title: string | null; description: string | null } | null {
+  const translation = product.translations?.find((row) => String(row.locale ?? '').trim().toLowerCase() === locale.toLowerCase())
+  if (!translation) return null
+  return { title: translation.title ?? null, description: translation.description ?? null }
+}
+
+function getLibreMarketText(product: ProductDetail): { title: string; description: string } {
+  const fr = pickTranslation(product, 'fr')
+  const title = (fr?.title?.trim() || product.title).trim()
+  const description = (fr?.description?.trim() || product.description || product.title).trim()
+  return {
+    title,
+    description: stripHtml(description),
+  }
+}
+
+function isLaptopProduct(product: ProductDetail): boolean {
+  const text = `${product.productType ?? ''} ${product.title} ${product.description ?? ''}`.toLowerCase()
+  return /\b(laptop|notebook|chromebook)\b/.test(text) || /\b(predator|nitro|travelmate|swift|aspire)\b/.test(text)
+}
+
+function prefixXmrLaptopDescription(product: ProductDetail, description: string): string {
+  if (!isLaptopProduct(product)) return description
+  const cleaned = description.trim()
+  if (cleaned.startsWith(XMR_LAPTOP_PREFIX)) return cleaned
+  return `${XMR_LAPTOP_PREFIX}\n\n${cleaned}`
 }
 
 async function getQueuedSkus(platform: string, token: string, base: string): Promise<string[]> {
@@ -134,6 +176,30 @@ async function getChannelProducts(platform: 'libre_market' | 'xmr_bazaar', token
     page++
   }
   return all
+}
+
+async function getWarehouseApprovalSet(platform: 'libre_market' | 'xmr_bazaar', token: string, base: string): Promise<Set<string>> {
+  const res = await apiFetch('GET', '/api/warehouses/rules', null, token, base)
+  if (!res.ok) throw new Error(`Failed to fetch warehouse routing rules: ${res.status}`)
+  const json = await res.json() as { data?: { rules?: WarehouseRuleRow[] } }
+  const approved = new Set<string>()
+  for (const row of json.data?.rules ?? []) {
+    if (row.platform === platform && row.priority > 0) approved.add(row.warehouseId)
+  }
+  return approved
+}
+
+function getWarehouseStockTotal(
+  stock: Record<string, unknown>,
+  approvedWarehouses: Set<string>,
+): number {
+  let total = 0
+  for (const warehouseId of approvedWarehouses) {
+    const row = stock[warehouseId] as Record<string, unknown> | undefined
+    const qty = row?.qty ?? row?.quantity ?? row?.stock ?? 0
+    total += Number(qty) || 0
+  }
+  return total
 }
 
 async function markDone(
@@ -335,7 +401,7 @@ function stripHtml(html: string): string {
 function getTotalStock(product: ProductDetail): number {
   const stockData = (product as unknown as { stock?: Record<string, number | null> }).stock
   if (!stockData) return 0
-  return (stockData.ireland ?? 0) + (stockData.acer_store ?? 0) + (stockData.poland ?? 0)
+  return (stockData.ireland ?? 0) + (stockData.acer_store ?? 0) + (stockData.poland ?? 0) + (stockData.dropshipping ?? 0)
 }
 
 function normalizeLmPlatformId(idOrUrl: string): string {
@@ -347,7 +413,7 @@ function normalizeLmPlatformId(idOrUrl: string): string {
 }
 
 function getSummaryTotalStock(row: ChannelProductSummary): number {
-  return (row.stock.ireland ?? 0) + (row.stock.acer_store ?? 0) + (row.stock.poland ?? 0)
+  return (row.stock.ireland ?? 0) + (row.stock.acer_store ?? 0) + (row.stock.poland ?? 0) + (row.stock.dropshipping ?? 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +477,7 @@ async function lmSuivant(page: Page, label: string): Promise<void> {
   console.log(`    Suivant â†’ ${label}`)
 }
 
-async function lmSetCreateStockOne(page: Page): Promise<void> {
+async function lmSetCreateStock(page: Page, quantity: number): Promise<void> {
   const candidates = [
     { name: 'stock-div3', locator: page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
     { name: 'stock-div2', locator: page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
@@ -443,7 +509,7 @@ async function lmSetCreateStockOne(page: Page): Promise<void> {
   console.log(`    stock selector: ${selected}`)
   await stock.click({ clickCount: 3 }).catch(() => {})
   await page.keyboard.press('Control+A').catch(() => {})
-  await page.keyboard.type('1', { delay: 25 }).catch(() => {})
+  await page.keyboard.type(String(Math.max(0, Math.floor(quantity))), { delay: 25 }).catch(() => {})
   await page.keyboard.press('Tab').catch(() => {})
   await page.waitForTimeout(150)
 }
@@ -570,10 +636,10 @@ async function lmClickPublierWithFallback(page: Page): Promise<void> {
   }
 }
 
-async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]): Promise<string> {
+async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[], stockQty: number): Promise<string> {
   const price = product.prices.libre_market?.price
   if (!price) throw new Error('No libre_market price set')
-  const desc = stripHtml(product.description ?? product.title)
+  const { title, description } = getLibreMarketText(product)
 
   await page.goto('https://libre-market.com/m/coincart/admin/products/new')
   await page.waitForLoadState('load')
@@ -584,8 +650,12 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   else await page.locator('.btn-group button, [class*="type"] button').nth(1).click().catch(() => {})
   await page.waitForLoadState('networkidle').catch(() => {})
   await page.waitForTimeout(500)
-  await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[5]/input').fill(product.title)
-  await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[6]/textarea').fill(desc)
+  const titleField = page.getByLabel('Nom du produit', { exact: false }).first()
+  if (await titleField.count() > 0) await titleField.fill(title)
+  else await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[5]/input').fill(title)
+  const descField = page.getByLabel('Description', { exact: false }).first()
+  if (await descField.count() > 0) await descField.fill(description)
+  else await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[6]/textarea').fill(description)
   await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[7]/div[1]/input')
     .fill('Informatique').catch(() => {})
   await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[8]/input')
@@ -598,8 +668,7 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[10]/div[2]/label[2]/span')
     .click().catch(() => {})
   await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[11]/div/input').fill('5')
-  // Temporary test mode requested by user: set stock last and force value=1.
-  await lmSetCreateStockOne(page)
+  await lmSetCreateStock(page, stockQty)
   await lmSuivant(page, 'step 2')
 
   // Step 3 - photos
@@ -648,7 +717,7 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   // Redirected to list â€” click matching row
   await page.waitForTimeout(800)
   const row = page.locator('tr, [role="row"], [class*="product"], [class*="item"]')
-    .filter({ hasText: product.title.slice(0, 20) }).first()
+    .filter({ hasText: title.slice(0, 20) }).first()
   if (await row.count() > 0) {
     await row.click()
     await page.waitForURL((url) => /\/products\/[^/]+$/.test(url.pathname), { timeout: 10000 }).catch(() => {})
@@ -658,9 +727,9 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
   throw new Error('Could not extract Libre Market product ID after creation')
 }
 
-async function lmEdit(page: Page, platformId: string, product: ProductDetail, status: 'active' | 'archived' = 'active'): Promise<void> {
+async function lmEdit(page: Page, platformId: string, product: ProductDetail, stockQty: number, status: 'active' | 'archived' = 'active'): Promise<void> {
   const price = product.prices.libre_market?.price
-  const stock = getTotalStock(product)
+  const { title, description } = getLibreMarketText(product)
   const listingId = normalizeLmPlatformId(platformId)
   await page.goto(`https://libre-market.com/m/coincart/admin/products/${listingId}/edit`)
   await page.waitForLoadState('networkidle').catch(() => {})
@@ -682,6 +751,10 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail, st
           .catch(() => {})
       }
     })
+  const titleField = page.getByLabel('Nom du produit', { exact: false }).first()
+  if (await titleField.count() > 0) await titleField.fill(title).catch(() => {})
+  const descField = page.getByLabel('Description', { exact: false }).first()
+  if (await descField.count() > 0) await descField.fill(description).catch(() => {})
   const statusSelect = page.locator('xpath=/html/body/div[2]/div/main/div/form/div[2]/div/div[4]/div[2]/select').first()
   if (await statusSelect.count() > 0) {
     if (status === 'active') {
@@ -701,14 +774,14 @@ async function lmEdit(page: Page, platformId: string, product: ProductDetail, st
     }
   }
   // LibreMarket rejects stock=0 — skip stock field when archiving (out of stock)
-  if (status === 'active' && stock > 0) {
+  if (status === 'active' && stockQty > 0) {
     await page.locator('xpath=/html/body/div[2]/div/main/div/form/div[4]/div/div[1]/input')
       .first()
-      .fill(String(stock))
+      .fill(String(stockQty))
       .catch(async () => {
         await page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input')
           .first()
-          .fill(String(stock))
+          .fill(String(stockQty))
           .catch(() => {})
       })
   }
@@ -816,10 +889,11 @@ async function xmrFillForm(
   product: ProductDetail,
   imagePaths: string[],
   moneroAddress: string,
+  hasApprovedStock: boolean,
   isEdit = false
 ): Promise<void> {
   const price = Math.floor(product.prices.xmr_bazaar?.price ?? 0)
-  const desc  = stripHtml(product.description ?? product.title)
+  const desc  = prefixXmrLaptopDescription(product, stripHtml(product.description ?? product.title))
 
   await page.locator('select[name="category"]').selectOption({ label: 'Electronics' }).catch(() => {})
   await page.locator('input[name="title"]').fill(product.title)
@@ -922,11 +996,12 @@ async function xmrCreate(
   product: ProductDetail,
   imagePaths: string[],
   moneroAddress: string,
+  hasApprovedStock: boolean,
   delayState?: { submittedOnce: boolean }
 ): Promise<string> {
   await page.goto('https://xmrbazaar.com/new-listing/selling/sell-product/')
   await page.waitForLoadState('load')
-  await xmrFillForm(page, product, imagePaths, moneroAddress)
+  await xmrFillForm(page, product, imagePaths, moneroAddress, hasApprovedStock)
   if (delayState) await xmrBeforeSubmit(delayState, page)
   await page.locator('button:has-text("Publish"), button:has-text("Update Listing"), button:has-text("Save"), button:has-text("Update"), input.submit:not(.cancel-order-button)')
     .first()
@@ -950,6 +1025,7 @@ async function xmrEdit(
   page: Page,
   platformId: string,
   product: ProductDetail,
+  hasApprovedStock: boolean,
   status: 'active' | 'out_of_stock',
   delayState?: { submittedOnce: boolean }
 ): Promise<void> {
@@ -1004,7 +1080,7 @@ async function xmrEdit(
     }
   }
 
-  if (status === 'active' && price != null) {
+  if (status === 'active' && hasApprovedStock && price != null) {
     await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[1]/div[4]/div[1]/input')
       .first()
       .fill(String(Math.floor(price)))
@@ -1064,6 +1140,11 @@ async function processPlatform(
     await finishBrowserSyncJob(jobId, dryReport, 'Dry run only', null, token, apiBase)
     return dryReport
   }
+
+  const approvedWarehouses =
+    platform === 'libre_market' || platform === 'xmr_bazaar'
+      ? await getWarehouseApprovalSet(platform, token, apiBase)
+      : new Set<string>()
 
   // Fetch full product data for all queued SKUs
   const products: ProductDetail[] = []
@@ -1136,19 +1217,45 @@ async function processPlatform(
 
       const mapping = product.platforms[platform]
       const isNew   = !mapping?.platformId
-      const desiredXmrStatus = getTotalStock(product) > 0 ? 'active' : 'out_of_stock'
-      const desiredLmStatus = getTotalStock(product) > 0 ? 'active' : 'archived'
+      const approvedStock = platform === 'libre_market' || platform === 'xmr_bazaar'
+        ? getWarehouseStockTotal(
+          (product as unknown as { stock?: Record<string, { qty: number | null; importPrice: number | null; importPromoPrice: number | null }> }).stock ?? {},
+          approvedWarehouses
+        )
+        : getTotalStock(product)
+      const desiredXmrStatus = approvedStock > 0 ? 'active' : 'out_of_stock'
+      const desiredLmStatus = approvedStock > 0 ? 'active' : 'archived'
 
       try {
         let platformId: string
         let createdOrRemapped = false
         if (isNew) {
+          if ((platform === 'libre_market' || platform === 'xmr_bazaar') && approvedStock <= 0) {
+            console.log(`    Skipping ${product.id}: no approved warehouse stock for ${platform}`)
+            await updateBrowserSyncJobProgress(jobId, {
+              processedTargets: report.processed + 1,
+              totalTargets: report.queued,
+              lastProductIds: [product.id],
+              lastStatus: 'success',
+              detail: `${product.id}: skipped (no approved warehouse stock)`,
+            }, token, apiBase)
+            report.processed++
+            await postProductProgress(
+              product.id,
+              platform,
+              'success',
+              `skipped: no approved warehouse stock for ${platform}`,
+              token,
+              apiBase
+            )
+            continue
+          }
           console.log('    Creating new listing...')
           platformId = platform === 'libre_market'
-            ? await lmCreate(page, product, imagePaths)
-            : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, xmrSubmitState)
-          if (platform === 'libre_market' && getTotalStock(product) === 0) {
-            await lmEdit(page, platformId, product, 'archived')
+            ? await lmCreate(page, product, imagePaths, approvedStock)
+            : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, approvedStock > 0, xmrSubmitState)
+          if (platform === 'libre_market' && approvedStock === 0) {
+            await lmEdit(page, platformId, product, approvedStock, 'archived')
           }
           console.log(`    âœ… Created â†’ ${platformId}`)
           openedPlatformIds.add(platformId)
@@ -1158,21 +1265,21 @@ async function processPlatform(
           platformId = mapping!.platformId
           console.log(`    Editing existing listing ${platformId}...`)
           try {
-            if (platform === 'libre_market') await lmEdit(page, platformId, product, desiredLmStatus)
-            else await xmrEdit(page, platformId, product, desiredXmrStatus, xmrSubmitState)
+            if (platform === 'libre_market') await lmEdit(page, platformId, product, approvedStock, desiredLmStatus)
+            else await xmrEdit(page, platformId, product, approvedStock > 0, desiredXmrStatus, xmrSubmitState)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             const missingMappedListing = msg.includes('LM_LISTING_NOT_FOUND') || msg.includes('XMR_LISTING_NOT_FOUND')
             if (!missingMappedListing) throw err
             console.log('    Mapped listing not found remotely â€” recreating from scratch...')
             platformId = platform === 'libre_market'
-              ? await lmCreate(page, product, imagePaths)
-              : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, xmrSubmitState)
-            if (platform === 'libre_market' && getTotalStock(product) === 0) {
-              await lmEdit(page, platformId, product, 'archived')
+              ? await lmCreate(page, product, imagePaths, approvedStock)
+              : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, approvedStock > 0, xmrSubmitState)
+            if (platform === 'libre_market' && approvedStock === 0) {
+              await lmEdit(page, platformId, product, approvedStock, 'archived')
             }
-            if (platform === 'xmr_bazaar' && getTotalStock(product) === 0) {
-              await xmrEdit(page, platformId, product, 'out_of_stock', xmrSubmitState)
+            if (platform === 'xmr_bazaar' && approvedStock === 0) {
+              await xmrEdit(page, platformId, product, false, 'out_of_stock', xmrSubmitState)
             }
             console.log(`    âœ… Recreated â†’ ${platformId}`)
             createdOrRemapped = true
@@ -1232,7 +1339,7 @@ async function processPlatform(
       )
       const staleListings = allChannelProducts
         .filter((p) => !!p.platformId)
-        .filter((p) => getSummaryTotalStock(p) <= 0)
+        .filter((p) => getWarehouseStockTotal(p.stock, approvedWarehouses) <= 0)
         .filter((p) => !normalizedOpened.has(String(p.platformId).replace(/^https?:\/\/xmrbazaar\.com\/listing\//, '').replace(/\/.*$/, '')))
 
       for (let i = 0; i < staleListings.length; i++) {
@@ -1244,11 +1351,12 @@ async function processPlatform(
             id: row.sku,
             title: row.sku,
             description: null,
+            productType: null,
             images: [],
             prices: { xmr_bazaar: { price: 0, compareAt: null } },
             platforms: {},
           } as ProductDetail
-          await xmrEdit(page, platformId, synthetic, 'out_of_stock', xmrSubmitState)
+          await xmrEdit(page, platformId, synthetic, false, 'out_of_stock', xmrSubmitState)
           console.log('    âœ… Out of Stock saved')
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -1263,8 +1371,8 @@ async function processPlatform(
                 if (p) imagePaths.push(p)
               }
 
-              const newId = await xmrCreate(page, detail, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, xmrSubmitState)
-              await xmrEdit(page, newId, detail, 'out_of_stock', xmrSubmitState)
+              const newId = await xmrCreate(page, detail, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, false, xmrSubmitState)
+              await xmrEdit(page, newId, detail, false, 'out_of_stock', xmrSubmitState)
 
               await upsertMappingOnly(detail.id, 'xmr_bazaar', newId, token, apiBase)
               for (const p of imagePaths) fs.unlink(p, () => {})
@@ -1286,7 +1394,7 @@ async function processPlatform(
       )
       const staleListings = allChannelProducts
         .filter((p) => !!p.platformId)
-        .filter((p) => getSummaryTotalStock(p) <= 0)
+        .filter((p) => getWarehouseStockTotal(p.stock, approvedWarehouses) <= 0)
         .filter((p) => !normalizedOpened.has(normalizeLmPlatformId(String(p.platformId))))
 
       for (const row of staleListings) {
@@ -1307,7 +1415,7 @@ async function processPlatform(
                 const p = await downloadToTemp(sorted[i].url, detail.id, i)
                 if (p) imagePaths.push(p)
               }
-              const newId = await lmCreate(page, detail, imagePaths)
+              const newId = await lmCreate(page, detail, imagePaths, 0)
               await lmSetArchived(page, newId)
               await markDone(detail.id, 'libre_market', newId, true, token, apiBase)
               for (const p of imagePaths) fs.unlink(p, () => {})

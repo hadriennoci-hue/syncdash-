@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     displayName:    w.displayName,
     address:        w.address,
     sourceType:     w.sourceType,
-    canModifyStock: !!w.canModifyStock,
+    canModifyStock: !!w.canModifyStock || w.id === 'dropshipping',
     autoSync:       !!w.autoSync,
     lastSynced:     w.lastSynced ?? lastUpdatedMap.get(w.id) ?? null,
     createdAt:      w.createdAt,

@@ -19,54 +19,126 @@ const LOCALE_NAMES: Record<AcerTargetLocale, string> = {
 }
 
 const LOCALE_STYLE_GUIDANCE: Record<AcerTargetLocale, string> = {
-  fr: 'Use natural French retail terminology. Prefer "ordinateur portable" over "laptop". Avoid awkward mixed phrases like "Portable Gaming".',
+  fr: 'Use natural French retail terminology. Prefer "PC" for computers, keep "gaming" as the product qualifier, use "écran" or "moniteur" for displays, and never use "ordinateur de bureau" or "de jeu".',
   de: 'Use natural German retail terminology. Prefer "Notebook" for portable computers and avoid leftover English category nouns where a natural German term exists.',
-  es: 'Use natural Spanish retail terminology. Prefer "portatil" or "ordenador portatil" over "laptop" where natural.',
+  es: 'Use natural Spanish retail terminology. Prefer "portátil" or "ordenador portátil" over "laptop" where natural, and prefer "gaming" / "PC gaming" over literal "para juegos" phrasing.',
   it: 'Use natural Italian retail terminology. Prefer "notebook" or "portatile" as appropriate, not raw English category phrases like "Gaming Laptop".',
   nl: 'Use natural Dutch retail terminology. Normalize common mixed terms and avoid leaving English memory phrases like "dedicated memory".',
   fi: 'Use natural Finnish retail terminology. Avoid stiff literal calques for memory or graphics phrasing.',
 }
 
 const LOCALE_FORBIDDEN_PATTERNS: Record<AcerTargetLocale, RegExp[]> = {
-  fr: [/\bLaptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bPortable Gaming\b/i],
-  de: [/\bLaptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i],
-  es: [/\bLaptop\b/i, /\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i],
-  it: [/\bLaptop\b/i, /\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i],
+  fr: [/\bLaptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bPortable Gaming\b/i, /\bordinateur de bureau\b/i, /\bde jeu\b/i, /\bicosa[- ]core\b/i, /\bécran de jeu\b/i, /\becran de jeu\b/i],
+  de: [/\bLaptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bIcosa[- ]?core\b/i],
+  es: [/\bLaptop\b/i, /\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bportatil\b/i, /\bordenador portatil\b/i, /\bIcosa[- ]?core\b/i],
+  it: [/\bLaptop\b/i, /\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bIcosa[- ]?core\b/i, /\bper Videogiochi\b/i],
   nl: [/\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i],
   fi: [/\bLaptop\b/i, /\bGaming Laptop\b/i, /\bdedicated memory\b/i, /\bshared memory\b/i, /\bjaettu muisti\b/i],
 }
 
 const LOCALE_TITLE_REPLACEMENTS: Record<AcerTargetLocale, Array<[RegExp, string]>> = {
   fr: [
-    [/\bGaming Laptop\b/gi, 'ordinateur portable de jeu'],
-    [/\bLaptop\b/gi, 'ordinateur portable'],
-    [/\bPortable Gaming\b/gi, 'ordinateur portable de jeu'],
+    [/\bGaming Laptop\b/gi, 'PC gaming'],
+    [/\bGaming PC\b/gi, 'PC gaming'],
+    [/\bGaming Desktop\b/gi, 'PC gaming'],
+    [/\bGaming Monitor\b/gi, 'écran gaming'],
+    [/\bLaptop\b/gi, 'PC'],
+    [/\bDesktop\b/gi, 'PC'],
+    [/\bMonitor\b/gi, 'écran'],
+    [/\bÉcran Gaming\b/gi, 'Écran gaming'],
+    [/\bMoniteur Gaming\b/gi, 'écran gaming'],
+    [/\bMoniteur\b/gi, 'écran'],
+    [/\bordinateur de bureau de jeu\b/gi, 'PC gaming'],
+    [/\bordinateur de bureau\b/gi, 'PC'],
+    [/\bécran de jeu\b/gi, 'écran gaming'],
+    [/\becran de jeu\b/gi, 'écran gaming'],
+    [/\bPortable Gaming\b/gi, 'gaming'],
+    [/\bde jeu\b/gi, 'gaming'],
+    [/\bicosa[- ]core\b(?:\s*\(\s*20 cœurs\s*\))?/gi, '20 cœurs'],
     [/\bCustodia Cabina\b/gi, 'valise cabine'],
+    [/\bProjector\b/gi, 'projecteur'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
   ],
   de: [
     [/\bGaming Laptop\b/gi, 'Gaming-Notebook'],
+    [/\bGaming Desktop\b/gi, 'Gaming-PC'],
+    [/\bGaming Monitor\b/gi, 'Gaming-Monitor'],
     [/\bLaptop\b/gi, 'Notebook'],
+    [/\bDesktop\b/gi, 'Desktop-PC'],
+    [/\bMonitor\b/gi, 'Monitor'],
+    [/\bIcosa[- ]?core\b(?:\s*\(\s*20 Kerne\s*\))?/gi, '20 Kerne'],
+    [/\b20 Kernen\s*\(\s*20 Kerne\s*\)/gi, '20 Kernen'],
+    [/\bProjector\b/gi, 'Projektor'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
   ],
   es: [
-    [/\bGaming Laptop\b/gi, 'portatil para juegos'],
-    [/\bLaptop\b/gi, 'portatil'],
-    [/\bPortatile\b/gi, 'portatil'],
+    [/\bGaming Laptop\b/gi, 'portátil gaming'],
+    [/\bGaming Desktop\b/gi, 'PC gaming'],
+    [/\bGaming Monitor\b/gi, 'monitor gaming'],
+    [/\bmonitor gamer\b/gi, 'monitor gaming'],
+    [/\bmonitor Curvo para Juegos\b/gi, 'monitor gaming curvo'],
+    [/\bmonitor Gaming\b/gi, 'monitor gaming'],
+    [/\bGaming Curvo\b/gi, 'gaming curvo'],
+    [/\bEscritorio Gaming\b/gi, 'PC gaming'],
+    [/\bOrdenador de sobremesa gaming\b/gi, 'PC gaming'],
+    [/\bOrdenador de sobremesa para juegos\b/gi, 'PC gaming'],
+    [/\bPC Gaming Predator Orion 3000\b/gi, 'Predator Orion 3000 PC gaming'],
+    [/\bmonitor Acer Nitro VG0 para PC Gaming\b/gi, 'monitor gaming Acer Nitro VG0'],
+    [/\bmonitor Curvo Acer Nitro ED0 gaming\b/gi, 'monitor gaming curvo Acer Nitro ED0'],
+    [/\bpara Gaming\b/gi, 'gaming'],
+    [/\bLaptop\b/gi, 'portátil'],
+    [/\bDesktop\b/gi, 'PC de sobremesa'],
+    [/\bMonitor\b/gi, 'monitor'],
+    [/\bPortatile\b/gi, 'portátil'],
+    [/\bde icosa[- ]?núcleo(?:s)?\b(?:\s*\(\s*20 núcleos\s*\))?/gi, 'de 20 núcleos'],
+    [/\bIcosa[- ]?core\b(?:\s*\(\s*20 núcleos\s*\))?/gi, '20 núcleos'],
+    [/\bProjector\b/gi, 'proyector'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
   ],
   it: [
-    [/\bGaming Laptop\b/gi, 'Notebook da gaming'],
-    [/\bPortatile da Gioco\b/gi, 'Notebook da gaming'],
+    [/\bGaming Laptop\b/gi, 'Notebook gaming'],
+    [/\bGaming Desktop\b/gi, 'PC gaming'],
+    [/\bGaming Monitor\b/gi, 'monitor gaming'],
+    [/\bmonitor per gaming\b/gi, 'monitor gaming'],
+    [/\bmonitor Gaming\b/gi, 'monitor gaming'],
+    [/\bmonitor Curvo\b/gi, 'monitor curvo'],
+    [/\bmonitor\b\s+.*\bper Gaming\b/gi, 'monitor gaming'],
+    [/\bPortatile da Gioco\b/gi, 'Notebook gaming'],
+    [/\bda gioco\b/gi, 'gaming'],
+    [/\bper Videogiochi\b/gi, 'gaming'],
     [/\bLaptop\b/gi, 'Notebook'],
+    [/\bDesktop gaming\b/gi, 'PC gaming'],
+    [/\bPC fisso\b/gi, 'Desktop'],
+    [/\bfisso\b/gi, 'Desktop'],
+    [/\bDesktop\b/gi, 'Desktop'],
+    [/\bMonitor\b/gi, 'monitor'],
+    [/\bIcosa[- ]?core\b(?:\s*\(\s*20 Core™\s*\))?/gi, '20 core'],
     [/\bCustodia Cabina\b/gi, 'Valigia da cabina'],
+    [/\bProjector\b/gi, 'proiettore'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
   ],
   nl: [
     [/\bGaming Laptop\b/gi, 'gaming-laptop'],
+    [/\bGaming Desktop\b/gi, 'gaming-pc'],
+    [/\bGaming Monitor\b/gi, 'gaming-monitor'],
     [/\bNotebook\b/gi, 'laptop'],
     [/\bLaptop\b/g, 'laptop'],
+    [/\bDesktop\b/gi, 'desktop-pc'],
+    [/\bMonitor\b/gi, 'monitor'],
+    [/\bProjector\b/gi, 'projector'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
   ],
   fi: [
     [/\bGaming Laptop\b/gi, 'pelikannettava'],
+    [/\bGaming Desktop\b/gi, 'pelipöytäkone'],
+    [/\bGaming Monitor\b/gi, 'pelinäyttö'],
     [/\bKannettava Tietokone\b/g, 'kannettava tietokone'],
     [/\bPelikannettava\b/g, 'pelikannettava'],
+    [/\bDesktop\b/gi, 'pöytätietokone'],
+    [/\bMonitor\b/gi, 'näyttö'],
+    [/\bProjector\b/gi, 'projektori'],
+    [/\bUSB Type-C\b/gi, 'USB-C'],
+    [/\bKäyrä\b/gi, 'kaareva'],
   ],
 }
 
@@ -81,20 +153,28 @@ function normalizeText(input: string | null | undefined): string | null {
   return value || null
 }
 
-export function normalizeAcerLocaleTitle(locale: AcerTargetLocale, title: string): string {
-  let next = title.trim()
+function applyLocaleReplacements(locale: AcerTargetLocale, input: string): string {
+  let next = input
   for (const [pattern, replacement] of LOCALE_TITLE_REPLACEMENTS[locale]) {
     next = next.replace(pattern, replacement)
   }
   return next.replace(/\s{2,}/g, ' ').trim()
 }
 
+export function normalizeAcerLocaleTitle(locale: AcerTargetLocale, title: string): string {
+  return applyLocaleReplacements(locale, title.trim())
+}
+
 export function normalizeAcerLocaleTranslation(translation: AcerLocaleTranslation): AcerLocaleTranslation {
+  const title = typeof translation.title === 'string' ? translation.title : ''
+  const description = typeof translation.description === 'string' ? translation.description : ''
+  const metaDescription = typeof translation.metaDescription === 'string' ? translation.metaDescription : ''
+
   return {
     ...translation,
-    title: normalizeAcerLocaleTitle(translation.locale, translation.title),
-    description: translation.description.trim().replace(/\n{3,}/g, '\n\n'),
-    metaDescription: translation.metaDescription.trim(),
+    title: normalizeAcerLocaleTitle(translation.locale, title),
+    description: applyLocaleReplacements(translation.locale, description.trim().replace(/\n{3,}/g, '\n\n')),
+    metaDescription: applyLocaleReplacements(translation.locale, metaDescription.trim()),
   }
 }
 
@@ -108,6 +188,16 @@ export function validateAcerLocaleTranslation(translation: AcerLocaleTranslation
 
   if (translation.locale === 'nl' && /\bdedicated geheugen\b/i.test(haystack)) issues.push('awkward_nl_dedicated_geheugen')
   if (translation.locale === 'fi' && /\bjaettu muisti\b/i.test(haystack) && /\bGraphics\b/i.test(haystack)) issues.push('awkward_fi_graphics_phrase')
+  if (translation.locale === 'fr' && /\bordinateur de bureau\b/i.test(haystack)) issues.push('awkward_fr_desktop')
+  if (translation.locale === 'fr' && /\bde jeu\b/i.test(haystack)) issues.push('awkward_fr_de_jeu')
+  if (translation.locale === 'fr' && /\bicosa[- ]core\b/i.test(haystack)) issues.push('awkward_fr_icosa_core')
+  if (translation.locale === 'de' && /\bIcosa[- ]?core\b/i.test(haystack)) issues.push('awkward_de_icosa_core')
+  if (translation.locale === 'it' && /\bda gioco\b/i.test(haystack)) issues.push('awkward_it_da_gioco')
+  if (translation.locale === 'it' && /\bper Videogiochi\b/i.test(haystack)) issues.push('awkward_it_per_videogiochi')
+  if (translation.locale === 'it' && /\bfisso\b/i.test(haystack)) issues.push('awkward_it_fisso')
+  if (translation.locale === 'it' && /\bIcosa[- ]?core\b/i.test(haystack)) issues.push('awkward_it_icosa_core')
+  if (translation.locale === 'nl' && /\bgaming desktop\b/i.test(haystack)) issues.push('awkward_nl_gaming_desktop')
+  if (translation.locale === 'de' && /\bgaming desktop\b/i.test(haystack)) issues.push('awkward_de_gaming_desktop')
 
   return issues
 }
@@ -180,7 +270,14 @@ export async function translateAcerLocaleWithRetry(
         ],
       }),
     })
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`)
+    if (!res.ok) {
+      const body = await res.text()
+      if (res.status >= 500 || res.status === 429) {
+        feedback = `Previous attempt hit a transient OpenAI HTTP ${res.status}. Retry with a calmer, more concise response.`
+        continue
+      }
+      throw new Error(`OpenAI ${res.status}: ${body}`)
+    }
     const json = await res.json() as {
       choices?: Array<{
         message?: { content?: string | null }
