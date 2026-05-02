@@ -71,7 +71,9 @@
     "runner:acer:once": "npx tsx scripts/local-acer-runner.ts --once --prod --headless",
     "competitors:backfill": "npx tsx scripts/backfill-competitor-prices.ts",
     "translations:report": "npx tsx scripts/report-product-translation-coverage.ts",
-    "translations:discover-sources": "npx tsx scripts/discover-product-translation-sources.ts"
+    "translations:discover-sources": "npx tsx scripts/discover-product-translation-sources.ts",
+    "seo:backfill": "npx tsx scripts/backfill-product-seo-metadata.ts",
+    "seo:backfill:dry": "npx tsx scripts/backfill-product-seo-metadata.ts --dry-run"
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^1.9.0",
