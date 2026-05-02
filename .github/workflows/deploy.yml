@@ -23,9 +23,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build (OpenNext)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_AGENT_BEARER_TOKEN: ${{ secrets.NEXT_PUBLIC_AGENT_BEARER_TOKEN }}
+
       - name: Deploy to Cloudflare Workers
         run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
-          NEXT_PUBLIC_AGENT_BEARER_TOKEN: ${{ secrets.NEXT_PUBLIC_AGENT_BEARER_TOKEN }}
