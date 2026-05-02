@@ -17,7 +17,8 @@ interface ProductFamilyCandidate {
   warehouseStock: Array<{ warehouseId: string; sourceUrl: string | null; sourceName: string | null }>
 }
 
-const VARIANT_CAPABLE_COLLECTIONS = new Set(['laptops', 'input-devices'])
+const LAPTOP_COLLECTION_SLUGS = new Set(['laptops', 'work-laptops', 'gaming-laptops'])
+const VARIANT_CAPABLE_COLLECTIONS = new Set([...LAPTOP_COLLECTION_SLUGS, 'input-devices'])
 const LAPTOP_VARIANT_KEYS = new Set(['keyboard_layout', 'color'])
 const NON_ENGLISH_TITLE_MARKERS = [
   'kannettava',
@@ -68,7 +69,7 @@ function comparableAttrs(map: Map<string, string>, collectionSlug: string): Map<
 }
 
 function getVariantCollection(slugs: Set<string>): 'laptops' | 'input-devices' | null {
-  if (slugs.has('laptops')) return 'laptops'
+  if ([...LAPTOP_COLLECTION_SLUGS].some((slug) => slugs.has(slug))) return 'laptops'
   if (slugs.has('input-devices')) return 'input-devices'
   return null
 }
@@ -234,7 +235,14 @@ export async function autoLinkVariantFamily(
   })
 
   const matching = candidates
-    .filter((candidate) => candidate.categories.some((row) => row.category?.slug === 'laptops'))
+    .filter((candidate) => {
+      const candidateSlugs = new Set(
+        candidate.categories
+          .map((row) => row.category?.slug ?? null)
+          .filter((slug): slug is string => !!slug)
+      )
+      return getVariantCollection(candidateSlugs) === currentVariantCollection
+    })
     .map((candidate) => ({
       id: candidate.id,
       title: candidate.title,

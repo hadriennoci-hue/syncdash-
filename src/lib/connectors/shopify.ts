@@ -87,6 +87,47 @@ export class ShopifyConnector implements PlatformConnector {
     return new Set(data.shopLocales.map((locale) => locale.locale.toLowerCase()))
   }
 
+  async readProductTranslationSnapshot(
+    productGid: string,
+    locales: string[],
+  ): Promise<{
+    resourceId: string
+    shopLocales: string[]
+    translationsByLocale: Record<string, Array<{ key: string; value: string | null }>>
+  }> {
+    const uniqueLocales = [...new Set(locales.map((locale) => locale.trim().toLowerCase()).filter(Boolean))]
+    const shopLocales = [...(await this.fetchShopLocales())].sort()
+    const translationsByLocale: Record<string, Array<{ key: string; value: string | null }>> = {}
+
+    for (const locale of uniqueLocales) {
+      const query = `
+        query ReadProductTranslations($resourceId: ID!, $locale: String!) {
+          translatableResource(resourceId: $resourceId) {
+            resourceId
+            translations(locale: $locale) { key value }
+          }
+        }
+      `
+      const data = await this.graphql<{
+        translatableResource: {
+          resourceId: string
+          translations: Array<{ key: string; value: string | null }>
+        } | null
+      }>(query, { resourceId: productGid, locale })
+
+      translationsByLocale[locale] = (data.translatableResource?.translations ?? []).map((entry) => ({
+        key: entry.key,
+        value: entry.value ?? null,
+      }))
+    }
+
+    return {
+      resourceId: productGid,
+      shopLocales,
+      translationsByLocale,
+    }
+  }
+
   private async fetchTranslatableDigests(resourceId: string): Promise<Map<string, string>> {
     const query = `
       query ResourceDigests($resourceId: ID!) {

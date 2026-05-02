@@ -211,6 +211,14 @@ export interface PlatformConnector {
     productGid: string,
     translations: ProductTranslationPayload[]
   ): Promise<void>
+  readProductTranslationSnapshot?(
+    productGid: string,
+    locales: string[]
+  ): Promise<{
+    resourceId: string
+    shopLocales: string[]
+    translationsByLocale: Record<string, Array<{ key: string; value: string | null }>>
+  }>
   healthCheck(): Promise<HealthCheckResult>
 }
 
