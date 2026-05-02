@@ -1,18 +1,20 @@
-import { cleanTextArtifacts } from '@/lib/utils/description'
-
 type ProductListItem = {
   id: string
-  title: string
   platforms: Record<string, { status: string; price: number | null; compareAt: number | null } | undefined>
 }
 
 type ProductDetail = {
   id: string
-  platformId?: string | null
-  title: string
-  description: string | null
-  metaDescription: string | null
+  pushStatus?: Record<string, string | undefined>
   platforms: Record<string, { platformId: string; recordType: string; syncStatus: string } | undefined>
+}
+
+type ResyncResponse = {
+  scanned?: number
+  targeted?: number
+  updated?: number
+  dryRun?: boolean
+  result?: unknown
 }
 
 const BASE_URL = process.env.CLEANUP_BASE_URL?.trim() || 'https://wizhard.store'
@@ -21,6 +23,10 @@ const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID?.trim()
 const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET?.trim()
 const args = new Set(process.argv.slice(2))
 const DRY_RUN = args.has('--dry-run')
+const BATCH_SIZE = 5
+const DETAIL_BATCH_SIZE = 20
+const skipArg = process.argv.find((arg) => arg.startsWith('--skip='))
+const SKIP = skipArg ? Math.max(0, Number.parseInt(skipArg.slice('--skip='.length), 10) || 0) : 0
 
 if (!TOKEN) throw new Error('Missing AGENT_BEARER_TOKEN')
 if (!CF_ACCESS_CLIENT_ID) throw new Error('Missing CF_ACCESS_CLIENT_ID')
@@ -39,25 +45,18 @@ async function apiGet<T>(path: string): Promise<T> {
   return payload.data
 }
 
-async function apiPost(path: string, body: unknown): Promise<void> {
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: { ...HEADERS, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`)
+  const payload = await res.json() as { data: T }
+  return payload.data
 }
 
-async function apiPatch(path: string, body: unknown): Promise<void> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'PATCH',
-    headers: { ...HEADERS, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status} ${await res.text()}`)
-}
-
-async function fetchAllProducts(): Promise<ProductListItem[]> {
+async function fetchAllProductIds(): Promise<ProductListItem[]> {
   const out: ProductListItem[] = []
   let page = 1
   let totalPages = 1
@@ -72,68 +71,98 @@ async function fetchAllProducts(): Promise<ProductListItem[]> {
   return out
 }
 
-function clean(text: string | null | undefined): string | null {
-  return cleanTextArtifacts(text)
+async function mapBatches<T, R>(
+  values: T[],
+  batchSize: number,
+  mapper: (value: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = []
+  for (let i = 0; i < values.length; i += batchSize) {
+    const batch = values.slice(i, i + batchSize)
+    const results = await Promise.all(batch.map((value) => mapper(value)))
+    out.push(...results)
+  }
+  return out
+}
+
+function isRetriableBatchError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return /ECONNRESET|fetch failed|ETIMEDOUT|timeout/i.test(err.message)
+}
+
+async function syncKomputerzzBatch(batch: string[], label: string): Promise<number> {
+  if (batch.length === 0) return 0
+
+  try {
+    const response = await apiPost<ResyncResponse>('/api/admin/shopify/komputerzz/resync-existing', {
+      skuFilter: batch,
+      triggeredBy: 'agent',
+    })
+    console.log(JSON.stringify({
+      batch: label,
+      batchSize: batch.length,
+      scanned: response.scanned,
+      targeted: response.targeted,
+      updated: response.updated,
+    }, null, 2))
+    return batch.length
+  } catch (err) {
+    if (batch.length === 1 || !isRetriableBatchError(err)) {
+      throw err
+    }
+
+    const left = batch.slice(0, Math.ceil(batch.length / 2))
+    const right = batch.slice(Math.ceil(batch.length / 2))
+    console.log(`batch ${label} failed, splitting into ${left.length} + ${right.length}`)
+    const leftDone = await syncKomputerzzBatch(left, `${label}a`)
+    const rightDone = await syncKomputerzzBatch(right, `${label}b`)
+    return leftDone + rightDone
+  }
 }
 
 async function main() {
-  const products = await fetchAllProducts()
+  const products = await fetchAllProductIds()
+  const roughCandidates = products.filter((product) => product.platforms?.shopify_komputerzz?.status !== 'missing')
 
-  const candidateSkus: string[] = []
-  for (const product of products) {
+  const scannedRows = await mapBatches(roughCandidates, DETAIL_BATCH_SIZE, async (product) => {
     const detail = await apiGet<ProductDetail>(`/api/products/${encodeURIComponent(product.id)}`)
     const mapping = detail.platforms?.shopify_komputerzz
-    if (!mapping || mapping.recordType !== 'product' || !mapping.platformId) continue
-    candidateSkus.push(product.id)
-  }
+    const isExistingShopifyProduct = !!mapping && mapping.recordType === 'product' && !!mapping.platformId
+    return {
+      sku: product.id,
+      existingShopifyProduct: isExistingShopifyProduct,
+      queuedButUnmapped: !isExistingShopifyProduct && detail.pushStatus?.shopify_komputerzz === '2push',
+    }
+  })
+
+  const existingShopifySkus = scannedRows.filter((row) => row.existingShopifyProduct).map((row) => row.sku)
+  const queuedButUnmappedSkus = scannedRows.filter((row) => row.queuedButUnmapped).map((row) => row.sku)
 
   console.log(JSON.stringify({
     scanned: products.length,
-    eligibleExistingShopifyProducts: candidateSkus.length,
+    roughCandidates: roughCandidates.length,
+    existingShopifySkus: existingShopifySkus.length,
+    queuedButUnmappedSkus: queuedButUnmappedSkus.length,
+    skip: SKIP,
     dryRun: DRY_RUN,
   }, null, 2))
 
   if (DRY_RUN) return
 
-  let pushed = 0
-  let failed = 0
-  const errors: string[] = []
-
-  for (const sku of candidateSkus) {
-    try {
-      const detail = await apiGet<ProductDetail>(`/api/products/${encodeURIComponent(sku)}`)
-      const title = clean(detail.title) ?? detail.title
-      const description = clean(detail.description)
-      const metaDescription = clean(detail.metaDescription)
-
-      await apiPatch(`/api/products/${encodeURIComponent(sku)}/push-status`, {
-        platform: 'shopify_komputerzz',
-        status: '2push',
-      })
-
-      await apiPost('/api/sync/channel-availability', {
-        platforms: ['shopify_komputerzz'],
-        sku,
-        triggeredBy: 'agent',
-      })
-
-      pushed += 1
-      console.log(`✓ ${sku} resynced`)
-      if (title !== detail.title || description !== detail.description || metaDescription !== detail.metaDescription) {
-        console.log(`  cleaned base text before sync`)
-      }
-    } catch (err) {
-      failed += 1
-      const message = err instanceof Error ? err.message : String(err)
-      errors.push(`${sku}: ${message}`)
-      console.error(`✗ ${sku}: ${message}`)
-    }
+  const resyncSkus = existingShopifySkus.slice(SKIP)
+  const totalBatches = Math.max(1, Math.ceil(resyncSkus.length / BATCH_SIZE))
+  let pushedSkus = 0
+  for (let i = 0; i < resyncSkus.length; i += BATCH_SIZE) {
+    const batch = resyncSkus.slice(i, i + BATCH_SIZE)
+    const batchIndex = Math.floor(i / BATCH_SIZE) + 1
+    console.log(`resyncing batch ${batchIndex}/${totalBatches} (${batch.length} SKUs)`)
+    pushedSkus += await syncKomputerzzBatch(batch, `${batchIndex}/${totalBatches}`)
   }
 
   console.log(JSON.stringify({
-    pushed,
-    failed,
-    errors,
+    pushedBatches: totalBatches,
+    pushedSkus,
+    leftQueuedForClassicPush: queuedButUnmappedSkus.length,
   }, null, 2))
 }
 
@@ -141,3 +170,5 @@ main().catch((err) => {
   console.error(err)
   process.exit(1)
 })
+
+export {}
