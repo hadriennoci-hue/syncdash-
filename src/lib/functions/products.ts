@@ -7,18 +7,11 @@ import { eq, and, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { generateId } from '@/lib/utils/id'
+import { cleanTextArtifacts } from '@/lib/utils/description'
 import type { Platform, SyncResult, TriggeredBy, ImageInput } from '@/types/platform'
 
 function cleanDescription(desc?: string | null): string | null {
-  if (!desc) return desc ?? null
-  return desc
-    .replace(/\u2122/g, '')  // ™
-    .replace(/\u00ae/g, '')  // ®
-    .replace(/\u00a9/g, '')  // ©
-    .replace(/ {2,}/g, ' ')
-    .replace(/ +$/gm, '')
-    .replace(/^ +/gm, '')
-    || null
+  return cleanTextArtifacts(desc)
 }
 
 function normalizeTags(tags?: string[]): string[] | undefined {

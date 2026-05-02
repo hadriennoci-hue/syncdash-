@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 
 import type { ProductTranslationPayload } from '@/lib/connectors/types'
 import { db } from '@/lib/db/client'
+import { cleanTextArtifacts } from '@/lib/utils/description'
 import { productTranslations } from '@/lib/db/schema'
 import { logOperation } from '@/lib/functions/log'
 import type { Platform, TriggeredBy } from '@/types/platform'
@@ -50,18 +51,18 @@ export async function upsertProductTranslations(
       productId,
       locale: translation.locale,
       title: translation.title?.trim() || null,
-      description: translation.description?.trim() || null,
+      description: cleanTextArtifacts(translation.description),
       metaTitle: translation.metaTitle?.trim() || null,
-      metaDescription: translation.metaDescription?.trim() || null,
+      metaDescription: cleanTextArtifacts(translation.metaDescription),
       createdAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
       target: [productTranslations.productId, productTranslations.locale],
       set: {
         title: translation.title?.trim() || null,
-        description: translation.description?.trim() || null,
+        description: cleanTextArtifacts(translation.description),
         metaTitle: translation.metaTitle?.trim() || null,
-        metaDescription: translation.metaDescription?.trim() || null,
+        metaDescription: cleanTextArtifacts(translation.metaDescription),
         updatedAt: now,
       },
     })

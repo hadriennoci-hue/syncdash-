@@ -181,6 +181,109 @@ function isLaptopProduct(product: ProductDetail): boolean {
   return /\b(laptop|notebook|chromebook)\b/.test(text) || /\b(predator|nitro|travelmate|swift|aspire)\b/.test(text)
 }
 
+function getMetafieldValue(product: ProductDetail, key: string): string | null {
+  const value = product.metafields?.find((mf) =>
+    mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === key.toLowerCase()
+  )?.value
+  return value?.trim() || null
+}
+
+function normalizeCompactText(value: string | null): string | null {
+  const text = value?.trim()
+  if (!text) return null
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([/|,+-])\s*/g, '$1')
+    .replace(/([0-9])\s*(gb|tb|ghz)\b/gi, (_match, num, unit) => `${num}${String(unit).toUpperCase() === 'GHZ' ? 'Ghz' : String(unit).toUpperCase()}`)
+    .replace(/\bDDR\s*(\d)/i, 'DDR$1')
+    .replace(/\bRTX\s*(\d+)/i, 'RTX$1')
+    .replace(/\bGTX\s*(\d+)/i, 'GTX$1')
+    .replace(/\bRX\s*(\d+)/i, 'RX$1')
+    .replace(/\bCore\s+U\s*(\d)/i, 'Core U$1')
+    .replace(/\bCore\s+Ultra\s*(\d)/i, 'Core Ultra $1')
+    .trim()
+}
+
+function getLaptopCpuLabel(product: ProductDetail): string | null {
+  const raw = getMetafieldValue(product, 'processor_model')
+    ?? (product.description?.match(/\bIntel\s+Core\s+(?:Ultra\s+)?(?:i\d|U\d|\d)\b/i)?.[0] ?? null)
+  return normalizeCompactText(raw?.replace(/^Intel\s+/i, '').replace(/\bProcessor\b/i, '').trim() ?? null)
+}
+
+function getLaptopCpuSpeedLabel(product: ProductDetail): string | null {
+  const raw = product.description?.match(/\b\d+(?:\.\d+)?\s*GHz\b/i)?.[0]
+    ?? product.title.match(/\b\d+(?:\.\d+)?\s*GHz\b/i)?.[0]
+    ?? null
+  if (!raw) return null
+  const normalized = raw.replace(/\s+/g, '').replace(/GHz/i, 'Ghz')
+  return normalized
+}
+
+function getLaptopGpuLabel(product: ProductDetail): string | null {
+  const raw = getMetafieldValue(product, 'gpu')
+    ?? product.description?.match(/\b(?:RTX|GTX|RX)\s*\d+[A-Z0-9]*\b/i)?.[0]
+    ?? product.description?.match(/\bIntel\s+(?:Arc|Graphics|UHD|Iris)\s*[A-Z0-9-]*\b/i)?.[0]
+    ?? null
+  if (!raw) return null
+  return raw
+    .replace(/\s+/g, '')
+    .replace(/^Intel/i, 'Intel')
+    .replace(/^RTX/i, 'RTX')
+    .replace(/^GTX/i, 'GTX')
+    .replace(/^RX/i, 'RX')
+}
+
+function getLaptopRamLabel(product: ProductDetail): string | null {
+  const ram = getMetafieldValue(product, 'ram')
+  const ramType = getMetafieldValue(product, 'ram_type') ?? getMetafieldValue(product, 'memory_type')
+  if (!ram) return null
+  const normalizedRam = ram.replace(/\s+/g, '').replace(/gb/i, 'GB')
+  return ramType ? `${normalizedRam} ${ramType.toUpperCase().replace(/\s+/g, '')}` : normalizedRam
+}
+
+function getLaptopStorageLabel(product: ProductDetail): string | null {
+  const storage = getMetafieldValue(product, 'storage')
+  if (!storage) return null
+  return storage
+    .replace(/\s+/g, '')
+    .replace(/gb/i, 'GB')
+    .replace(/tb/i, 'TB')
+    .concat(storage.toLowerCase().includes('ssd') ? '' : ' SSD')
+    .replace(/\s*SSD$/i, ' SSD')
+}
+
+function getLaptopColorLabel(product: ProductDetail): string | null {
+  const fromMetafield = getMetafieldValue(product, 'color')
+  if (fromMetafield) return fromMetafield
+  const segments = product.title.split('|').map((segment) => segment.trim()).filter(Boolean)
+  return segments.length >= 2 ? segments[segments.length - 1] : null
+}
+
+function formatXmrLaptopTitle(product: ProductDetail): string {
+  const segments = [
+    getLaptopCpuLabel(product),
+    getLaptopCpuSpeedLabel(product),
+    getLaptopGpuLabel(product),
+    getLaptopRamLabel(product),
+    getLaptopStorageLabel(product),
+  ].filter((segment): segment is string => Boolean(segment))
+
+  const color = getLaptopColorLabel(product) ?? 'Black'
+  let title = `${segments.join(' ')} | ${color} | Europe only`.replace(/\s+/g, ' ').trim()
+
+  if (title.length <= XMR_TITLE_MAX_LENGTH) return title
+
+  const suffix = ` | ${color} | Europe only`
+  const maxSpecLength = Math.max(0, XMR_TITLE_MAX_LENGTH - suffix.length)
+  const specBase = segments.join(' ').replace(/\s+/g, ' ').trim()
+  const trimmedSpec = specBase.length > maxSpecLength ? specBase.slice(0, maxSpecLength).trimEnd() : specBase
+  title = `${trimmedSpec}${suffix}`.replace(/\s+/g, ' ').trim()
+
+  return title.length <= XMR_TITLE_MAX_LENGTH
+    ? title
+    : `${title.slice(0, XMR_TITLE_MAX_LENGTH - XMR_TITLE_SUFFIX.length).trimEnd()}${XMR_TITLE_SUFFIX}`
+}
+
 function prefixXmrLaptopDescription(product: ProductDetail, description: string): string {
   if (!isLaptopProduct(product)) return description
   const cleaned = description.trim()
@@ -953,9 +1056,10 @@ async function xmrFillForm(
 ): Promise<void> {
   const price = Math.floor(product.prices.xmr_bazaar?.price ?? 0)
   const desc  = prefixXmrLaptopDescription(product, stripHtml(product.description ?? product.title))
+  const title  = isLaptopProduct(product) ? formatXmrLaptopTitle(product) : formatXmrTitle(product.title)
 
   await page.locator('select[name="category"]').selectOption({ label: 'Electronics' }).catch(() => {})
-  await page.locator('input[name="title"]').fill(formatXmrTitle(product.title))
+  await page.locator('input[name="title"]').fill(title)
   await page.locator('input[name="price"]').fill(String(price))
   await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[1]/div[3]/div[2]/select')
     .first()
