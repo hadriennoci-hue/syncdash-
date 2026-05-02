@@ -226,7 +226,7 @@ export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
                   )}
                   <td className="py-1 pr-3">
                     {mode === 'warehouse_overview'
-                      ? <StockHealthDot product={p} />
+                      ? <ImageHealthDot product={p} />
                       : <span className={p.hasMinImages ? 'text-green-600' : 'text-amber-500'}>{p.imageCount}</span>
                     }
                   </td>
@@ -265,11 +265,10 @@ function StatusDot({ status }: { status?: string }) {
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} title={status} />
 }
 
-function StockHealthDot({ product }: { product: any }) {
-  const totalStock = (product.stock?.ireland ?? 0) + (product.stock?.poland ?? 0) + (product.stock?.acer_store ?? 0) + (product.stock?.dropshipping ?? 0)
-  const incomplete = product.status === 'info' || !product.hasDescription || !product.hasMinImages
-  const color = totalStock > 0 ? 'bg-green-500' : (incomplete ? 'bg-muted-foreground/50' : 'bg-red-500')
-  const title = totalStock > 0 ? 'In stock' : (incomplete ? 'Incomplete' : 'Out of stock')
+function ImageHealthDot({ product }: { product: any }) {
+  const hasImages = (product.imageCount ?? 0) > 0
+  const color = hasImages ? 'bg-green-500' : 'bg-red-500'
+  const title = hasImages ? 'Has images' : 'No images'
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} title={title} />
 }
 

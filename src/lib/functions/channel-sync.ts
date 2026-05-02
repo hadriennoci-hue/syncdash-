@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
-import { eq, or, gt } from 'drizzle-orm'
+import { and, eq, gt, inArray, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
 import { getProductTranslations, logProductTranslationSync } from './product-translations'
@@ -38,6 +38,7 @@ interface ChannelSyncOptions {
   // Optional protection window: when > 0, stock-zero is skipped for channel products
   // whose own updated_at is newer than now - windowHours.
   protectRecentChannelEditsHours?: number
+  skuFilter?: string[]
   onPlatformStart?: (info: { platform: Platform; index: number; total: number }) => void | Promise<void>
   onPlatformProgress?: (info: {
     platform: Platform
@@ -703,15 +704,20 @@ export async function syncChannelAvailability(
   triggeredBy: TriggeredBy = 'human',
   options: ChannelSyncOptions = {}
 ): Promise<ChannelSyncResult[]> {
+  const pushableWhere = or(
+    eq(products.pushedCoincart2, '2push'),
+    eq(products.pushedShopifyKomputerzz, '2push'),
+    eq(products.pushedShopifyTiktok, '2push'),
+    eq(products.pushedEbayIe, '2push'),
+    eq(products.pushedXmrBazaar, '2push'),
+    eq(products.pushedLibreMarket, '2push'),
+  )
+  const where = options.skuFilter?.length
+    ? and(pushableWhere, inArray(products.id, options.skuFilter))
+    : pushableWhere
+
   const raw = await db.query.products.findMany({
-    where: or(
-      eq(products.pushedCoincart2, '2push'),
-      eq(products.pushedShopifyKomputerzz, '2push'),
-      eq(products.pushedShopifyTiktok, '2push'),
-      eq(products.pushedEbayIe, '2push'),
-      eq(products.pushedXmrBazaar, '2push'),
-      eq(products.pushedLibreMarket, '2push'),
-    ),
+    where,
     with: {
       images:           true,
       variants:         true,
@@ -979,6 +985,16 @@ async function pushPlatform(
           )
         )
       : coincartAttributeValuesRaw
+    const shopifyTranslations = platform === 'shopify_komputerzz'
+      ? await getProductTranslations(primary.id)
+      : []
+    const shopifyEnglishTranslation = shopifyTranslations.find((translation) => translation.locale.toLowerCase() === 'en') ?? null
+    const shopifyBaseFields = {
+      title: shopifyEnglishTranslation?.title ?? primary.title,
+      description: shopifyEnglishTranslation?.description ?? primary.description,
+      metaDescription: shopifyEnglishTranslation?.metaDescription ?? primary.metaDescription,
+    }
+    const shopifyLocaleTranslations = shopifyTranslations.filter((translation) => translation.locale.toLowerCase() !== 'en')
 
     try {
       const identityPatch = target.kind === 'group'
@@ -1116,9 +1132,9 @@ async function pushPlatform(
         if (platform === 'shopify_komputerzz') {
           await callWithShopifyAuthRetry(() => connector.updateProduct(platformId, {
             ...identityPatch,
-            title: primary.title,
-            description: primary.description,
-            metaDescription: primary.metaDescription,
+            title: shopifyBaseFields.title,
+            description: shopifyBaseFields.description,
+            metaDescription: shopifyBaseFields.metaDescription,
             status: 'active',
             vendor: primary.vendor,
             productType: primary.productType,
@@ -1152,9 +1168,9 @@ async function pushPlatform(
           sku: canonicalSku,
           slug: slugOverride ?? null,
           ean: target.kind === 'group' ? null : (primary.ean?.trim() ? primary.ean.trim() : null),
-          title: target.titleOverride ?? primary.title,
-          description: primary.description,
-          metaDescription: primary.metaDescription,
+          title: target.titleOverride ?? shopifyBaseFields.title,
+          description: shopifyBaseFields.description,
+          metaDescription: shopifyBaseFields.metaDescription,
           status: 'active',
           vendor: primary.vendor,
           productType: primary.productType,
@@ -1349,16 +1365,15 @@ async function pushPlatform(
       }
 
       if (platform === 'shopify_komputerzz' && finalPlatformId && isTranslationCapableConnector(connector)) {
-        const translations = await getProductTranslations(primary.id)
-        if (translations.length > 0) {
+        if (shopifyLocaleTranslations.length > 0) {
           const translationConnector = connector
           try {
-            await callWithShopifyAuthRetry(() => translationConnector.syncProductTranslations(finalPlatformId!, translations))
+            await callWithShopifyAuthRetry(() => translationConnector.syncProductTranslations(finalPlatformId!, shopifyLocaleTranslations))
             await logProductTranslationSync(
               primary.id,
               platform,
               'success',
-              `Synced ${translations.length} locale(s) to Shopify`,
+              `Synced ${shopifyLocaleTranslations.length} locale(s) to Shopify`,
               triggeredBy
             )
           } catch (translationErr) {

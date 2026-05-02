@@ -20,6 +20,7 @@ import type { Platform } from '@/types/platform'
 
 const schema = z.object({
   platforms:   z.array(z.string()).length(1),
+  sku: z.string().trim().min(1).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
   protectRecentChannelEditsHours: z.number().min(0).max(24 * 30).default(0.5),
 })
@@ -33,10 +34,13 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return apiError('VALIDATION_ERROR', parsed.error.message, 400)
   const platforms = parsed.data.platforms as Platform[]
   const platform = platforms[0]
+  const targetSkus = parsed.data.sku ? [parsed.data.sku] : null
   let lastProgress = { processedTargets: 0, totalTargets: 0, blockedOnSku: null as string | null }
 
   for (const platform of platforms) {
-    const issues = await findUnsavedChannelRows(platform)
+    const issues = targetSkus
+      ? (await findUnsavedChannelRows(platform)).filter((issue) => targetSkus.includes(issue.sku))
+      : await findUnsavedChannelRows(platform)
     if (issues.length > 0) {
       return apiError(
         'VALIDATION_ERROR',
@@ -73,6 +77,7 @@ export async function POST(req: NextRequest) {
       parsed.data.triggeredBy,
       {
         protectRecentChannelEditsHours: parsed.data.protectRecentChannelEditsHours,
+        skuFilter: targetSkus ?? undefined,
         onPlatformProgress: async ({ processedTargets, totalTargets, lastProductIds, lastStatus, message }) => {
           lastProgress = {
             processedTargets,

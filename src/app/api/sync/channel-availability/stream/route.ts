@@ -19,6 +19,7 @@ import type { Platform } from '@/types/platform'
 
 const schema = z.object({
   platforms: z.array(z.string()).length(1),
+  sku: z.string().trim().min(1).optional(),
   triggeredBy: z.enum(['human', 'agent']).default('human'),
   protectRecentChannelEditsHours: z.number().min(0).max(24 * 30).default(0.5),
 })
@@ -53,8 +54,11 @@ export async function POST(req: NextRequest) {
         push('push_start', { totalPlatforms: platforms.length, platforms })
         const job = await createChannelPushJob(platform, parsed.data.triggeredBy)
         jobId = job.id
+        const targetSkus = parsed.data.sku ? [parsed.data.sku] : null
         for (const platform of platforms) {
-          const issues = await findUnsavedChannelRows(platform)
+          const issues = targetSkus
+            ? (await findUnsavedChannelRows(platform)).filter((issue) => targetSkus.includes(issue.sku))
+            : await findUnsavedChannelRows(platform)
           if (issues.length > 0) {
             throw new Error(`${platform} sale channel needs to be saved first (${issues.length} unsaved row(s), first SKU: ${issues[0].sku})`)
           }
@@ -82,6 +86,7 @@ export async function POST(req: NextRequest) {
           parsed.data.triggeredBy,
           {
             protectRecentChannelEditsHours: parsed.data.protectRecentChannelEditsHours,
+            skuFilter: targetSkus ?? undefined,
             onPlatformStart: ({ platform, index, total }) => {
               push('platform_start', { platform, index, total })
             },

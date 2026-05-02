@@ -74,6 +74,11 @@ interface ProductDetail {
   prices:      Record<string, { price: number | null; compareAt: number | null } | undefined>
   platforms:   Record<string, { platformId: string; syncStatus: string } | undefined>
   pushStatus?: Record<string, string | undefined>
+  metafields?: Array<{
+    namespace: string
+    key: string
+    value: string | null
+  }>
   translations?: Array<{
     locale: string
     title: string | null
@@ -119,6 +124,26 @@ async function apiFetch(method: string, apiPath: string, body: unknown, token: s
 }
 
 const XMR_LAPTOP_PREFIX = 'Brand new unopened. Please specify the keyboard layout you want, and your shipping country before ordering.\nLatest generation from ACER.'
+const XMR_KEYBOARD_LAYOUT_LABELS: Record<string, string> = {
+  be_azerty: 'BE AZERTY',
+  fra_azerty: 'FR AZERTY',
+  fr_azerty: 'FR AZERTY',
+  ger_qwertz: 'DE QWERTZ',
+  de_qwertz: 'DE QWERTZ',
+  spa_qwerty: 'ES QWERTY',
+  es_qwerty: 'ES QWERTY',
+  ita_qwerty: 'IT QWERTY',
+  it_qwerty: 'IT QWERTY',
+  nl_qwerty: 'QWERTY',
+  pl_qwerty: 'PL QWERTY',
+  se_qwerty: 'SE QWERTY',
+  swe_qwerty: 'SE QWERTY',
+  swiss_qwertz: 'CH QWERTZ',
+  ch_qwertz: 'CH QWERTZ',
+  uk_qwerty: 'UK QWERTY',
+  us_qwerty: 'US QWERTY',
+  nordic: 'Nordic',
+}
 
 function pickTranslation(product: ProductDetail, locale: string): { title: string | null; description: string | null } | null {
   const translation = product.translations?.find((row) => String(row.locale ?? '').trim().toLowerCase() === locale.toLowerCase())
@@ -136,6 +161,21 @@ function getLibreMarketText(product: ProductDetail): { title: string; descriptio
   }
 }
 
+const XMR_TITLE_SUFFIX = ' | Europe only'
+const XMR_TITLE_MAX_LENGTH = 80
+
+function formatXmrTitle(title: string): string {
+  const cleaned = title.replace(/\s+/g, ' ').trim()
+  const base = cleaned.replace(/\s*\|\s*Europe only\s*$/i, '').trim()
+  const maxBaseLength = Math.max(0, XMR_TITLE_MAX_LENGTH - XMR_TITLE_SUFFIX.length)
+  const trimmedBase = base.length > maxBaseLength ? base.slice(0, maxBaseLength).trimEnd() : base
+  const normalizedBase = trimmedBase.replace(/[\s|,-]+$/g, '').trimEnd()
+  const finalTitle = `${normalizedBase}${XMR_TITLE_SUFFIX}`
+  return finalTitle.length <= XMR_TITLE_MAX_LENGTH
+    ? finalTitle
+    : finalTitle.slice(0, XMR_TITLE_MAX_LENGTH).trimEnd()
+}
+
 function isLaptopProduct(product: ProductDetail): boolean {
   const text = `${product.productType ?? ''} ${product.title} ${product.description ?? ''}`.toLowerCase()
   return /\b(laptop|notebook|chromebook)\b/.test(text) || /\b(predator|nitro|travelmate|swift|aspire)\b/.test(text)
@@ -144,8 +184,27 @@ function isLaptopProduct(product: ProductDetail): boolean {
 function prefixXmrLaptopDescription(product: ProductDetail, description: string): string {
   if (!isLaptopProduct(product)) return description
   const cleaned = description.trim()
-  if (cleaned.startsWith(XMR_LAPTOP_PREFIX)) return cleaned
-  return `${XMR_LAPTOP_PREFIX}\n\n${cleaned}`
+  const keyboardLayout = getXmrLaptopKeyboardLayout(product)
+  const footerLines = [
+    `SKU: ${product.id}`,
+    `Keyboard layout: ${keyboardLayout ?? 'Unknown'}`,
+  ]
+  const fullDescription = [XMR_LAPTOP_PREFIX, ...footerLines, '', cleaned].join('\n')
+  return fullDescription.trim()
+}
+
+function getXmrLaptopKeyboardLayout(product: ProductDetail): string | null {
+  const metafield = product.metafields?.find((mf) =>
+    mf.namespace === 'attributes' && mf.key.trim().toLowerCase() === 'keyboard_layout'
+  )
+  const raw = metafield?.value?.trim() ?? ''
+  if (!raw) return null
+  const normalized = raw.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  return XMR_KEYBOARD_LAYOUT_LABELS[normalized]
+    ?? raw
+      .split(/[_-]+/)
+      .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+      .join(' ')
 }
 
 async function getQueuedSkus(platform: string, token: string, base: string): Promise<string[]> {
@@ -896,7 +955,7 @@ async function xmrFillForm(
   const desc  = prefixXmrLaptopDescription(product, stripHtml(product.description ?? product.title))
 
   await page.locator('select[name="category"]').selectOption({ label: 'Electronics' }).catch(() => {})
-  await page.locator('input[name="title"]').fill(product.title)
+  await page.locator('input[name="title"]').fill(formatXmrTitle(product.title))
   await page.locator('input[name="price"]').fill(String(price))
   await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[1]/div[3]/div[2]/select')
     .first()
@@ -971,7 +1030,10 @@ async function xmrFillForm(
 
   // International shipping + cost
   await xmrCheckXpath(page, '/html/body/div[3]/div/div[2]/form/div[3]/div[4]/div[3]/div[1]/label').catch(() => {})
-  await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[3]/div[4]/div[3]/div[2]/input').first().fill('10').catch(() => {})
+  await page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[3]/div[4]/div[3]/div[2]/input')
+    .first()
+    .fill(isLaptopProduct(product) ? '25' : '10')
+    .catch(() => {})
 
   // Payments: direct + escrow
   await xmrClickXpath(page, '/html/body/div[3]/div/div[2]/form/div[4]/div[2]/div[1]/label/span[2]').catch(() => {})

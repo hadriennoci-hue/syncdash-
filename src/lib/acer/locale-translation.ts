@@ -146,11 +146,34 @@ function normalizeText(input: string | null | undefined): string | null {
   const value = (input ?? '')
     .replace(/\r\n/g, '\n')
     .replace(/\u00a0/g, ' ')
+    .replace(/\uFFFD/g, '')
+    .replace(/\u2122/g, '')
+    .replace(/\u00ae/g, '')
+    .replace(/Â™/g, '')
+    .replace(/Â®/g, '')
+    .replace(/â„¢/g, '')
+    .replace(/â€™/g, "'")
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   return value || null
+}
+
+function normalizeAcerDescriptionText(input: string): string {
+  return input
+    .replace(/\uFFFD/g, '')
+    .replace(/\u2122/g, '')
+    .replace(/\u00ae/g, '')
+    .replace(/Â™/g, '')
+    .replace(/Â®/g, '')
+    .replace(/â„¢/g, '')
+    .replace(/&reg;|&trade;/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;:)\]])/g, '$1')
+    .replace(/([([(])\s+/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function applyLocaleReplacements(locale: AcerTargetLocale, input: string): string {
@@ -162,7 +185,7 @@ function applyLocaleReplacements(locale: AcerTargetLocale, input: string): strin
 }
 
 export function normalizeAcerLocaleTitle(locale: AcerTargetLocale, title: string): string {
-  return applyLocaleReplacements(locale, title.trim())
+  return applyLocaleReplacements(locale, normalizeAcerDescriptionText(title.trim()))
 }
 
 export function normalizeAcerLocaleTranslation(translation: AcerLocaleTranslation): AcerLocaleTranslation {
@@ -173,8 +196,14 @@ export function normalizeAcerLocaleTranslation(translation: AcerLocaleTranslatio
   return {
     ...translation,
     title: normalizeAcerLocaleTitle(translation.locale, title),
-    description: applyLocaleReplacements(translation.locale, description.trim().replace(/\n{3,}/g, '\n\n')),
-    metaDescription: applyLocaleReplacements(translation.locale, metaDescription.trim()),
+    description: applyLocaleReplacements(
+      translation.locale,
+      normalizeAcerDescriptionText(description.trim().replace(/\n{3,}/g, '\n\n'))
+    ),
+    metaDescription: applyLocaleReplacements(
+      translation.locale,
+      normalizeAcerDescriptionText(metaDescription.trim())
+    ),
   }
 }
 
@@ -207,6 +236,7 @@ function buildLocalePrompt(locale: AcerTargetLocale): string {
     `Translate this Acer product from English into ${LOCALE_NAMES[locale]}.`,
     'Preserve product facts exactly and do not invent any specifications.',
     'Keep model codes, dimensions, units, storage, memory capacities, keyboard markers, and punctuation structure intact where possible.',
+    'Do not emit trademark or registered-mark symbols, replacement characters, or broken-encoding artifacts in the final text. Strip them entirely from titles, descriptions, and meta descriptions.',
     'Write natural e-commerce copy for the target market.',
     LOCALE_STYLE_GUIDANCE[locale],
     'Do not leave obvious English category nouns or phrases in the output when a natural local equivalent exists.',
