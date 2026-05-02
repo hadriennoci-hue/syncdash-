@@ -6,6 +6,7 @@ name = "syncdash"
 main = ".open-next/worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+account_id = "22289f45fec4c8545c8a47f6d768cad9"
 
 [assets]
 directory = ".open-next/assets"
