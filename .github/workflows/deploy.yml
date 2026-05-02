@@ -23,13 +23,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (opennextjs-cloudflare)
-        run: npx opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion
-        env:
-          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
-          NEXT_PUBLIC_AGENT_BEARER_TOKEN: ${{ secrets.NEXT_PUBLIC_AGENT_BEARER_TOKEN }}
-
       - name: Deploy to Cloudflare Workers
-        run: npx wrangler deploy --config wrangler.toml
+        run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_AGENT_BEARER_TOKEN: ${{ secrets.NEXT_PUBLIC_AGENT_BEARER_TOKEN }}
