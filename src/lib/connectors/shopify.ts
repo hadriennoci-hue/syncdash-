@@ -128,6 +128,41 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
+  async readProductBaseSnapshot(
+    productGid: string,
+  ): Promise<{
+    productId: string
+    title: string | null
+    bodyHtml: string | null
+    metaDescription: string | null
+  }> {
+    const query = `
+      query ReadProductBase($productId: ID!) {
+        product(id: $productId) {
+          id
+          title
+          descriptionHtml
+          seo { description }
+        }
+      }
+    `
+    const data = await this.graphql<{
+      product: {
+        id: string
+        title: string | null
+        descriptionHtml: string | null
+        seo?: { description: string | null } | null
+      } | null
+    }>(query, { productId: productGid })
+
+    return {
+      productId: productGid,
+      title: data.product?.title ?? null,
+      bodyHtml: data.product?.descriptionHtml ?? null,
+      metaDescription: data.product?.seo?.description ?? null,
+    }
+  }
+
   private async fetchTranslatableDigests(resourceId: string): Promise<Map<string, string>> {
     const query = `
       query ResourceDigests($resourceId: ID!) {

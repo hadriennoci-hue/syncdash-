@@ -211,6 +211,14 @@ export interface PlatformConnector {
     productGid: string,
     translations: ProductTranslationPayload[]
   ): Promise<void>
+  readProductBaseSnapshot?(
+    productGid: string
+  ): Promise<{
+    productId: string
+    title: string | null
+    bodyHtml: string | null
+    metaDescription: string | null
+  }>
   readProductTranslationSnapshot?(
     productGid: string,
     locales: string[]

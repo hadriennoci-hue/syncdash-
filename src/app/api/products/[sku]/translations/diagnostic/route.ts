@@ -93,6 +93,9 @@ export async function GET(
   }
 
   const connector = await createConnector('shopify_komputerzz')
+  const readBaseSnapshot = 'readProductBaseSnapshot' in connector && typeof connector.readProductBaseSnapshot === 'function'
+    ? await connector.readProductBaseSnapshot(platformMapping.platformId)
+    : null
   if (!('readProductTranslationSnapshot' in connector) || typeof connector.readProductTranslationSnapshot !== 'function') {
     return apiError('INTERNAL_ERROR', 'Shopify connector does not support translation diagnostics', 500)
   }
@@ -170,6 +173,7 @@ export async function GET(
     sku: params.sku,
     platform: 'shopify_komputerzz',
     platformId: platformMapping.platformId,
+    base: readBaseSnapshot,
     requestedLocales,
     shopLocales: snapshot.shopLocales,
     summary,
