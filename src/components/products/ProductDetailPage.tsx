@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { apiFetch, apiPatch, apiDelete, apiPut } from '@/lib/utils/api-fetch'
-import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS } from '@/types/platform'
+import { PLATFORM_LABELS, WAREHOUSE_LABELS, PLATFORMS as ALL_PLATFORMS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 
 interface AttributeRow {
@@ -27,6 +27,7 @@ type TranslationFormState = {
 }
 
 const TRANSLATION_LOCALES = ['fr', 'de', 'es', 'it'] as const
+const PUSH_PLATFORMS = ALL_PLATFORMS.filter((platform) => platform !== 'shopify_tiktok')
 
 export function ProductDetailPage({ sku }: { sku: string }) {
   const qc = useQueryClient()
@@ -577,7 +578,7 @@ export function ProductDetailPage({ sku }: { sku: string }) {
             </tr>
           </thead>
           <tbody>
-            {PLATFORMS.map((pl) => {
+            {PUSH_PLATFORMS.map((pl) => {
               const current = p.pushStatus?.[pl] ?? 'N'
               return (
                 <tr key={pl} className="border-t border-border">

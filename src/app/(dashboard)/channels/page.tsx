@@ -7,6 +7,8 @@ import { PLATFORMS, PLATFORM_LABELS } from '@/types/platform'
 import type { Platform } from '@/types/platform'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
 
+const DISPLAY_PLATFORMS = PLATFORMS.filter((platform) => platform !== 'shopify_tiktok')
+
 type StatusFilter = 'all' | 'for_sale' | 'out_of_stock' | 'deactivated'
 
 const STATUS_LABELS: Record<StatusFilter, string> = {
@@ -56,7 +58,7 @@ export default function ChannelsPage() {
     const results: Record<string, ScanResult | { error: string }> = {}
 
     await Promise.all(
-      PLATFORMS.map(async (platform) => {
+      DISPLAY_PLATFORMS.map(async (platform) => {
         try {
           const res = await apiPost(`/api/import/${platform}`, { mode: 'new_changed', triggeredBy: 'human' })
           results[platform] = res.data
@@ -110,7 +112,7 @@ export default function ChannelsPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {PLATFORMS.map((p) => (
+        {DISPLAY_PLATFORMS.map((p) => (
           <Link
             key={p}
             href={`/channels/${p}`}
@@ -124,7 +126,7 @@ export default function ChannelsPage() {
 
       {scanResults && (
         <div className="grid grid-cols-3 gap-3">
-          {PLATFORMS.map((p) => {
+          {DISPLAY_PLATFORMS.map((p) => {
             const r = scanResults[p]
             const isErr = 'error' in r
             return (
@@ -168,7 +170,7 @@ export default function ChannelsPage() {
           className="text-xs border border-border rounded px-2 py-1 bg-background"
         >
           <option value="all">All channels</option>
-          {PLATFORMS.map((p) => (
+          {DISPLAY_PLATFORMS.map((p) => (
             <option key={p} value={p}>
               {PLATFORM_LABELS[p]}
             </option>
@@ -203,7 +205,6 @@ export default function ChannelsPage() {
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground">Title</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">Coincart</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">Komputerzz</th>
-                <th className="text-center px-3 py-2 font-medium text-muted-foreground">TikTok</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">eBay IE</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">LibreMarket</th>
                 <th className="text-center px-3 py-2 font-medium text-muted-foreground">XMRBazar</th>
@@ -214,7 +215,7 @@ export default function ChannelsPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <td colSpan={9} className="text-center py-8 text-muted-foreground">
                     No products match the current filters
                   </td>
                 </tr>
@@ -234,9 +235,6 @@ export default function ChannelsPage() {
                     </td>
                     <td className="px-3 py-2 text-center">
                       <ChannelPriceCell platform={p.platforms.shopify_komputerzz} product={p} />
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <ChannelPriceCell platform={p.platforms.shopify_tiktok} product={p} />
                     </td>
                     <td className="px-3 py-2 text-center">
                       <ChannelPriceCell platform={p.platforms.ebay_ie} product={p} />

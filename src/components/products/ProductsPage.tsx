@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { apiFetch } from '@/lib/utils/api-fetch'
 import { PLATFORM_LABELS } from '@/types/platform'
 
-const PLATFORMS = ['coincart2', 'shopify_komputerzz', 'shopify_tiktok', 'ebay_ie'] as const
+const PLATFORMS = ['coincart2', 'shopify_komputerzz', 'ebay_ie'] as const
 
 export function ProductsPage() {
   const [page, setPage]     = useState(1)

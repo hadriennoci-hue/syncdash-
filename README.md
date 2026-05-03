@@ -125,6 +125,9 @@ npm run runner:browser
 ```
 This starts the persistent polling runner (waits for queued products from Wizhard). `push:browser` is a one-shot push — never the right default.
 
+When the user asks to "start the runner", that means start the runner only.
+Do not add `--run-on-start`, do not trigger a push cycle, and do not start any other helper process unless the user explicitly asks for it.
+
 Push status lifecycle for browser channels:
 - `2push -> done | FAIL`
 

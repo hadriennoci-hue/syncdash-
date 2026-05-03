@@ -10,7 +10,6 @@ type PushStatus = string   // 'N' | '2push' | 'done' | 'FAIL: <reason>'
 const PUSH_PLATFORMS = [
   { key: 'coincart2',        field: 'pushedCoincart2',       label: 'Coincart2' },
   { key: 'shopify_komputerzz', field: 'pushedShopifyKomputerzz', label: 'Komp.' },
-  { key: 'shopify_tiktok',     field: 'pushedShopifyTiktok',     label: 'TikTok' },
   { key: 'ebay_ie',            field: 'pushedEbayIe',            label: 'eBay' },
   { key: 'libre_market',       field: 'pushedLibreMarket',       label: 'Libre' },
   { key: 'xmr_bazaar',         field: 'pushedXmrBazaar',         label: 'XMR' },
@@ -184,7 +183,6 @@ export default function WarehousePage({ params }: { params: { id: string } }) {
               productStatus: string | null
               pushedCoincart2: PushStatus
               pushedShopifyKomputerzz: PushStatus
-              pushedShopifyTiktok: PushStatus
               pushedEbayIe: PushStatus
               pushedLibreMarket: PushStatus
               pushedXmrBazaar: PushStatus
