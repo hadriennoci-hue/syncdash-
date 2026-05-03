@@ -175,6 +175,7 @@ export async function applyWarehouseSnapshots(
       }
     }
   }
+  const acerKomputerzzQueueSkus = new Set<string>()
 
   const finalPositiveSkuSet = new Set(finalPositiveSkus ?? [])
   const zeroedAbsentSkus = [...existingPositiveSkuSet].filter((sku) => !finalPositiveSkuSet.has(sku))
@@ -216,11 +217,14 @@ export async function applyWarehouseSnapshots(
           ...(isAcerSource ? {
             pushedShopifyKomputerzz: '2push',
             pushedCoincart2:       '2push',
-            pushedEbayIe:            '2push',
             pushedShopifyTiktok:     'N',
           } : {}),
         })
         .onConflictDoNothing()
+
+      if (isAcerSource && !(existingSkuMappedPlatforms.get(snap.sku)?.has('shopify_komputerzz') ?? false)) {
+        acerKomputerzzQueueSkus.add(snap.sku)
+      }
 
       if (isAcerSource) {
         await db.update(products)
@@ -280,6 +284,7 @@ export async function applyWarehouseSnapshots(
   // sync picks up the updated stock on the next push run.
   if (existingSkuMappedPlatforms.size > 0) {
     for (const [platform, field] of Object.entries(PLATFORM_PUSHED_FIELD) as [Platform, keyof typeof products.$inferInsert][]) {
+      if (platform === 'ebay_ie') continue
       const skusToMark = [...existingSkuMappedPlatforms.entries()]
         .filter(([, platforms]) => platforms.has(platform))
         .map(([sku]) => sku)
@@ -290,6 +295,16 @@ export async function applyWarehouseSnapshots(
           .set({ [field]: '2push' } as Partial<typeof products.$inferInsert>)
           .where(inArray(products.id, chunk))
       }
+    }
+  }
+
+  if (acerKomputerzzQueueSkus.size > 0) {
+    const skusToQueue = Array.from(acerKomputerzzQueueSkus)
+    for (let i = 0; i < skusToQueue.length; i += PREFETCH_CHUNK) {
+      const chunk = skusToQueue.slice(i, i + PREFETCH_CHUNK)
+      await db.update(products)
+        .set({ pushedShopifyKomputerzz: '2push' })
+        .where(inArray(products.id, chunk))
     }
   }
 
