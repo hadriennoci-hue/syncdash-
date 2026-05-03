@@ -12,6 +12,13 @@ import { isUsablePlainTextDescription } from '@/lib/utils/description'
 import { createConnector } from '@/lib/connectors/registry'
 import type { RawCollection, RawImage, RawProduct } from '@/lib/connectors/types'
 import { inferCollection } from '@/lib/functions/collection-inference'
+import { upsertProductTranslations } from '@/lib/functions/product-translations'
+import {
+  buildBaseSeoDraft,
+  buildLocaleMetaTitle,
+  compactLocaleMetaDescription,
+  normalizeSeoDescription,
+} from '@/lib/seo/product-metadata'
 
 export interface FillResult {
   sku: string
@@ -36,6 +43,36 @@ interface ProductState {
   hasDisplayAttributes: boolean
   missingLaptopAttributeKeys: string[]
   missingDisplayAttributeKeys: string[]
+}
+
+interface LoadedProduct {
+  id: string
+  title: string
+  description: string | null
+  metaDescription: string | null
+  tags: string | null
+  status: string
+  images: Array<unknown>
+  prices: Array<{ platform: string; price: number | null; compareAt: number | null }>
+  categories: Array<{ category?: { name: string; slug: string | null } }>
+  metafields: Array<{ namespace: string; key: string; value: string | null }>
+  translations: Array<{
+    locale: string
+    title: string | null
+    description: string | null
+    metaTitle: string | null
+    metaDescription: string | null
+  }>
+  warehouseStock: Array<{
+    warehouseId: string
+    quantity: number | null
+    quantityOrdered?: number | null
+    purchasePrice?: number | null
+    importPrice: number | null
+    importPromoPrice: number | null
+    sourceUrl: string | null
+    sourceName: string | null
+  }>
 }
 
 interface FirecrawlBudget {
@@ -195,6 +232,7 @@ function buildState(product: {
   id: string
   title: string
   description: string | null
+  metaDescription: string | null
   tags: string | null
   images: Array<unknown>
   prices: Array<{ platform: string; price: number | null }>
@@ -770,17 +808,86 @@ async function assignInferredCollection(productId: string, slug: string): Promis
   await db.insert(productCategories).values({ productId, categoryId: slug }).onConflictDoNothing()
 }
 
+async function backfillDeterministicSeoMetadata(
+  product: LoadedProduct,
+  triggeredBy: 'human' | 'agent',
+  filled: string[],
+  sources: string[],
+): Promise<void> {
+  const seoProduct = {
+    id: product.id,
+    title: product.title,
+    description: product.description,
+    metaDescription: product.metaDescription,
+    collections: product.categories
+      .filter((row): row is { category: { name: string; slug: string | null } } => Boolean(row.category))
+      .map((row) => ({
+        slug: row.category.slug,
+        name: row.category.name,
+      })),
+    metafields: product.metafields,
+    translations: product.translations,
+  }
+
+  const baseDraft = buildBaseSeoDraft(seoProduct)
+  const nextBaseMetaDescription = baseDraft.weakFit
+    ? null
+    : normalizeSeoDescription(baseDraft.baseMetaDescription)
+  const currentBaseMetaDescription = normalizeSeoDescription(product.metaDescription)
+
+  if (nextBaseMetaDescription && nextBaseMetaDescription !== currentBaseMetaDescription) {
+    await db.update(products)
+      .set({ metaDescription: nextBaseMetaDescription, updatedAt: new Date().toISOString() })
+      .where(eq(products.id, product.id))
+    filled.push('seo_meta_description')
+    sources.push('seo:deterministic')
+    await logOperation({
+      productId: product.id,
+      action: 'fill_missing',
+      status: 'success',
+      message: 'Filled deterministic base SEO meta description',
+      triggeredBy,
+    })
+  }
+
+  const translationUpdates = product.translations
+    .map((translation) => {
+      const nextMetaTitle = buildLocaleMetaTitle(translation.title, product.title)
+      const nextMetaDescription = compactLocaleMetaDescription(translation.metaDescription)
+        ?? compactLocaleMetaDescription(translation.description)
+      const currentMetaTitle = translation.metaTitle?.trim() || null
+      const currentMetaDescription = normalizeSeoDescription(translation.metaDescription)
+
+      return {
+        locale: translation.locale,
+        metaTitle: nextMetaTitle && nextMetaTitle !== currentMetaTitle ? nextMetaTitle : undefined,
+        metaDescription:
+          nextMetaDescription && nextMetaDescription !== currentMetaDescription
+            ? nextMetaDescription
+            : undefined,
+      }
+    })
+    .filter((translation) => translation.metaTitle !== undefined || translation.metaDescription !== undefined)
+
+  if (translationUpdates.length > 0) {
+    await upsertProductTranslations(product.id, translationUpdates, triggeredBy)
+    filled.push(`seo_translations(${translationUpdates.length})`)
+    sources.push('seo:deterministic')
+  }
+}
+
 export async function fillMissingFields(
   sku: string,
   triggeredBy: 'human' | 'agent' = 'human'
 ): Promise<FillResult> {
   const firecrawlBudget = createFirecrawlBudget()
-  const load = async () => db.query.products.findFirst({
+  const load = async (): Promise<LoadedProduct | undefined> => db.query.products.findFirst({
     where: eq(products.id, sku),
     with: {
       images: true,
       prices: true,
       metafields: true,
+      translations: true,
       categories: { with: { category: true } },
       warehouseStock: true,
     },
@@ -864,6 +971,13 @@ export async function fillMissingFields(
       filled.push('variant_family')
       sources.push(`family:${familyResult.sourceSku ?? 'matched'}`)
     }
+  }
+
+  const afterContentBackfill = await load()
+  if (afterContentBackfill) {
+    workingProduct = afterContentBackfill
+    workingState = buildState(afterContentBackfill)
+    await backfillDeterministicSeoMetadata(workingProduct, triggeredBy, filled, sources)
   }
 
   const finalProduct = await load()

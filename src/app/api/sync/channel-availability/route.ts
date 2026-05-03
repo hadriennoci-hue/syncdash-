@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Wake local browser runner immediately when Push starts.
-  // Runner itself processes only products currently marked 2push.
+  // Browser runner processes queued products plus existing mapped browser listings.
   await requestRunnerWake('browser', 'channel-availability push')
   const startedAt = new Date().toISOString()
   await db.update(salesChannels)

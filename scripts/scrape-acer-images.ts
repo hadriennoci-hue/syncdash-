@@ -95,6 +95,7 @@ interface StockRow {
 
 type FillField =
   | 'description'
+  | 'meta_description'
   | 'status'
   | 'translation'
   | 'attributes'
@@ -1575,7 +1576,14 @@ function generateTags(
 
 async function uploadProductInfo(
   sku: string,
-  fields: { description?: string; status?: 'active' | 'archived'; pendingReview?: boolean; categoryIds?: string[]; tags?: string[] },
+  fields: {
+    description?: string
+    metaDescription?: string
+    status?: 'active' | 'archived'
+    pendingReview?: boolean
+    categoryIds?: string[]
+    tags?: string[]
+  },
 ): Promise<void> {
   // Note: omit `platforms` entirely (not []) — Zod schema requires min(1) if present.
   // Omitting means D1-only update, no platform push.
@@ -1594,9 +1602,9 @@ async function uploadProductInfo(
 async function uploadProductTranslation(
   sku: string,
   locale: string,
-  fields: { title?: string | null; description?: string | null; metaDescription?: string | null },
+  fields: { title?: string | null; description?: string | null; metaTitle?: string | null; metaDescription?: string | null },
 ): Promise<void> {
-  if (!fields.title && !fields.description && !fields.metaDescription) return
+  if (!fields.title && !fields.description && !fields.metaTitle && !fields.metaDescription) return
   const res = await fetch(`${BASE_URL}/api/products/${encodeURIComponent(sku)}/translations`, {
     method: 'PUT',
     headers: {
@@ -1609,6 +1617,7 @@ async function uploadProductTranslation(
         locale,
         ...(fields.title ? { title: fields.title } : {}),
         ...(fields.description ? { description: fields.description } : {}),
+        ...(fields.metaTitle ? { metaTitle: fields.metaTitle } : {}),
         ...(fields.metaDescription ? { metaDescription: fields.metaDescription } : {}),
       }],
       triggeredBy: 'agent',
@@ -1735,6 +1744,9 @@ async function processProduct(
   }
 
   const { images: imageRefs, specs: rawSpecs, description } = pageData
+  const baseMetaDescription =
+    normalizePlainText(pageData.metaDescription)
+    ?? buildMetaDescription(normalizePlainText(pageData.title ?? sourceName), description)
   details.imagesFound = imageRefs.length
   details.specEntries = Object.keys(rawSpecs).length
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
@@ -2038,6 +2050,9 @@ async function processProductV2(
   }
 
   const { images: imageRefs, specs: rawSpecs, description } = pageData
+  const baseMetaDescription =
+    normalizePlainText(pageData.metaDescription)
+    ?? buildMetaDescription(normalizePlainText(pageData.title ?? sourceName), description)
   details.imagesFound = imageRefs.length
   details.specEntries = Object.keys(rawSpecs).length
   log(`  Found ${imageRefs.length} image(s), ${Object.keys(rawSpecs).length} spec entries`)
@@ -2048,9 +2063,11 @@ async function processProductV2(
     try {
       await uploadProductInfo(sku, {
         description,
+        ...(baseMetaDescription ? { metaDescription: baseMetaDescription } : {}),
         ...(needsTranslation ? { status: 'archived' } : {}),
       })
       fields.add('description')
+      if (baseMetaDescription) fields.add('meta_description')
       details.descriptionLength = description.length
       if (needsTranslation) {
         fields.add('status')
@@ -2076,15 +2093,17 @@ async function processProductV2(
   if (translationLocale) {
     const translationTitle = normalizePlainText(localizedPageData?.title ?? sourceName)
     const translationDescription = normalizePlainText(localizedPageData?.description)
+    const translationMetaTitle = translationTitle
     const translationMetaDescription =
       normalizePlainText(localizedPageData?.metaDescription)
       ?? buildMetaDescription(translationTitle, translationDescription)
 
-    if (translationTitle || translationDescription || translationMetaDescription) {
+    if (translationTitle || translationDescription || translationMetaTitle || translationMetaDescription) {
       try {
         await uploadProductTranslation(sku, translationLocale, {
           title: translationTitle,
           description: translationDescription,
+          metaTitle: translationMetaTitle,
           metaDescription: translationMetaDescription,
         })
         translationSaved = true

@@ -1,8 +1,9 @@
 ﻿/**
- * push-browser-channels.ts â€” Push queued products to Libre Market and XMR Bazaar
+ * push-browser-channels.ts â€” Push queued and existing mapped products to Libre Market and XMR Bazaar
  *
- * Queries Wizhard API for products with pushed status = '2push', automates
- * the browser to create or edit each listing, then marks them as done in D1.
+ * Queries Wizhard API for products with pushed status = '2push' plus all existing
+ * mapped products already attached to the target browser channel, automates the
+ * browser to create or edit each listing, then marks them as done in D1.
  *
  * Usage:
  *   npx tsx scripts/push-browser-channels.ts              â†’ prod API (WIZHARD_URL from .dev.vars)
@@ -315,6 +316,21 @@ async function getQueuedSkus(platform: string, token: string, base: string): Pro
   if (!res.ok) throw new Error(`Failed to fetch queued products: ${res.status}`)
   const json = await res.json() as { data: Array<{ id: string }> }
   return json.data?.map((p) => p.id) ?? []
+}
+
+async function getTargetSkus(platform: 'libre_market' | 'xmr_bazaar', token: string, base: string): Promise<{
+  queuedSkus: string[]
+  mappedSkus: string[]
+  targetSkus: string[]
+}> {
+  const queuedSkus = await getQueuedSkus(platform, token, base)
+  const channelProducts = await getChannelProducts(platform, token, base)
+  const mappedSkus = channelProducts
+    .filter((product) => !!product.platformId)
+    .map((product) => product.sku)
+
+  const targetSkus = Array.from(new Set([...queuedSkus, ...mappedSkus]))
+  return { queuedSkus, mappedSkus, targetSkus }
 }
 
 async function getProductDetail(sku: string, token: string, base: string): Promise<ProductDetail> {
@@ -1292,17 +1308,19 @@ async function processPlatform(
   console.log(`\n${'='.repeat(50)}\n${platform.toUpperCase()}\n${'='.repeat(50)}`)
   const jobId = await createBrowserSyncJob(platform, token, apiBase)
 
-  const skus = await getQueuedSkus(platform, token, apiBase)
-  if (skus.length === 0) {
-    console.log('  Nothing queued.')
+  const { queuedSkus, mappedSkus, targetSkus } = await getTargetSkus(platform, token, apiBase)
+  if (targetSkus.length === 0) {
+    console.log('  No queued or mapped products found.')
     const emptyReport = { platform, queued: 0, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: IS_DRY_RUN }
-    await finishBrowserSyncJob(jobId, emptyReport, 'Nothing queued', null, token, apiBase)
+    await finishBrowserSyncJob(jobId, emptyReport, 'No queued or mapped products found', null, token, apiBase)
     return emptyReport
   }
-  console.log(`  ${skus.length} product(s) queued: ${skus.join(', ')}`)
+  console.log(`  ${queuedSkus.length} queued product(s)`)
+  console.log(`  ${mappedSkus.length} mapped existing product(s)`)
+  console.log(`  ${targetSkus.length} total target product(s): ${targetSkus.join(', ')}`)
   if (IS_DRY_RUN) {
     console.log('  [dry-run] Skipping.')
-    const dryReport = { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: true }
+    const dryReport = { platform, queued: targetSkus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: true }
     await finishBrowserSyncJob(jobId, dryReport, 'Dry run only', null, token, apiBase)
     return dryReport
   }
@@ -1312,9 +1330,9 @@ async function processPlatform(
       ? await getWarehouseApprovalSet(platform, token, apiBase)
       : new Set<string>()
 
-  // Fetch full product data for all queued SKUs
+  // Fetch full product data for all targets
   const products: ProductDetail[] = []
-  for (const sku of skus) {
+  for (const sku of targetSkus) {
     try {
       const p = await getProductDetail(sku, token, apiBase)
       if (!p.prices[platform]?.price) {
@@ -1328,14 +1346,14 @@ async function processPlatform(
   }
   if (products.length === 0) {
     console.log('  No eligible products after checks.')
-    const emptyEligibleReport = { platform, queued: skus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: false }
+    const emptyEligibleReport = { platform, queued: targetSkus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: false }
     await finishBrowserSyncJob(jobId, emptyEligibleReport, 'No eligible products after checks', null, token, apiBase)
     return emptyEligibleReport
   }
 
   const report: BrowserRunReport = {
     platform,
-    queued: skus.length,
+    queued: targetSkus.length,
     processed: 0,
     created: 0,
     updated: 0,

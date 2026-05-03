@@ -16,6 +16,28 @@ interface FillResult {
   sources: string[]
 }
 
+function formatMissingSummary(missing: string[]): string | null {
+  if (missing.length === 0) return null
+  if (missing.length === 1 && missing[0] === 'error') return 'Fill run failed; review this product manually.'
+  return `Backend fields still missing: ${missing.join(', ')}.`
+}
+
+function getManualFollowUpSummary(result: FillResult): string | null {
+  if (result.status === 'queued') {
+    return 'Manual follow-up: translations and any SEO metadata the queued runner could not derive.'
+  }
+
+  const items = ['translations', 'SEO metadata for low-data collections']
+  const hasUnresolvedAttributes = result.missing.some((entry) =>
+    entry === 'laptop_attributes' || entry === 'laptop_options' || entry === 'display_attributes'
+  )
+
+  if (hasUnresolvedAttributes) items.push('unresolved product attributes')
+  if (result.missing.length === 1 && result.missing[0] === 'error') return null
+
+  return `Manual follow-up: ${items.join(', ')}.`
+}
+
 interface ProductsTableProps {
   mode?: 'default' | 'warehouse_overview'
 }
@@ -119,21 +141,33 @@ export function ProductsTable({ mode = 'default' }: ProductsTableProps) {
             <p className="text-green-600">All products already have the required fields.</p>
           )}
           <div className="max-h-32 overflow-y-auto space-y-0.5">
-            {fillProgress.results.map((r) => (
-              <div key={r.sku} className="flex items-center gap-2">
-                <span className={
-                  r.status === 'info'     ? 'text-destructive font-medium w-12' :
-                  r.status === 'queued'   ? 'text-amber-500 w-12' :
-                  r.status === 'filled'   ? 'text-green-600 w-12' :
-                  'text-muted-foreground w-12'
-                }>
-                  {r.status === 'info' ? 'INFO' : r.status === 'queued' ? 'queued' : r.status === 'filled' ? 'filled' : 'ok'}
-                </span>
-                <Link href={`/products/${r.sku}`} className="font-mono hover:underline">{r.sku}</Link>
-                {r.filled.length > 0 && <span className="text-muted-foreground">+{r.filled.join(', ')}</span>}
-                {r.missing.length > 0 && <span className="text-destructive">missing: {r.missing.join(', ')}</span>}
-              </div>
-            ))}
+            {fillProgress.results.map((r) => {
+              const missingSummary = formatMissingSummary(r.missing)
+              const manualFollowUp = getManualFollowUpSummary(r)
+
+              return (
+                <div key={r.sku} className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className={
+                      r.status === 'info'     ? 'text-destructive font-medium w-12' :
+                      r.status === 'queued'   ? 'text-amber-500 w-12' :
+                      r.status === 'filled'   ? 'text-green-600 w-12' :
+                      'text-muted-foreground w-12'
+                    }>
+                      {r.status === 'info' ? 'INFO' : r.status === 'queued' ? 'queued' : r.status === 'filled' ? 'filled' : 'ok'}
+                    </span>
+                    <Link href={`/products/${r.sku}`} className="font-mono hover:underline">{r.sku}</Link>
+                    {r.filled.length > 0 && <span className="text-muted-foreground">+{r.filled.join(', ')}</span>}
+                  </div>
+                  {(missingSummary || manualFollowUp) && (
+                    <div className="pl-14 text-[10px] leading-4">
+                      {missingSummary && <div className="text-destructive">{missingSummary}</div>}
+                      {manualFollowUp && <div className="text-muted-foreground">{manualFollowUp}</div>}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

@@ -177,6 +177,20 @@ export async function applyWarehouseSnapshots(
   }
 
   const finalPositiveSkuSet = new Set(finalPositiveSkus ?? [])
+  const zeroedAbsentSkus = [...existingPositiveSkuSet].filter((sku) => !finalPositiveSkuSet.has(sku))
+  if (zeroedAbsentSkus.length > 0) {
+    for (let i = 0; i < zeroedAbsentSkus.length; i += PREFETCH_CHUNK) {
+      const chunk = zeroedAbsentSkus.slice(i, i + PREFETCH_CHUNK)
+      const rows = await db.select({ productId: platformMappings.productId, platform: platformMappings.platform })
+        .from(platformMappings)
+        .where(inArray(platformMappings.productId, chunk))
+      for (const row of rows) {
+        const set = existingSkuMappedPlatforms.get(row.productId) ?? new Set<Platform>()
+        set.add(row.platform as Platform)
+        existingSkuMappedPlatforms.set(row.productId, set)
+      }
+    }
+  }
   for (const snap of snapshots) {
     if (isBlockedAcerSku(snap.sku)) continue
     if (snap.quantity <= 0) {
