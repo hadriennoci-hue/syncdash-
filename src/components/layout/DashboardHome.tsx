@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPost } from '@/lib/utils/api-fetch'
+import { requireBrowserRunnerRunning } from '@/lib/browser-runner-control'
 import { BackgroundPaths } from '@/components/ui/background-paths'
 
 interface WarehouseSyncResult {
@@ -318,25 +319,6 @@ export function DashboardHome() {
     }
   }, [pendingAcerStockRunAt, pendingAcerFillRunAt, qc])
 
-  async function ensureBrowserRunner() {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 8000)
-    try {
-      const res = await fetch('http://127.0.0.1:8789/browser-runner/ensure', {
-        method: 'POST',
-        signal: controller.signal,
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return await res.json() as { action?: 'started' | 'restarted'; pid?: number }
-    } catch {
-      throw new Error(
-        'Local browser runner control is not available. Run npm run runner:browser-control on this computer, then push again.'
-      )
-    } finally {
-      window.clearTimeout(timeout)
-    }
-  }
-
   async function handleScan() {
     setScanning(true)
     setScanResult(null)
@@ -405,6 +387,15 @@ export function DashboardHome() {
     const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
     const labels = Object.fromEntries(CHANNELS.map((channel) => [channel.id, channel.label]))
+    try {
+      await requireBrowserRunnerRunning()
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : 'Browser runner is not available')
+      setPushBars({})
+      setPushing(false)
+      return
+    }
+
     const browserTotalsEntries = await Promise.all(
       (['libre_market', 'xmr_bazaar'] as const).map(async (platform) => {
         const res = await fetch(`/api/products?pushedPlatform=${platform}&perPage=1000`, { headers })
@@ -431,15 +422,6 @@ export function DashboardHome() {
         ])
       )
     )
-    try {
-      const runner = await ensureBrowserRunner()
-      setPushError(`Browser runner ${runner.action ?? 'ready'}`)
-    } catch (err) {
-      setPushError(err instanceof Error ? err.message : 'Runner control failed')
-      setPushing(false)
-      return
-    }
-
     setLastPush(startedAt)
     let timeout: number | null = null
     let currentActivePlatform: string | null = null

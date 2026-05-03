@@ -1,21 +1,19 @@
 /**
  * browser-runner-control.ts
  *
- * Local-only HTTP control service used by the Wizhard dashboard.
- * It owns the browser runner lifecycle so the hosted UI can restart/start the
- * local Playwright runner before kicking off a channel push.
+ * Local-only HTTP status service used by the Wizhard dashboard.
+ * It reports whether the local Playwright browser runner is available before a
+ * hosted push request is allowed to queue browser work.
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { execFile } from 'child_process'
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
-import { spawn } from 'child_process'
+import { execFile } from 'child_process'
 
 const HOST = '127.0.0.1'
 const PORT = Number(process.env.BROWSER_RUNNER_CONTROL_PORT ?? '8789')
 const runnerDir = path.join(process.cwd(), '.runner')
-const pidPath = path.join(runnerDir, 'browser-runner.pid')
 const logPath = path.join(runnerDir, 'browser-runner.log')
 
 const allowedOrigins = new Set([
@@ -95,45 +93,6 @@ async function findRunnerPids(): Promise<number[]> {
     .filter((pid) => Number.isInteger(pid) && pid > 0)
 }
 
-async function stopRunner(): Promise<number[]> {
-  const pids = await findRunnerPids()
-  for (const pid of pids) {
-    try {
-      process.kill(pid)
-    } catch {
-      try {
-        await runPowerShell(`Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`)
-      } catch {}
-    }
-  }
-  if (pids.length > 0) await new Promise((resolve) => setTimeout(resolve, 1500))
-  return pids
-}
-
-function startRunner(): number {
-  ensureRunnerDir()
-  const out = fs.openSync(logPath, 'a')
-  const err = fs.openSync(logPath, 'a')
-  const scriptArgs = [
-    'tsx',
-    'scripts/local-browser-runner.ts',
-    '--interval-min=30',
-    '--wake-poll-sec=10',
-    '--prod',
-    '--headed',
-    '--run-on-start',
-  ]
-  const child = spawn('cmd.exe', ['/c', 'npx', ...scriptArgs], {
-    cwd: process.cwd(),
-    detached: true,
-    stdio: ['ignore', out, err],
-    windowsHide: true,
-  })
-  child.unref()
-  fs.writeFileSync(pidPath, JSON.stringify({ pid: child.pid, startedAt: tsNow() }, null, 2))
-  return child.pid ?? 0
-}
-
 async function status(): Promise<{ running: boolean; pids: number[] }> {
   const pids = await findRunnerPids()
   return { running: pids.length > 0, pids }
@@ -160,16 +119,19 @@ const server = createServer((req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/browser-runner/ensure') {
-      const before = await status()
-      const stoppedPids = before.running ? await stopRunner() : []
-      const pid = startRunner()
-      log(`${before.running ? 'restarted' : 'started'} browser runner pid=${pid} stopped=${stoppedPids.join(',') || '-'}`)
+      const runner = await status()
+      if (!runner.running) {
+        sendJson(req, res, 409, {
+          ok: false,
+          error: 'Browser runner is not running',
+          runner,
+        })
+        return
+      }
       sendJson(req, res, 200, {
         ok: true,
-        action: before.running ? 'restarted' : 'started',
-        before,
-        stoppedPids,
-        pid,
+        action: 'ready',
+        runner,
       })
       return
     }

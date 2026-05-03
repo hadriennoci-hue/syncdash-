@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { apiFetch, apiPatch, apiPost } from '@/lib/utils/api-fetch'
+import { requireBrowserRunnerRunning } from '@/lib/browser-runner-control'
 
 interface ChannelConfig {
   shopDomain?:    string
@@ -61,7 +62,7 @@ interface Product {
 // dirty[sku] = { price?: string, compareAt?: string } — string because input values
 type DirtyPrices = Record<string, { price?: string; compareAt?: string }>
 
-const BROWSER_PUSH_CMD = 'cd C:\\syncdash && npm run push:browser'
+const BROWSER_RUNNER_CMD = 'cd C:\\syncdash && npx tsx scripts/local-browser-runner.ts --prod --headed'
 
 export default function ChannelPage({ params }: { params: { id: string } }) {
   const qc = useQueryClient()
@@ -70,17 +71,32 @@ export default function ChannelPage({ params }: { params: { id: string } }) {
   const [errors,      setErrors]      = useState<string[]>([])
   const [showCmd,     setShowCmd]     = useState(false)
   const [cmdCopied,   setCmdCopied]   = useState(false)
+  const [browserPushNotice, setBrowserPushNotice] = useState<string | null>(null)
 
 function handleCopyCmd() {
-    navigator.clipboard.writeText(BROWSER_PUSH_CMD).then(() => {
+    navigator.clipboard.writeText(BROWSER_RUNNER_CMD).then(() => {
       setCmdCopied(true)
       setTimeout(() => setCmdCopied(false), 2000)
     })
   }
 
   async function handleBrowserPushClick() {
+    setBrowserPushNotice(null)
+    try {
+      await requireBrowserRunnerRunning()
+    } catch (err) {
+      setShowCmd(false)
+      setBrowserPushNotice(err instanceof Error ? err.message : 'Browser runner is not available')
+      return
+    }
+
     setShowCmd((v) => !v)
-    await apiPost('/api/runner/wake', { runner: 'browser', reason: `channel page push (${params.id})` }).catch(() => null)
+    try {
+      await apiPost('/api/runner/wake', { runner: 'browser', reason: `channel page push (${params.id})` })
+      setBrowserPushNotice('Runner wake signal sent. Push will start in the local browser runner window.')
+    } catch {
+      setBrowserPushNotice('Runner is up, but the wake signal could not be sent to Wizhard. Try again in a few seconds.')
+    }
   }
 
   const { data, isLoading } = useQuery({
@@ -280,13 +296,23 @@ function handleCopyCmd() {
         </div>
       )}
 
+      {isBrowser && browserPushNotice && (
+        <div className={`border rounded p-3 text-xs ${
+          browserPushNotice.includes('not running') || browserPushNotice.includes('not available')
+            ? 'border-red-400/60 bg-red-50/40 dark:bg-red-900/10 text-destructive'
+            : 'border-emerald-400/60 bg-emerald-50/40 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400'
+        }`}>
+          {browserPushNotice}
+        </div>
+      )}
+
       {/* Browser push command */}
       {isBrowser && showCmd && (
         <div className="border border-amber-400/60 bg-amber-50/40 dark:bg-amber-900/10 rounded p-3 text-xs space-y-2">
-          <p className="font-medium text-amber-700 dark:text-amber-400">Run this command locally to push queued products:</p>
+          <p className="font-medium text-amber-700 dark:text-amber-400">If the browser runner is not running yet, start it locally with:</p>
           <div className="flex items-center gap-2">
             <code className="font-mono bg-background border border-border rounded px-2 py-1 flex-1 select-all">
-              {BROWSER_PUSH_CMD}
+              {BROWSER_RUNNER_CMD}
             </code>
             <button
               onClick={handleCopyCmd}

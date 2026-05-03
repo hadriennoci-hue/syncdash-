@@ -8,6 +8,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
+import { createServer } from 'http'
 
 const args = process.argv.slice(2)
 
@@ -31,9 +32,15 @@ const ALLOW_INTERVAL = hasFlag('--allow-interval')
 const RUN_ON_START = hasFlag('--run-on-start')
 const HEARTBEAT_MIN = Number(argValue('--heartbeat-min', '5'))
 const STALE_LOCK_MIN = Number(argValue('--stale-lock-min', '360'))
+const HEALTH_PORT = Number(argValue('--health-port', '8790'))
 
 const runnerDir = path.join(process.cwd(), '.runner')
 const lockPath = path.join(runnerDir, 'browser-push.lock')
+const runnerStartedAt = tsNow()
+
+let activePushStartedAt: string | null = null
+let lastCompletedAt: string | null = null
+let lastExitCode: number | null = null
 
 function tsNow(): string {
   return new Date().toISOString()
@@ -151,6 +158,7 @@ async function runPushOnce(): Promise<number> {
   if (HEADLESS) scriptArgs.push('--headless')
 
   log(`Starting push: npx ${scriptArgs.join(' ')}`)
+  activePushStartedAt = tsNow()
 
   const code = await new Promise<number>((resolve) => {
     const command = process.platform === 'win32'
@@ -169,10 +177,47 @@ async function runPushOnce(): Promise<number> {
   })
 
   releaseLock(fd)
+  activePushStartedAt = null
+  lastCompletedAt = tsNow()
+  lastExitCode = code
 
   if (code === 0) log('Push cycle completed successfully.')
   else log(`Push cycle failed with code ${code}.`)
   return code
+}
+
+function startHealthServer() {
+  const server = createServer((req, res) => {
+    if (!req.url?.startsWith('/health')) {
+      res.statusCode = 404
+      res.end('not found')
+      return
+    }
+
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({
+      ok: true,
+      runner: {
+        running: true,
+        pid: process.pid,
+        startedAt: runnerStartedAt,
+        activePushStartedAt,
+        lastCompletedAt,
+        lastExitCode,
+        wakeEnabled: !NO_WAKE,
+      },
+    }))
+  })
+
+  server.on('error', (err) => {
+    log(`Health server unavailable on 127.0.0.1:${HEALTH_PORT}: ${err instanceof Error ? err.message : 'unknown error'}`)
+  })
+
+  server.listen(HEALTH_PORT, '127.0.0.1', () => {
+    log(`Health server listening at http://127.0.0.1:${HEALTH_PORT}/health`)
+  })
+
+  return server
 }
 
 async function fetchWakeNonce(apiBase: string, token: string, vars: Record<string, string>): Promise<number | null> {
@@ -214,9 +259,11 @@ async function main(): Promise<void> {
   const intervalEnabled = !wakeEnabled || ALLOW_INTERVAL
 
   log(`Runner started (interval=${intervalEnabled ? `${INTERVAL_MIN}m` : 'disabled'}, wakePoll=${WAKE_POLL_SEC}s, heartbeat=${HEARTBEAT_MIN}m, local=${USE_LOCAL}, headless=${HEADLESS}, dryRun=${DRY_RUN}, once=${ONCE}, wake=${wakeEnabled}, runOnStart=${RUN_ON_START})`)
+  const healthServer = startHealthServer()
 
   if (ONCE) {
     const code = await runPushOnce()
+    healthServer.close()
     process.exit(code)
   }
 
@@ -275,6 +322,7 @@ async function main(): Promise<void> {
     await sleep(ran ? 2000 : WAKE_POLL_SEC * 1000)
   }
 
+  healthServer.close()
   log('Runner stopped.')
 }
 
