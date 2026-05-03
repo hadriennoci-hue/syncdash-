@@ -92,11 +92,6 @@ interface ChannelProductSummary {
   stock: { ireland: number | null; acer_store: number | null; poland: number | null; dropshipping: number | null }
 }
 
-interface WarehouseRuleRow {
-  warehouseId: string
-  platform: string
-  priority: number
-}
 interface BrowserRunReport {
   platform: 'libre_market' | 'xmr_bazaar'
   queued: number
@@ -354,30 +349,6 @@ async function getChannelProducts(platform: 'libre_market' | 'xmr_bazaar', token
     page++
   }
   return all
-}
-
-async function getWarehouseApprovalSet(platform: 'libre_market' | 'xmr_bazaar', token: string, base: string): Promise<Set<string>> {
-  const res = await apiFetch('GET', '/api/warehouses/rules', null, token, base)
-  if (!res.ok) throw new Error(`Failed to fetch warehouse routing rules: ${res.status}`)
-  const json = await res.json() as { data?: { rules?: WarehouseRuleRow[] } }
-  const approved = new Set<string>()
-  for (const row of json.data?.rules ?? []) {
-    if (row.platform === platform && row.priority > 0) approved.add(row.warehouseId)
-  }
-  return approved
-}
-
-function getWarehouseStockTotal(
-  stock: Record<string, unknown>,
-  approvedWarehouses: Set<string>,
-): number {
-  let total = 0
-  for (const warehouseId of approvedWarehouses) {
-    const row = stock[warehouseId] as Record<string, unknown> | undefined
-    const qty = row?.qty ?? row?.quantity ?? row?.stock ?? 0
-    total += Number(qty) || 0
-  }
-  return total
 }
 
 async function markDone(
@@ -1325,11 +1296,6 @@ async function processPlatform(
     return dryReport
   }
 
-  const approvedWarehouses =
-    platform === 'libre_market' || platform === 'xmr_bazaar'
-      ? await getWarehouseApprovalSet(platform, token, apiBase)
-      : new Set<string>()
-
   // Fetch full product data for all targets
   const products: ProductDetail[] = []
   for (const sku of targetSkus) {
@@ -1401,45 +1367,20 @@ async function processPlatform(
 
       const mapping = product.platforms[platform]
       const isNew   = !mapping?.platformId
-      const approvedStock = platform === 'libre_market' || platform === 'xmr_bazaar'
-        ? getWarehouseStockTotal(
-          (product as unknown as { stock?: Record<string, { qty: number | null; importPrice: number | null; importPromoPrice: number | null }> }).stock ?? {},
-          approvedWarehouses
-        )
-        : getTotalStock(product)
-      const desiredXmrStatus = approvedStock > 0 ? 'active' : 'out_of_stock'
-      const desiredLmStatus = approvedStock > 0 ? 'active' : 'archived'
+      const stockTotal = getTotalStock(product)
+      const desiredXmrStatus = stockTotal > 0 ? 'active' : 'out_of_stock'
+      const desiredLmStatus = stockTotal > 0 ? 'active' : 'archived'
 
       try {
         let platformId: string
         let createdOrRemapped = false
         if (isNew) {
-          if ((platform === 'libre_market' || platform === 'xmr_bazaar') && approvedStock <= 0) {
-            console.log(`    Skipping ${product.id}: no approved warehouse stock for ${platform}`)
-            await updateBrowserSyncJobProgress(jobId, {
-              processedTargets: report.processed + 1,
-              totalTargets: report.queued,
-              lastProductIds: [product.id],
-              lastStatus: 'success',
-              detail: `${product.id}: skipped (no approved warehouse stock)`,
-            }, token, apiBase)
-            report.processed++
-            await postProductProgress(
-              product.id,
-              platform,
-              'success',
-              `skipped: no approved warehouse stock for ${platform}`,
-              token,
-              apiBase
-            )
-            continue
-          }
           console.log('    Creating new listing...')
           platformId = platform === 'libre_market'
-            ? await lmCreate(page, product, imagePaths, approvedStock)
-            : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, approvedStock > 0, xmrSubmitState)
-          if (platform === 'libre_market' && approvedStock === 0) {
-            await lmEdit(page, platformId, product, approvedStock, 'archived')
+            ? await lmCreate(page, product, imagePaths, stockTotal)
+            : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, stockTotal > 0, xmrSubmitState)
+          if (platform === 'libre_market' && stockTotal === 0) {
+            await lmEdit(page, platformId, product, stockTotal, 'archived')
           }
           console.log(`    âœ… Created â†’ ${platformId}`)
           openedPlatformIds.add(platformId)
@@ -1449,20 +1390,20 @@ async function processPlatform(
           platformId = mapping!.platformId
           console.log(`    Editing existing listing ${platformId}...`)
           try {
-            if (platform === 'libre_market') await lmEdit(page, platformId, product, approvedStock, desiredLmStatus)
-            else await xmrEdit(page, platformId, product, approvedStock > 0, desiredXmrStatus, xmrSubmitState)
+            if (platform === 'libre_market') await lmEdit(page, platformId, product, stockTotal, desiredLmStatus)
+            else await xmrEdit(page, platformId, product, stockTotal > 0, desiredXmrStatus, xmrSubmitState)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             const missingMappedListing = msg.includes('LM_LISTING_NOT_FOUND') || msg.includes('XMR_LISTING_NOT_FOUND')
             if (!missingMappedListing) throw err
             console.log('    Mapped listing not found remotely â€” recreating from scratch...')
             platformId = platform === 'libre_market'
-              ? await lmCreate(page, product, imagePaths, approvedStock)
-              : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, approvedStock > 0, xmrSubmitState)
-            if (platform === 'libre_market' && approvedStock === 0) {
-              await lmEdit(page, platformId, product, approvedStock, 'archived')
+              ? await lmCreate(page, product, imagePaths, stockTotal)
+              : await xmrCreate(page, product, imagePaths, vars['XMR_BAZAAR_MONERO_ADDRESS']!, stockTotal > 0, xmrSubmitState)
+            if (platform === 'libre_market' && stockTotal === 0) {
+              await lmEdit(page, platformId, product, stockTotal, 'archived')
             }
-            if (platform === 'xmr_bazaar' && approvedStock === 0) {
+            if (platform === 'xmr_bazaar' && stockTotal === 0) {
               await xmrEdit(page, platformId, product, false, 'out_of_stock', xmrSubmitState)
             }
             console.log(`    âœ… Recreated â†’ ${platformId}`)
@@ -1523,7 +1464,7 @@ async function processPlatform(
       )
       const staleListings = allChannelProducts
         .filter((p) => !!p.platformId)
-        .filter((p) => getWarehouseStockTotal(p.stock, approvedWarehouses) <= 0)
+        .filter((p) => getSummaryTotalStock(p) <= 0)
         .filter((p) => !normalizedOpened.has(String(p.platformId).replace(/^https?:\/\/xmrbazaar\.com\/listing\//, '').replace(/\/.*$/, '')))
 
       for (let i = 0; i < staleListings.length; i++) {
@@ -1578,7 +1519,7 @@ async function processPlatform(
       )
       const staleListings = allChannelProducts
         .filter((p) => !!p.platformId)
-        .filter((p) => getWarehouseStockTotal(p.stock, approvedWarehouses) <= 0)
+        .filter((p) => getSummaryTotalStock(p) <= 0)
         .filter((p) => !normalizedOpened.has(normalizeLmPlatformId(String(p.platformId))))
 
       for (const row of staleListings) {

@@ -2,6 +2,7 @@ const HTML_MARKER_REGEX = /<\/?[a-z][\s\S]*>/i
 const HTML_ENTITY_REGEX = /&(nbsp|amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i
 const SHOPIFY_HTML_TAG_REGEX = /<\/?(p|br|ul|ol|li|strong|em|b|i|h[1-6]|div|span|table|thead|tbody|tr|td|th|a)\b[\s\S]*>/i
 const ARTIFACT_PATTERNS = [
+  /\?/g,
   /\uFFFD/g,
   /\u00A9/g,
   /\u00AE/g,

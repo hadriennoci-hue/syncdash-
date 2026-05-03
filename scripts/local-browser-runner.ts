@@ -33,6 +33,14 @@ const RUN_ON_START = hasFlag('--run-on-start')
 const HEARTBEAT_MIN = Number(argValue('--heartbeat-min', '5'))
 const STALE_LOCK_MIN = Number(argValue('--stale-lock-min', '360'))
 const HEALTH_PORT = Number(argValue('--health-port', '8790'))
+const HEALTH_ALLOWED_ORIGINS = new Set([
+  'https://wizhard.store',
+  'https://syncdash.hadrien-noci.workers.dev',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:8787',
+  'http://127.0.0.1:8787',
+])
 
 const runnerDir = path.join(process.cwd(), '.runner')
 const lockPath = path.join(runnerDir, 'browser-push.lock')
@@ -188,6 +196,21 @@ async function runPushOnce(): Promise<number> {
 
 function startHealthServer() {
   const server = createServer((req, res) => {
+    const origin = req.headers.origin
+    if (origin && HEALTH_ALLOWED_ORIGINS.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin)
+      res.setHeader('Vary', 'Origin')
+      res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      res.setHeader('Access-Control-Allow-Private-Network', 'true')
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204
+      res.end()
+      return
+    }
+
     if (!req.url?.startsWith('/health')) {
       res.statusCode = 404
       res.end('not found')

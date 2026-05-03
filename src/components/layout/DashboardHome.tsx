@@ -537,6 +537,22 @@ export function DashboardHome() {
         const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
         const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
         const total = browserTotals[platform] ?? 0
+        const fetchBrowserPushJob = async () => {
+          const res = await fetch(`/api/channels/${platform}?page=1&perPage=1`, { headers })
+          if (!res.ok) return null
+          const body = await res.json() as {
+            data?: {
+              pushJob?: {
+                status?: 'running' | 'success' | 'error'
+                processedTargets?: number
+                totalTargets?: number | null
+                detail?: string | null
+                errorsCount?: number
+              } | null
+            }
+          }
+          return body.data?.pushJob ?? null
+        }
 
         for (let attempt = 0; attempt < 120; attempt++) {
           await new Promise((resolve) => window.setTimeout(resolve, 3000))
@@ -571,7 +587,52 @@ export function DashboardHome() {
             && !!row.createdAt
             && row.createdAt >= startedAt
           )
-          if (!hit) continue
+          if (!hit) {
+            const pushJob = await fetchBrowserPushJob()
+            if (!pushJob) continue
+
+            const jobProcessed = pushJob.processedTargets ?? processed
+            const jobTotal = pushJob.totalTargets ?? total
+            const jobProgress = jobTotal > 0 ? Math.round((jobProcessed / jobTotal) * 100) : 0
+            if (pushJob.status === 'running') {
+              setPushBars((prev) => ({
+                ...prev,
+                [platform]: {
+                  ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+                  label: prev[platform]?.label ?? labels[platform],
+                  progress: jobProgress,
+                  status: 'running',
+                  message: pushJob.detail
+                    ? `${pushJob.detail} (${jobProcessed}/${jobTotal || '?'})`
+                    : `Runner processing... (${jobProcessed}/${jobTotal || '?'})`,
+                  total: jobTotal || total,
+                  processed: jobProcessed,
+                  failed: pushJob.errorsCount ?? errorCount,
+                },
+              }))
+              continue
+            }
+
+            if (pushJob.status === 'success' || pushJob.status === 'error') {
+              const finalStatus: 'success' | 'error' = pushJob.status
+              setPushBars((prev) => ({
+                ...prev,
+                [platform]: {
+                  ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+                  label: prev[platform]?.label ?? labels[platform],
+                  progress: 100,
+                  status: finalStatus,
+                  message: pushJob.detail ?? (finalStatus === 'error' ? 'Browser push failed' : 'Browser push complete'),
+                  total: jobTotal || total,
+                  processed: jobProcessed,
+                  failed: pushJob.errorsCount ?? errorCount,
+                },
+              }))
+              return
+            }
+
+            continue
+          }
 
           const isError = hit.status === 'error' || /failed=(?!0)\d+/.test(hit.message ?? '')
           setPushBars((prev) => ({
@@ -585,6 +646,44 @@ export function DashboardHome() {
               total,
               processed,
               failed: errorCount,
+            },
+          }))
+          return
+        }
+
+        const finalPushJob = await fetchBrowserPushJob()
+        if (finalPushJob?.status === 'running') {
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: prev[platform]?.progress ?? 0,
+              status: 'running',
+              message: finalPushJob.detail
+                ? `${finalPushJob.detail} (${finalPushJob.processedTargets ?? prev[platform]?.processed ?? 0}/${(finalPushJob.totalTargets ?? total) || '?'})`
+                : `Runner processing... (${finalPushJob.processedTargets ?? prev[platform]?.processed ?? 0}/${(finalPushJob.totalTargets ?? total) || '?'})`,
+              total: finalPushJob.totalTargets ?? total,
+              processed: finalPushJob.processedTargets ?? prev[platform]?.processed,
+              failed: finalPushJob.errorsCount ?? prev[platform]?.failed,
+            },
+          }))
+          return
+        }
+
+        if (finalPushJob?.status === 'success' || finalPushJob?.status === 'error') {
+          const finalStatus: 'success' | 'error' = finalPushJob.status
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: 100,
+              status: finalStatus,
+              message: finalPushJob.detail ?? (finalStatus === 'error' ? 'Browser push failed' : 'Browser push complete'),
+              total: finalPushJob.totalTargets ?? total,
+              processed: finalPushJob.processedTargets ?? prev[platform]?.processed,
+              failed: finalPushJob.errorsCount ?? prev[platform]?.failed,
             },
           }))
           return
