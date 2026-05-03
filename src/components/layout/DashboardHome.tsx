@@ -88,6 +88,8 @@ const CHANNELS = [
   { id: 'xmr_bazaar', label: 'XMR BAZAAR', sub: 'browser runner', href: '/channels/xmr_bazaar' },
 ] as const
 
+const PUSH_STREAM_TIMEOUT_MS = 6 * 60 * 60 * 1000
+
 const INCOMING: Record<string, number> = { ireland: 18, poland: 12, acer_store: 15, dropshipping: 0 }
 
 function clamp(v: number, lo: number, hi: number) {
@@ -531,7 +533,7 @@ export function DashboardHome() {
     }
     try {
       const controller = new AbortController()
-      timeout = window.setTimeout(() => controller.abort('Push timed out'), 60 * 60 * 1000)
+      timeout = window.setTimeout(() => controller.abort('Push timed out'), PUSH_STREAM_TIMEOUT_MS)
 
       const pollBrowserPlatform = async (platform: 'libre_market' | 'xmr_bazaar') => {
         const token = process.env.NEXT_PUBLIC_AGENT_BEARER_TOKEN
@@ -544,6 +546,7 @@ export function DashboardHome() {
             data?: {
               pushJob?: {
                 status?: 'running' | 'success' | 'error'
+                startedAt?: string
                 processedTargets?: number
                 totalTargets?: number | null
                 detail?: string | null
@@ -590,6 +593,7 @@ export function DashboardHome() {
           if (!hit) {
             const pushJob = await fetchBrowserPushJob()
             if (!pushJob) continue
+            if (!pushJob.startedAt || pushJob.startedAt < startedAt) continue
 
             const jobProcessed = pushJob.processedTargets ?? processed
             const jobTotal = pushJob.totalTargets ?? total
@@ -652,6 +656,23 @@ export function DashboardHome() {
         }
 
         const finalPushJob = await fetchBrowserPushJob()
+        if (!finalPushJob?.startedAt || finalPushJob.startedAt < startedAt) {
+          setPushBars((prev) => ({
+            ...prev,
+            [platform]: {
+              ...(prev[platform] ?? { label: labels[platform], progress: 0 }),
+              label: prev[platform]?.label ?? labels[platform],
+              progress: 100,
+              status: 'error',
+              message: 'No browser runner result found',
+              total,
+              processed: prev[platform]?.processed,
+              failed: prev[platform]?.failed,
+            },
+          }))
+          return
+        }
+
         if (finalPushJob?.status === 'running') {
           setPushBars((prev) => ({
             ...prev,

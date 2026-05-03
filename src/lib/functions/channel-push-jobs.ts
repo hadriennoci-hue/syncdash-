@@ -1,11 +1,12 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gte, or } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { syncJobs } from '@/lib/db/schema'
+import { syncJobs, syncLog } from '@/lib/db/schema'
 import { generateId } from '@/lib/utils/id'
 import type { Platform, TriggeredBy } from '@/types/platform'
 
 export const API_CHANNEL_PUSH_JOB_TYPE = 'push_product'
 export const BROWSER_CHANNEL_PUSH_JOB_TYPE = 'browser_push'
+const STALE_PUSH_JOB_INACTIVITY_MS = 20 * 60 * 1000
 
 type ProgressStatus = 'success' | 'error'
 
@@ -189,5 +190,35 @@ export async function getLatestChannelPushJob(platform: Platform) {
     where: and(eq(syncJobs.jobType, jobType), eq(syncJobs.platform, platform)),
     orderBy: [desc(syncJobs.startedAt)],
   })
-  return parseChannelPushJob(row ?? null)
+  const snapshot = parseChannelPushJob(row ?? null)
+  if (!snapshot || snapshot.status !== 'running') return snapshot
+
+  const activityRow = await db.query.syncLog.findFirst({
+    where: and(
+      eq(syncLog.platform, platform),
+      gte(syncLog.createdAt, snapshot.startedAt),
+      jobType === BROWSER_CHANNEL_PUSH_JOB_TYPE
+        ? or(eq(syncLog.action, 'push_product'), eq(syncLog.action, 'browser_push_run'))
+        : eq(syncLog.action, 'push_product')
+    ),
+    orderBy: [desc(syncLog.createdAt)],
+    columns: { createdAt: true },
+  })
+
+  const lastActivityAt = activityRow?.createdAt ?? snapshot.startedAt
+  const lastActivityMs = new Date(lastActivityAt).getTime()
+  if (Number.isNaN(lastActivityMs)) return snapshot
+
+  const idleMs = Date.now() - lastActivityMs
+  if (idleMs <= STALE_PUSH_JOB_INACTIVITY_MS) return snapshot
+
+  const idleMinutes = Math.max(1, Math.round(idleMs / 60000))
+  const stalePrefix = `Push job appears stale after ${idleMinutes} min without activity.`
+  return {
+    ...snapshot,
+    status: 'error',
+    errorsCount: Math.max(snapshot.errorsCount, 1),
+    detail: snapshot.detail ? `${stalePrefix} Last detail: ${snapshot.detail}` : stalePrefix,
+    blockedOnSku: snapshot.blockedOnSku ?? snapshot.lastProductIds[0] ?? null,
+  }
 }

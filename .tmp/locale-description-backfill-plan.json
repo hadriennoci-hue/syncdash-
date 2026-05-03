@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-05-03T13:08:05.317Z",
+  "dryRun": true,
+  "totalProductsInspected": 620,
+  "totalPlannedProducts": 0,
+  "localeCounts": {
+    "fr": 0,
+    "de": 0,
+    "es": 0,
+    "it": 0,
+    "nl": 0,
+    "fi": 0
+  },
+  "plans": []
+}
