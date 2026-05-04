@@ -26,6 +26,10 @@ Scheduling board for social posts by account, with validation workflow and publi
 - Revert to suggested: `PATCH /api/social/posts/:id` (`status=suggested`)
 - Toggle extra image preview
 
+## Writing rules
+- Product-post price format uses the euro sign after the amount: `949€`, `1,349€`, not `EUR949` or `EUR 949`.
+- For marketplace product tweets, create a reply tweet containing the direct listing URL after the main tweet is scheduled.
+
 ## State behavior
 
 ### Loading
