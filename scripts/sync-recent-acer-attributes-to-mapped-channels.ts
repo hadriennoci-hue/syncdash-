@@ -1,7 +1,8 @@
 #!/usr/bin/env npx tsx
 import fs from 'node:fs'
 import path from 'node:path'
-import { createConnector } from '@/lib/connectors/registry'
+import { CoincartConnector } from '@/lib/connectors/coincart'
+import { ShopifyConnector } from '@/lib/connectors/shopify'
 import type { Platform } from '@/types/platform'
 
 interface ProductListRow {
@@ -80,6 +81,29 @@ async function apiGet<T>(pathname: string): Promise<T> {
   return json.data
 }
 
+async function fetchShopifyAccessToken(): Promise<string> {
+  const shop = process.env.SHOPIFY_KOMPUTERZZ_SHOP ?? ''
+  const clientId = process.env.SHOPIFY_KOMPUTERZZ_CLIENT_ID ?? ''
+  const clientSecret = process.env.SHOPIFY_KOMPUTERZZ_CLIENT_SECRET ?? ''
+  if (!shop || !clientId || !clientSecret) {
+    throw new Error('Missing Shopify Komputerzz OAuth credentials')
+  }
+
+  const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials',
+    }),
+  })
+  if (!response.ok) throw new Error(`Shopify OAuth ${response.status}: ${await response.text()}`)
+  const json = await response.json() as { access_token?: string }
+  if (!json.access_token) throw new Error('Shopify OAuth returned no access_token')
+  return json.access_token
+}
+
 function splitAttributeValues(raw: string): string[] {
   return raw
     .split(/[|,;]+/)
@@ -97,6 +121,27 @@ function collectAttributeValues(product: ProductDetail): Record<string, string[]
     out[key] = Array.from(new Set(splitAttributeValues(raw)))
   }
   return out
+}
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let cursor = 0
+
+  async function run(): Promise<void> {
+    while (true) {
+      const index = cursor
+      cursor += 1
+      if (index >= items.length) return
+      results[index] = await worker(items[index], index)
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => run()))
+  return results
 }
 
 async function main(): Promise<void> {
@@ -119,17 +164,36 @@ async function main(): Promise<void> {
   )
 
   const recentAcerRows = rows.filter((row) => row.supplier?.id === 'acer')
-  const products = await Promise.all(recentAcerRows.map((row) => apiGet<ProductDetail>(`/api/products/${encodeURIComponent(row.id)}`)))
+  const products = await mapLimit(
+    recentAcerRows,
+    8,
+    (row) => apiGet<ProductDetail>(`/api/products/${encodeURIComponent(row.id)}`),
+  )
   const recentProducts = products.filter((product) => product.createdAt >= RECENT_SINCE)
 
-  const connectorCache = new Map<TargetPlatform, Awaited<ReturnType<typeof createConnector>>>()
+  const shopifyAccessToken = await fetchShopifyAccessToken()
+  const connectorCache = new Map<TargetPlatform, CoincartConnector | ShopifyConnector>([
+    [
+      'shopify_komputerzz',
+      new ShopifyConnector(
+        process.env.SHOPIFY_KOMPUTERZZ_SHOP!,
+        shopifyAccessToken,
+        process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID,
+      ),
+    ],
+    [
+      'coincart2',
+      new CoincartConnector(
+        process.env.COINCART_URL!,
+        process.env.COINCART_KEY!,
+        process.env.COINCART_SECRET!,
+        process.env.COINCART_API_URL,
+      ),
+    ],
+  ])
   const summary: Record<'shopify_komputerzz' | 'coincart2', { attempted: number; synced: number; failed: Array<{ sku: string; message: string }> }> = {
     shopify_komputerzz: { attempted: 0, synced: 0, failed: [] },
     coincart2: { attempted: 0, synced: 0, failed: [] },
-  }
-
-  for (const platform of TARGET_PLATFORMS) {
-    if (!connectorCache.has(platform)) connectorCache.set(platform, await createConnector(platform))
   }
 
   for (const product of recentProducts) {
@@ -144,9 +208,13 @@ async function main(): Promise<void> {
       try {
         const connector = connectorCache.get(platform)!
         if (platform === 'shopify_komputerzz') {
-          const syncProductAttributeMetafields = (connector as { syncProductAttributeMetafields?: (platformId: string, attributes: Record<string, string[]>) => Promise<void> }).syncProductAttributeMetafields
-          if (!syncProductAttributeMetafields) throw new Error('Shopify attribute metafield sync is not available')
-          await syncProductAttributeMetafields(platformId, attributeValues)
+          const shopifyConnector = connector as ShopifyConnector & {
+            syncProductAttributeMetafields?: (platformId: string, attributes: Record<string, string[]>) => Promise<void>
+          }
+          if (typeof shopifyConnector.syncProductAttributeMetafields !== 'function') {
+            throw new Error('Shopify attribute metafield sync is not available')
+          }
+          await shopifyConnector.syncProductAttributeMetafields(platformId, attributeValues)
         } else {
           await connector.updateProduct(platformId, { attributeValues })
         }
