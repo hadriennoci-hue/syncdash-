@@ -143,6 +143,7 @@ export async function finishChannelPushJob(
     status: 'success' | 'error'
     processedTargets: number
     totalTargets: number
+    zeroed: number
     errorsCount: number
     detail: string
     blockedOnSku?: string | null
@@ -152,6 +153,7 @@ export async function finishChannelPushJob(
     .set({
       status: result.status,
       touched: result.processedTargets,
+      zeroed: result.zeroed,
       errorsCount: result.errorsCount,
       finishedAt: new Date().toISOString(),
       message: encodeMessage({

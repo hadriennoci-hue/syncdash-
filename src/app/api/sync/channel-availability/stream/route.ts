@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
                   status: errorsCount > 0 ? 'error' : 'success',
                   processedTargets: lastProgress.processedTargets,
                   totalTargets: lastProgress.totalTargets,
+                  zeroed: result.zeroedOutOfStock,
                   errorsCount,
                   detail: result.errors[0]
                     ?? (result.incomplete?.[0]
