@@ -121,9 +121,21 @@ Processed by:
 Do NOT run `push:browser` yourself unless the user explicitly asks you to run the push and confirms it.
 `push:browser` is a one-shot push — never the right default.
 
-**Always kill existing runners first** before starting a new one. `npx tsx` spawns 3 node processes per instance — orphans accumulate fast. Kill first:
+**Always kill existing runners AND close their PowerShell windows first** before starting a new one. `npx tsx` spawns 3 node processes per instance — orphans accumulate fast. Each `Start-Process` also leaves a visible PowerShell window behind even after the node processes are killed — these must be closed too or windows pile up.
+
+Step 1 — kill runner node processes:
 ```bash
 powershell -Command "Get-Process node -ErrorAction SilentlyContinue | ForEach-Object { \$p = \$_; try { \$cmd = (Get-WmiObject Win32_Process -Filter \"ProcessId=\$(\$p.Id)\").CommandLine; if (\$cmd -match 'local-browser-runner') { Stop-Process -Id \$p.Id -Force } } catch {} }"
+```
+
+Step 2 — close orphaned PowerShell windows (keep only the one that owns the live runner):
+```powershell
+# Find which PS window owns a runner child, close all others
+Get-Process powershell -ErrorAction SilentlyContinue | ForEach-Object {
+  $ps = $_
+  $hasRunner = Get-WmiObject Win32_Process | Where-Object { $_.ParentProcessId -eq $ps.Id -and $_.CommandLine -match 'local-browser-runner' }
+  if (-not $hasRunner) { Stop-Process -Id $ps.Id -Force -ErrorAction SilentlyContinue }
+}
 ```
 
 When the user asks to "start the runner" (without pushing), run this exact command:
