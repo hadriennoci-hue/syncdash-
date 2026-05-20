@@ -119,11 +119,25 @@ Processed by:
 
 **IMPORTANT — browser runner rule:**
 Do NOT run `push:browser` yourself unless the user explicitly asks you to run the push and confirms it.
-When the user asks to "start the browser runner", always run:
+`push:browser` is a one-shot push — never the right default.
+
+**Always kill existing runners first** before starting a new one. `npx tsx` spawns 3 node processes per instance — orphans accumulate fast. Kill first:
 ```bash
-npm run runner:browser
+powershell -Command "Get-Process node -ErrorAction SilentlyContinue | ForEach-Object { \$p = \$_; try { \$cmd = (Get-WmiObject Win32_Process -Filter \"ProcessId=\$(\$p.Id)\").CommandLine; if (\$cmd -match 'local-browser-runner') { Stop-Process -Id \$p.Id -Force } } catch {} }"
 ```
-This starts the persistent polling runner (waits for queued products from Wizhard). `push:browser` is a one-shot push — never the right default.
+
+When the user asks to "start the runner" (without pushing), run this exact command:
+```bash
+powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy','Bypass','-NoExit','-Command','Set-Location C:\syncdash; npx tsx scripts/local-browser-runner.ts --interval-min=30 --wake-poll-sec=10 --prod --headed' -WindowStyle Normal"
+```
+
+This opens a **visible PowerShell window** running the persistent polling runner (headed browser, waits for queued products from Wizhard). It does NOT push anything.
+
+**Why not `scripts/start-browser-runner.ps1`:**
+That script has a bug — it reassigns `$args` (PowerShell automatic variable), which breaks `@args` splatting. Result: `npx` launches in interactive mode instead of running the runner. Run the tsx command directly as shown above.
+
+**Why not `Start-Process` with `-File`:**
+Using `-File` with `-NoExit` runs the script then leaves a blank prompt — output goes to `.runner/browser-runner.log` (piped by the script), so the window appears dead. Use `-Command` instead to see live output.
 
 When the user asks to "start the runner", that means start the runner only.
 Do not add `--run-on-start`, do not trigger a push cycle, and do not start any other helper process unless the user explicitly asks for it.

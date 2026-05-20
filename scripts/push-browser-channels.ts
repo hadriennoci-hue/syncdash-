@@ -173,7 +173,13 @@ function formatXmrTitle(title: string): string {
 }
 
 function isLaptopProduct(product: ProductDetail): boolean {
-  const text = `${product.productType ?? ''} ${product.title} ${product.description ?? ''}`.toLowerCase()
+  const title = product.title.toLowerCase()
+  const productType = (product.productType ?? '').toLowerCase()
+  // Explicit peripheral signals take priority — Predator/Nitro brand names are also
+  // used on gaming mice, headsets, etc. and must not trigger laptop treatment.
+  if (/\b(mouse|mice|gaming mouse|trackball|keyboard|headset|headphone|speaker|webcam)\b/.test(title)) return false
+  if (/\b(mouse|mice|keyboard|headset|headphone|speaker|webcam|peripheral)\b/.test(productType)) return false
+  const text = `${productType} ${title} ${(product.description ?? '').toLowerCase()}`
   return /\b(laptop|notebook|chromebook)\b/.test(text) || /\b(predator|nitro|travelmate|swift|aspire)\b/.test(text)
 }
 
@@ -628,6 +634,7 @@ async function lmSuivant(page: Page, label: string): Promise<void> {
 
 async function lmSetCreateStock(page: Page, quantity: number): Promise<void> {
   const candidates = [
+    { name: 'stock-form-div4', locator: page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input').first() },
     { name: 'stock-div3', locator: page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
     { name: 'stock-div2', locator: page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
     { name: 'stock-label', locator: page.getByLabel(/Stock actuel/i).first() },
@@ -1298,21 +1305,26 @@ async function processPlatform(
 
   // Fetch full product data for all targets
   const products: ProductDetail[] = []
+  const prefetchErrors: string[] = []
   for (const sku of targetSkus) {
     try {
       const p = await getProductDetail(sku, token, apiBase)
       if (!p.prices[platform]?.price) {
-        console.log(`  âš ï¸  Skipping ${sku}: no price set for ${platform}`)
+        const msg = `no price set for ${platform}`
+        console.log(`  ⚠️  Skipping ${sku}: ${msg}`)
+        prefetchErrors.push(`${sku}: ${msg}`)
         continue
       }
       products.push(p)
     } catch (err) {
-      console.log(`  âš ï¸  Skipping ${sku}: ${err instanceof Error ? err.message : err}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`  ⚠️  Skipping ${sku}: ${msg}`)
+      prefetchErrors.push(`${sku}: ${msg}`)
     }
   }
   if (products.length === 0) {
     console.log('  No eligible products after checks.')
-    const emptyEligibleReport = { platform, queued: targetSkus.length, processed: 0, created: 0, updated: 0, failed: 0, errors: [], dryRun: false }
+    const emptyEligibleReport = { platform, queued: targetSkus.length, processed: prefetchErrors.length, created: 0, updated: 0, failed: prefetchErrors.length, errors: prefetchErrors, dryRun: false }
     await finishBrowserSyncJob(jobId, emptyEligibleReport, 'No eligible products after checks', null, token, apiBase)
     return emptyEligibleReport
   }

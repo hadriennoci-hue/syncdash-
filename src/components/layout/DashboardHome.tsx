@@ -398,6 +398,31 @@ export function DashboardHome() {
       return
     }
 
+    // Wake browser runner once (price guard + nonce increment).
+    // Stream route no longer calls requestRunnerWake — doing it here prevents
+    // the nonce from incrementing 4× (once per API platform) which caused the
+    // runner to re-fire after every fast-fail cycle.
+    try {
+      const wakeRes = await fetch('/api/runner/wake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ runner: 'browser', reason: 'dashboard push' }),
+      })
+      if (!wakeRes.ok) {
+        const wakeBody = await wakeRes.json().catch(() => ({})) as { error?: { message?: string } }
+        const msg = wakeBody.error?.message ?? `Runner wake failed (HTTP ${wakeRes.status})`
+        setPushError(msg)
+        setPushBars({})
+        setPushing(false)
+        return
+      }
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : 'Runner wake request failed')
+      setPushBars({})
+      setPushing(false)
+      return
+    }
+
     const browserTotalsEntries = await Promise.all(
       (['libre_market', 'xmr_bazaar'] as const).map(async (platform) => {
         const res = await fetch(`/api/products?pushedPlatform=${platform}&perPage=1000`, { headers })

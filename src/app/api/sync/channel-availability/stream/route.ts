@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { verifyBearer } from '@/lib/auth/bearer'
 import { apiError } from '@/lib/utils/api-response'
 import { syncChannelAvailability, type ChannelSyncResult } from '@/lib/functions/channel-sync'
-import { requestRunnerWake } from '@/lib/functions/runner-signal'
 import { db } from '@/lib/db/client'
 import { salesChannels } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
@@ -74,7 +73,10 @@ export async function POST(req: NextRequest) {
             expiresAt: tokenResult.expiresAt ?? null,
           })
         }
-        await requestRunnerWake('browser', 'channel-availability push')
+        // Note: browser runner wake is NOT called here.
+        // Callers (dashboard) must call POST /api/runner/wake once before streaming.
+        // Calling it per-platform caused the nonce to increment 4× per push session,
+        // making the runner fire repeatedly after each fast-fail cycle.
         const startedAt = new Date().toISOString()
         await db.update(salesChannels)
           .set({ lastPush: startedAt })

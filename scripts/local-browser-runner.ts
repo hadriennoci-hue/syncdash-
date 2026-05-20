@@ -325,6 +325,25 @@ async function main(): Promise<void> {
           await runPushOnce()
           lastRunAt = Date.now()
           ran = true
+          // After push, absorb nonce drift for POST_PUSH_ABSORB_MS.
+          // The production stream route increments the nonce once per API platform
+          // (4 total). If the browser push is fast (e.g. all products skipped),
+          // those increments arrive AFTER the push completes. Without absorption,
+          // the runner re-fires for each one.
+          // Once the stream route is fixed to call wake once instead of per-platform,
+          // this loop becomes a no-op (nonce won't change post-push).
+          const POST_PUSH_ABSORB_MS = 3 * 60 * 1000 // 3 min — covers 4 × ~30s platform pushes
+          const absorbUntil = Date.now() + POST_PUSH_ABSORB_MS
+          log(`Post-push: absorbing nonce drift for ${POST_PUSH_ABSORB_MS / 1000}s...`)
+          while (Date.now() < absorbUntil && !stopRequested) {
+            await sleep(WAKE_POLL_SEC * 1000)
+            const latestNonce = await fetchWakeNonce(apiBase, token, vars)
+            if (latestNonce != null && latestNonce > lastWakeNonce) {
+              log(`Absorbed nonce drift: ${lastWakeNonce} → ${latestNonce} (API platform push still in progress)`)
+              lastWakeNonce = latestNonce
+            }
+          }
+          log('Post-push absorption window closed. Resuming normal polling.')
         }
       }
     }
