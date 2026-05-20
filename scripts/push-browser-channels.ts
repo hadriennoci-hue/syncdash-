@@ -612,7 +612,7 @@ async function lmSuivant(page: Page, label: string): Promise<void> {
   const btn = page.locator('button:has-text("Suivant")').last()
   await btn.waitFor({ state: 'visible', timeout: 5000 })
 
-  const deadline = Date.now() + 5000
+  const deadline = Date.now() + 12000
   let enabled = false
   while (Date.now() < deadline) {
     const disabled = await btn.isDisabled().catch(() => true)
@@ -623,7 +623,7 @@ async function lmSuivant(page: Page, label: string): Promise<void> {
     await page.waitForTimeout(200)
   }
   if (!enabled) {
-    throw new Error(`LM_STEP_BLOCKED_FIELD_MISSING: Suivant not clickable after 5s (${label})`)
+    throw new Error(`LM_STEP_BLOCKED_FIELD_MISSING: Suivant not clickable after 12s (${label})`)
   }
 
   await btn.click()
@@ -634,7 +634,6 @@ async function lmSuivant(page: Page, label: string): Promise<void> {
 
 async function lmSetCreateStock(page: Page, quantity: number): Promise<void> {
   const candidates = [
-    { name: 'stock-form-div4', locator: page.locator('xpath=/html/body/div[3]/div/main/div/form/div[4]/div/div[1]/input').first() },
     { name: 'stock-div3', locator: page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
     { name: 'stock-div2', locator: page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[6]/div[1]/input').first() },
     { name: 'stock-label', locator: page.getByLabel(/Stock actuel/i).first() },
@@ -818,13 +817,31 @@ async function lmCreate(page: Page, product: ProductDetail, imagePaths: string[]
     .fill(product.id).catch(() => {})
   await lmSuivant(page, 'step 1')
 
-  // Step 2 â€” characteristics
+  // Step 2 — characteristics
   await lmSetCreatePrice(page, price)
-  await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[8]/div/input').fill('500')
-  await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[10]/div[2]/label[2]/span')
-    .click().catch(() => {})
-  await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[11]/div/input').fill('5')
+  // Weight field (~500g) — try div[3] outer first, then div[2]
+  await page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[8]/div/input').first()
+    .fill('500').catch(async () => {
+      await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[8]/div/input').first()
+        .fill('500').catch(() => {})
+    })
+  await page.keyboard.press('Tab').catch(() => {})
+  // Product condition radio (New) — try div[3] then div[2]
+  await page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[10]/div[2]/label[2]/span').first()
+    .click().catch(async () => {
+      await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[10]/div[2]/label[2]/span').first()
+        .click().catch(() => {})
+    })
+  // Delivery days field — try div[3] then div[2]
+  await page.locator('xpath=/html/body/div[3]/div/main/div/div[3]/div[1]/div[11]/div/input').first()
+    .fill('5').catch(async () => {
+      await page.locator('xpath=/html/body/div[2]/div/main/div/div[3]/div[1]/div[11]/div/input').first()
+        .fill('5').catch(() => {})
+    })
+  await page.keyboard.press('Tab').catch(() => {})
   await lmSetCreateStock(page, stockQty)
+  await page.keyboard.press('Tab').catch(() => {})
+  await page.waitForTimeout(400)
   await lmSuivant(page, 'step 2')
 
   // Step 3 - photos
