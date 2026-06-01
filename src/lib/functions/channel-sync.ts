@@ -57,6 +57,7 @@ interface PriceRow   { platform: string; price: number | null; compareAt: number
 interface CatRow     { category: { id: string; name: string; slug: string | null } }
 interface StockRow   {
   quantity: number
+  warehouseId: string
   sourceUrl?: string | null
   sourceName?: string | null
 }
@@ -71,9 +72,9 @@ interface ImageRow   { url: string; position: number; alt: string | null }
 type WooSkuAware = {
   updateProductForSku: (platformId: string, sku: string, data: Partial<import('@/lib/connectors/types').ProductPayload>) => Promise<void>
   updatePriceForSku: (platformId: string, sku: string, price: number | null, compareAt?: number | null) => Promise<void>
-  updateStockForSku: (platformId: string, sku: string, quantity: number) => Promise<void>
+  updateStockForSku: (platformId: string, sku: string, quantity: number, locationIdOverride?: string) => Promise<void>
   toggleStatusForSku: (platformId: string, sku: string, status: 'active' | 'archived') => Promise<void>
-  bulkSetStockForSkus: (items: Array<{ platformId: string; sku: string; quantity: number }>) => Promise<void>
+  bulkSetStockForSkus: (items: Array<{ platformId: string; sku: string; quantity: number; locationId?: string }>) => Promise<void>
 }
 
 function isWooSkuAware(connector: unknown): connector is WooSkuAware {
@@ -541,6 +542,33 @@ function getProductTotalStock(product: EligibleProduct): number {
   return product.warehouseStock.reduce((sum, ws) => sum + ws.quantity, 0)
 }
 
+function getStockForWarehouse(product: EligibleProduct, warehouseId: string): number {
+  return product.warehouseStock
+    .filter((ws) => ws.warehouseId === warehouseId)
+    .reduce((sum, ws) => sum + ws.quantity, 0)
+}
+
+/**
+ * For shopify_komputerzz: build per-location stock batch items.
+ *   ireland   → SHOPIFY_KOMPUTERZZ_LOCATION_ID   (2flow Dublin — default location)
+ *   acer_store → SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE (Acer Store Wroclaw Poland)
+ * Falls back to total stock on default location when ACER_STORE env var is not set.
+ */
+function buildKomputerzzStockItems(
+  platformId: string,
+  sku: string,
+  product: EligibleProduct,
+): Array<{ platformId: string; sku: string; quantity: number; locationId?: string }> {
+  const acerStoreLocationId = process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE
+  if (!acerStoreLocationId) {
+    return [{ platformId, sku, quantity: getProductTotalStock(product) }]
+  }
+  return [
+    { platformId, sku, quantity: getStockForWarehouse(product, 'ireland') },
+    { platformId, sku, quantity: getStockForWarehouse(product, 'acer_store'), locationId: acerStoreLocationId },
+  ]
+}
+
 function getProductPriceRow(product: EligibleProduct, platform: Platform): PriceRow | undefined {
   return product.prices.find((row) => row.platform === platform)
 }
@@ -927,7 +955,7 @@ async function pushPlatform(
   }
 
   // Stock batch accumulator for coincart2 + shopify_komputerzz
-  const stockBatch: Array<{ platformId: string; sku: string; quantity: number }> = []
+  const stockBatch: Array<{ platformId: string; sku: string; quantity: number; locationId?: string }> = []
   const flushStockBatch = async (): Promise<void> => {
     if (stockBatch.length === 0) return
 
@@ -1085,7 +1113,9 @@ async function pushPlatform(
             }
             const skuAwareConnector = connector
             for (const member of target.members) {
-              stockBatch.push({ platformId, sku: member.product.id, quantity: member.totalStock })
+              for (const item of buildKomputerzzStockItems(platformId, member.product.id, member.product)) {
+                stockBatch.push(item)
+              }
               if (priceChanged({ price: member.priceRow?.price ?? null, compareAt: member.priceRow?.compareAt ?? null }, priceSnapshotMap, member.product.id)) {
                 await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
               }
@@ -1139,7 +1169,9 @@ async function pushPlatform(
             vendor: primary.vendor,
             productType: primary.productType,
           }))
-          stockBatch.push({ platformId, sku: primary.id, quantity: totalStock })
+          for (const item of buildKomputerzzStockItems(platformId, primary.id, primary)) {
+            stockBatch.push(item)
+          }
           if (priceChanged({ price: priceRow?.price ?? null, compareAt: priceRow?.compareAt ?? null }, priceSnapshotMap, primary.id)) {
             await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, priceRow?.compareAt ?? null))
           }
@@ -1194,7 +1226,21 @@ async function pushPlatform(
           const skuAwareConnector = connector
           for (const member of target.members) {
             await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
-            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+            if (platform === 'shopify_komputerzz') {
+              for (const item of buildKomputerzzStockItems(platformId, member.product.id, member.product)) {
+                await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(item.platformId, item.sku, item.quantity, item.locationId))
+              }
+            } else {
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+            }
+          }
+        } else if (platform === 'shopify_komputerzz') {
+          const acerStoreLocationId = process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE
+          // connector is ShopifyConnector here — updateStock accepts optional locationIdOverride
+          const shopifyConnector = connector as unknown as { updateStock: (id: string, qty: number, loc?: string) => Promise<void> }
+          await callWithShopifyAuthRetry(() => shopifyConnector.updateStock(platformId, getStockForWarehouse(primary, 'ireland')))
+          if (acerStoreLocationId) {
+            await callWithShopifyAuthRetry(() => shopifyConnector.updateStock(platformId, getStockForWarehouse(primary, 'acer_store'), acerStoreLocationId))
           }
         } else {
           await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
@@ -1238,7 +1284,13 @@ async function pushPlatform(
         const skuAwareConnector = connector
         for (const member of target.members) {
           await callWithShopifyAuthRetry(() => skuAwareConnector.updatePriceForSku(platformId, member.product.id, member.priceRow?.price ?? null, member.priceRow?.compareAt ?? null))
-          await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+          if (platform === 'shopify_komputerzz') {
+            for (const item of buildKomputerzzStockItems(platformId, member.product.id, member.product)) {
+              await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(item.platformId, item.sku, item.quantity, item.locationId))
+            }
+          } else {
+            await callWithShopifyAuthRetry(() => skuAwareConnector.updateStockForSku(platformId, member.product.id, member.totalStock))
+          }
         }
         await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
       }

@@ -977,9 +977,9 @@ export class ShopifyConnector implements PlatformConnector {
   // Stock
   // -------------------------------------------------------------------------
 
-  async updateStock(platformId: string, quantity: number): Promise<void> {
+  async updateStock(platformId: string, quantity: number, locationIdOverride?: string): Promise<void> {
     // Step 1 — resolve which location to use
-    let locationGid = this.locationId
+    let locationGid = locationIdOverride ?? this.locationId
     if (!locationGid) {
       const locQuery = `{ shop { primaryDomain { url } } locations(first: 1) { nodes { id } } }`
       const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(locQuery)
@@ -1022,8 +1022,8 @@ export class ShopifyConnector implements PlatformConnector {
     }
   }
 
-  async updateStockForSku(platformId: string, sku: string, quantity: number): Promise<void> {
-    let locationGid = this.locationId
+  async updateStockForSku(platformId: string, sku: string, quantity: number, locationIdOverride?: string): Promise<void> {
+    let locationGid = locationIdOverride ?? this.locationId
     if (!locationGid) {
       const locData = await this.graphql<{ locations: { nodes: Array<{ id: string }> } }>(
         `{ locations(first: 1) { nodes { id } } }`
@@ -1140,17 +1140,18 @@ export class ShopifyConnector implements PlatformConnector {
     await this.setOnHandQuantities(setQuantities)
   }
 
-  async bulkSetStockForSkus(items: Array<{ platformId: string; sku: string; quantity: number }>): Promise<void> {
+  async bulkSetStockForSkus(items: Array<{ platformId: string; sku: string; quantity: number; locationId?: string }>): Promise<void> {
     if (items.length === 0) return
 
     const locationGid = await this.resolveInventoryLocation()
     const QUERY_BATCH = 50
     const setQuantities: Array<{ inventoryItemId: string; locationId: string; quantity: number }> = []
-    const pending = new Map<string, Array<{ sku: string; quantity: number }>>()
+    // Carry locationId through so per-item overrides survive the product→variant GID resolution
+    const pending = new Map<string, Array<{ sku: string; quantity: number; locationId?: string }>>()
 
     for (const item of items) {
       const productItems = pending.get(item.platformId) ?? []
-      productItems.push({ sku: item.sku, quantity: item.quantity })
+      productItems.push({ sku: item.sku, quantity: item.quantity, locationId: item.locationId })
       pending.set(item.platformId, productItems)
     }
 
@@ -1190,7 +1191,7 @@ export class ShopifyConnector implements PlatformConnector {
           if (!inventoryItemId) {
             throw new Error(`No Shopify inventory item found for SKU ${item.sku} on product ${node.id}`)
           }
-          setQuantities.push({ inventoryItemId, locationId: locationGid, quantity: item.quantity })
+          setQuantities.push({ inventoryItemId, locationId: item.locationId ?? locationGid, quantity: item.quantity })
         }
       }
     }
