@@ -37,13 +37,19 @@ export type TiktokImageStatus = 'pass' | 'warn' | 'fail'
 
 /** Issue codes stored in product_images.tiktok_issues (JSON array). */
 export type TiktokImageIssue =
-  | 'min_px'          // below the hard minimum edge
+  | 'min_px'          // below the hard minimum edge (fail)
   | 'below_target'    // >= min but < target (warn)
-  | 'ratio'           // not 1:1 within tolerance
-  | 'format'          // not jpg/png
-  | 'too_large'       // > maxBytes
-  | 'greyscale'       // black & white
-  | 'main_bg'         // main image corners not opaque white
-  | 'main_text'       // main image may carry added text (manual review)
+  | 'ratio'           // not 1:1 within tolerance (fail)
+  | 'format'          // not jpg/png (fail)
+  | 'too_large'       // > maxBytes (fail)
+  | 'greyscale'       // black & white (fail)
+  | 'main_bg'         // main image corners not opaque white (fail)
+  | 'main_text'       // main image may carry added text — manual review (warn)
+  | 'unmeasured'      // width/height unknown; needs a fetch to measure (warn)
+
+/** Issues that make an image non-compliant (vs. warn-only). */
+export const TIKTOK_IMAGE_FAIL_ISSUES: ReadonlySet<TiktokImageIssue> = new Set([
+  'min_px', 'ratio', 'format', 'too_large', 'greyscale', 'main_bg',
+])
 
 export const POLICY_VERSION = TIKTOK_IMAGE_POLICY.version
