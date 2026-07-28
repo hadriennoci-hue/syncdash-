@@ -109,6 +109,24 @@ CREATE TABLE channel_category_map (
 `products` gains (or reuses `product_type` as) a `taxonomy_key`. The push resolves
 `taxonomy_key → shopify_category_gid` instead of defaulting to `el`.
 
+**Unify on Shopify's Standard Product Taxonomy, not TikTok's (decided 2026-07-28).**
+The shared product-category layer for the whole catalogue is Shopify's standard taxonomy — the
+universal superset both Shopify stores already run on, and the one the native TikTok app maps *from*
+(*"the Connector uses the Shopify product category to map it to the Category in TikTok Shop"*). TikTok's
+own tree is a channel-specific leaf we never store; it's set once via the app's category templates.
+Do **not** adopt TikTok's taxonomy internally.
+
+Two distinct axes, both kept: **collections** (the 28 merchandising groups — Gaming Laptops, Ultrawide
+Monitors…) stay as-is for storefront browse; **product category** (one canonical Shopify node per
+product) is the new shared classification. Several collections collapse to one category (the 4 monitor
+collections → Computer Monitors; Gaming/Work Laptops → Laptops).
+
+Seeded (migration 0039) for **both** `shopify_tiktok` and `shopify_komputerzz`: all **28 collections →
+Shopify GIDs**, `taxonomy_key` = collection slug. Because the push sets category only on
+**new-product creation**, this recategorises *future* products only — existing live listings are
+untouched — so unifying Komputerzz is safe and purely additive. `tiktok_category_id` /
+`required_attribute_keys` fill in once TikTok is connected.
+
 ### 2.4 New table — `channel_field_rules` (which fields go to which channel)
 
 Confirmed with Hadrien: model channel divergence as **data, not `if (platform === …)` branches**. TikTok needs
