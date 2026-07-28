@@ -89,7 +89,9 @@
     "db:migrate42": "wrangler d1 execute syncdash-db --local --file=./drizzle/0042_seed_tiktok_category_ids.sql",
     "db:migrate42:remote": "wrangler d1 execute syncdash-db --remote --file=./drizzle/0042_seed_tiktok_category_ids.sql",
     "db:migrate43": "wrangler d1 execute syncdash-db --local --file=./drizzle/0043_channel_content.sql",
-    "db:migrate43:remote": "wrangler d1 execute syncdash-db --remote --file=./drizzle/0043_channel_content.sql"
+    "db:migrate43:remote": "wrangler d1 execute syncdash-db --remote --file=./drizzle/0043_channel_content.sql",
+    "db:migrate44": "wrangler d1 execute syncdash-db --local --file=./drizzle/0044_channel_images.sql",
+    "db:migrate44:remote": "wrangler d1 execute syncdash-db --remote --file=./drizzle/0044_channel_images.sql"
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^1.9.0",

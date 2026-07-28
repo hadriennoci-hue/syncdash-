@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap, channelContent } from '@/lib/db/schema'
+import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap, channelContent, channelImages } from '@/lib/db/schema'
 import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
 import { normalizeAttributeValues } from '@/lib/utils/attribute-normalize'
 import { and, eq, gt, inArray, or } from 'drizzle-orm'
@@ -839,6 +839,16 @@ async function pushPlatform(
     where: eq(channelContent.platform, platform),
   })
   const contentByProduct = new Map(contentRows.map((r) => [r.productId, r]))
+  // Per-channel image sets (channel_images); if a product has rows, use them instead of product_images.
+  const imageRows = await db.query.channelImages.findMany({
+    where: eq(channelImages.platform, platform),
+  })
+  const imagesByProduct = new Map<string, typeof imageRows>()
+  for (const r of imageRows) {
+    const arr = imagesByProduct.get(r.productId) ?? []
+    arr.push(r)
+    imagesByProduct.set(r.productId, arr)
+  }
   let statusUpdated = 0
 
   const emitProgress = async (
@@ -903,11 +913,15 @@ async function pushPlatform(
       }))
       .filter((c) => c.name.trim().length > 0)
 
-  const buildImages = (product: EligibleProduct): ImageInput[] => (
-    [...product.images]
+  const buildImages = (product: EligibleProduct): ImageInput[] => {
+    const channelSet = imagesByProduct.get(product.id)
+    const source = channelSet && channelSet.length > 0
+      ? channelSet.map((r) => ({ position: r.position ?? 0, url: r.url, alt: r.alt }))
+      : product.images
+    return [...source]
       .sort((a, b) => a.position - b.position)
       .map((img) => ({ type: 'url' as const, url: img.url, alt: img.alt ?? undefined }))
-  )
+  }
 
   const markPushStatus = async (productIds: string[], value: string): Promise<void> => {
     for (const productId of productIds) {
