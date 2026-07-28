@@ -11,6 +11,17 @@ export const suppliers = sqliteTable('suppliers', {
   contactFirstName: text('contact_first_name'),
   contactLastName:  text('contact_last_name'),
   email:            text('email'),
+  // GPSR compliance block — near-constant per supplier, inherited by that supplier's products.
+  // The manufacturer is the legal maker (e.g. Acer Incorporated), NOT the factory or the reseller.
+  // The EU Responsible Person is the supplier's EU economic operator (Ragequit is a distributor,
+  // so the RP is Acer's, never Ragequit). See docs/tiktok-readiness-spec.md §2.2.
+  manufacturerName:        text('manufacturer_name'),
+  manufacturerAddress:     text('manufacturer_address'),
+  manufacturerEmail:       text('manufacturer_email'),
+  euRpName:                text('eu_rp_name'),
+  euRpAddress:             text('eu_rp_address'),
+  euRpEmail:               text('eu_rp_email'),
+  defaultCountryOfOrigin:  text('default_country_of_origin'), // ISO code, e.g. 'CN'
   createdAt:        text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
@@ -45,6 +56,16 @@ export const products = sqliteTable('products', {
   pushedEbayIe:             text('pushed_ebay_ie').notNull().default('N'),
   pushedXmrBazaar:          text('pushed_xmr_bazaar').notNull().default('N'),
   pushedLibreMarket:        text('pushed_libre_market').notNull().default('N'),
+  // TikTok-readiness fields (see docs/tiktok-readiness-spec.md §2.1)
+  taxonomyKey:         text('taxonomy_key'),          // internal category key → channel_category_map
+  shopifyCategoryGid:  text('shopify_category_gid'),  // granular Shopify standard taxonomy node; overrides Shopify's guess
+  tiktokCategoryId:    text('tiktok_category_id'),    // optional cache of resolved TikTok category
+  packageLengthMm:     integer('package_length_mm'),  // shipped parcel, not the bare product
+  packageWidthMm:      integer('package_width_mm'),
+  packageHeightMm:     integer('package_height_mm'),
+  packageWeightG:      integer('package_weight_g'),   // shipped parcel; distinct from products.weight
+  warrantyMonths:      integer('warranty_months'),
+  boxContents:         text('box_contents'),          // JSON array string, e.g. ["Mouse","USB cable"]
   createdAt:   text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt:   text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 })
@@ -77,6 +98,10 @@ export const productImages = sqliteTable('product_images', {
   alt:       text('alt'),
   width:     integer('width'),
   height:    integer('height'),
+  // TikTok image-compliance rating (see docs/tiktok-readiness-spec.md §5b, tiktok-image-policy.ts)
+  tiktokStatus: text('tiktok_status'),   // 'pass' | 'warn' | 'fail'
+  tiktokIssues: text('tiktok_issues'),   // JSON array of issue codes
+  ratedAt:      text('rated_at'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
@@ -257,6 +282,31 @@ export const tiktokSelection = sqliteTable('tiktok_selection', {
   productId: text('product_id').primaryKey().references(() => products.id),
   addedAt:   text('added_at').default(sql`CURRENT_TIMESTAMP`),
 })
+
+// ---------------------------------------------------------------------------
+// TikTok-readiness: category map + per-channel field rules
+// (see docs/tiktok-readiness-spec.md §2.3, §2.4)
+// ---------------------------------------------------------------------------
+
+// Maps our internal taxonomy_key → each channel's category system, so a product's
+// category is data, not a hardcoded constant. Linchpin for correct TikTok category mapping.
+export const channelCategoryMap = sqliteTable('channel_category_map', {
+  taxonomyKey:           text('taxonomy_key').notNull(),   // e.g. 'gaming_mouse', 'earbuds', 'backpack'
+  platform:              text('platform').notNull(),       // 'shopify_tiktok' | 'shopify_komputerzz' | ...
+  shopifyCategoryGid:    text('shopify_category_gid'),      // standard taxonomy node GID for that key
+  tiktokCategoryId:      text('tiktok_category_id'),        // known-good TikTok category id (once live)
+  requiredAttributeKeys: text('required_attribute_keys'),   // JSON array of TikTok-mandatory attribute keys
+}, (t) => ({ pk: primaryKey({ columns: [t.taxonomyKey, t.platform] }) }))
+
+// Which fields are pushed to / required by which sales channel. Replaces scattered
+// `if (platform === 'shopify_komputerzz')` branches with data.
+export const channelFieldRules = sqliteTable('channel_field_rules', {
+  platform: text('platform').notNull(),   // 'shopify_tiktok' | 'shopify_komputerzz' | ...
+  fieldKey: text('field_key').notNull(),  // 'title'|'description'|'ean'|'weight'|'package_dims'|'attributes'|'gpsr'|'category'|'images'|...
+  pushed:   integer('pushed').notNull().default(1),   // 0 | 1
+  required: integer('required').notNull().default(0), // 1 = block push / readiness gate if missing
+  notes:    text('notes'),
+}, (t) => ({ pk: primaryKey({ columns: [t.platform, t.fieldKey] }) }))
 
 // ---------------------------------------------------------------------------
 // Sales Channels

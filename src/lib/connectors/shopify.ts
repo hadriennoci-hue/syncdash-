@@ -713,7 +713,9 @@ export class ShopifyConnector implements PlatformConnector {
       `
       const variantInput: Record<string, unknown> = {
         id:            defaultVariantId,
-        inventoryItem: { tracked: true },
+        inventoryItem: data.weightGrams != null
+          ? { tracked: true, measurement: { weight: { unit: 'GRAMS', value: data.weightGrams } } }
+          : { tracked: true },
       }
       if (data.ean) variantInput.barcode = data.ean
       const pricing = this.toShopifySalePricing(data.price ?? null, data.compareAt ?? null)
@@ -738,8 +740,40 @@ export class ShopifyConnector implements PlatformConnector {
       await this.syncLegacySeoDescription(productId, data.metaDescription)
     }
 
+    if (data.packageDimsMm) await this.setPackageDimensions(productId, data.packageDimsMm)
+
     await this.publishToOnlineStore(productId)
     return productId
+  }
+
+  /**
+   * Write package dimensions (mm) as product metafields. Shopify has no native per-variant
+   * dimensions field, so these live under the 'shipping' namespace; whether the TikTok app
+   * reads them is confirmed at connect-time (docs/tiktok-readiness-spec.md §7).
+   */
+  private async setPackageDimensions(
+    productGid: string,
+    dims: { length: number | null; width: number | null; height: number | null },
+  ): Promise<void> {
+    const entries: Array<{ key: string; value: number }> = []
+    if (dims.length != null) entries.push({ key: 'package_length_mm', value: dims.length })
+    if (dims.width  != null) entries.push({ key: 'package_width_mm',  value: dims.width })
+    if (dims.height != null) entries.push({ key: 'package_height_mm', value: dims.height })
+    if (entries.length === 0) return
+
+    const mutation = `
+      mutation SetPackageDims($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) { userErrors { field message } }
+      }
+    `
+    const metafields = entries.map((e) => ({
+      ownerId: productGid,
+      namespace: 'shipping',
+      key: e.key,
+      type: 'number_integer',
+      value: String(Math.round(e.value)),
+    }))
+    await this.graphql(mutation, { metafields }).catch(() => {})
   }
 
   // -------------------------------------------------------------------------

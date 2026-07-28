@@ -1,5 +1,7 @@
 import { db } from '@/lib/db/client'
-import { products, platformMappings, warehouseStock } from '@/lib/db/schema'
+import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap } from '@/lib/db/schema'
+import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
+import { normalizeAttributeValues } from '@/lib/utils/attribute-normalize'
 import { and, eq, gt, inArray, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
@@ -112,6 +114,11 @@ interface EligibleProduct {
   variantGroupId:          string | null
   vendor:                  string | null
   productType:             string | null
+  taxonomyKey:             string | null
+  packageWeightG:          number | null
+  packageLengthMm:         number | null
+  packageWidthMm:          number | null
+  packageHeightMm:         number | null
   pushedCoincart2:       string
   pushedShopifyKomputerzz: string
   pushedShopifyTiktok:     string
@@ -468,7 +475,8 @@ function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct)
     if (!targetKey) continue
     const raw = (mf.value ?? '').trim()
     if (!raw) continue
-    const values = splitAttributeValues(raw)
+    // Normalize: comma-safe split (keeps "16,000 DPI"), strip (TM)/"Up to", de-dupe.
+    const values = normalizeAttributeValues(raw)
     if (!values.length) continue
     out[targetKey] = Array.from(new Set([...(out[targetKey] ?? []), ...values]))
   }
@@ -800,6 +808,32 @@ async function pushPlatform(
   const newSkus: string[] = []
   const incomplete: Array<{ sku: string; missing: string[] }> = []
   const touchedPlatformIds = new Set<string>()
+
+  // TikTok-readiness config — per-channel, data-driven (docs/tiktok-readiness-spec.md §2.3/§2.4).
+  // Field rules replace hardcoded `platform === …` branches; the category map resolves a granular
+  // Shopify category. Both are backward-compatible: a channel with no rows keeps prior behaviour
+  // (fields default to pushed; category falls back to the Electronics root).
+  const ROOT_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/el'
+  const fieldRules = await db.query.channelFieldRules.findMany({
+    where: eq(channelFieldRules.platform, platform),
+  })
+  const fieldPushed = (key: string): boolean => {
+    const rule = fieldRules.find((r) => r.fieldKey === key)
+    return rule ? rule.pushed === 1 : true
+  }
+  const categoryRows = await db.query.channelCategoryMap.findMany({
+    where: eq(channelCategoryMap.platform, platform),
+  })
+  const validTaxonomyKeys = new Set(categoryRows.map((c) => c.taxonomyKey))
+  // Resolve the granular category: explicit taxonomy_key wins; otherwise derive it from the
+  // product's collection membership. Falls back to the Electronics root when nothing maps.
+  const resolveCategoryGidForProduct = (product: EligibleProduct): string => {
+    const key =
+      product.taxonomyKey ??
+      deriveTaxonomyKey(product.categories.map((c) => c.category.name), validTaxonomyKeys)
+    const hit = key ? categoryRows.find((c) => c.taxonomyKey === key) : undefined
+    return hit?.shopifyCategoryGid ?? ROOT_CATEGORY_GID
+  }
   let statusUpdated = 0
 
   const emitProgress = async (
@@ -1210,7 +1244,11 @@ async function pushPlatform(
           price: priceRow?.price ?? null,
           compareAt: priceRow?.compareAt ?? null,
           ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
-          ...(platform.startsWith('shopify') ? { shopifyCategory: 'gid://shopify/TaxonomyCategory/el' } : {}),
+          ...(platform.startsWith('shopify') ? { shopifyCategory: resolveCategoryGidForProduct(primary) } : {}),
+          ...(fieldPushed('package_weight') && primary.packageWeightG ? { weightGrams: primary.packageWeightG } : {}),
+          ...(fieldPushed('package_dims') && (primary.packageLengthMm || primary.packageWidthMm || primary.packageHeightMm)
+            ? { packageDimsMm: { length: primary.packageLengthMm, width: primary.packageWidthMm, height: primary.packageHeightMm } }
+            : {}),
           categoryIds,
           collections,
           ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
@@ -1395,7 +1433,10 @@ async function pushPlatform(
         }
       }
 
-      if (platform === 'shopify_komputerzz' && typeof (connector as any).syncProductAttributeMetafields === 'function' && finalPlatformId) {
+      // Attribute metafields: gated by channel_field_rules instead of a hardcoded platform check.
+      // komputerzz (attributes=1) is unchanged; shopify_tiktok (attributes=1) is now included.
+      // The typeof guard keeps non-Shopify channels (no such connector method) unaffected.
+      if (fieldPushed('attributes') && typeof (connector as any).syncProductAttributeMetafields === 'function' && finalPlatformId) {
         const productMetafields = collectShopifyProductMetafieldsFromAttributes(primary)
         if (Object.keys(productMetafields).length > 0) {
           await callWithShopifyAuthRetry(() => (connector as any).syncProductAttributeMetafields(finalPlatformId, productMetafields))
