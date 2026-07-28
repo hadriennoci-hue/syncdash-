@@ -308,6 +308,18 @@ export const channelFieldRules = sqliteTable('channel_field_rules', {
   notes:    text('notes'),
 }, (t) => ({ pk: primaryKey({ columns: [t.platform, t.fieldKey] }) }))
 
+// Per-channel title/description overrides. products.title/description are SHARED across channels;
+// a row here lets one channel (e.g. shopify_tiktok) use its own copy without changing the others.
+// The push uses the channel row when present, else falls back to products.title/description.
+export const channelContent = sqliteTable('channel_content', {
+  productId:       text('product_id').notNull().references(() => products.id),
+  platform:        text('platform').notNull(),   // 'shopify_tiktok' | 'shopify_komputerzz' | ...
+  title:           text('title'),
+  description:     text('description'),
+  metaDescription: text('meta_description'),
+  updatedAt:       text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
+
 // ---------------------------------------------------------------------------
 // Sales Channels
 // ---------------------------------------------------------------------------

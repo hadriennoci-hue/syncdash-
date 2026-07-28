@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap } from '@/lib/db/schema'
+import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap, channelContent } from '@/lib/db/schema'
 import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
 import { normalizeAttributeValues } from '@/lib/utils/attribute-normalize'
 import { and, eq, gt, inArray, or } from 'drizzle-orm'
@@ -834,6 +834,11 @@ async function pushPlatform(
     const hit = key ? categoryRows.find((c) => c.taxonomyKey === key) : undefined
     return hit?.shopifyCategoryGid ?? ROOT_CATEGORY_GID
   }
+  // Per-channel title/description overrides (channel_content); falls back to the shared product fields.
+  const contentRows = await db.query.channelContent.findMany({
+    where: eq(channelContent.platform, platform),
+  })
+  const contentByProduct = new Map(contentRows.map((r) => [r.productId, r]))
   let statusUpdated = 0
 
   const emitProgress = async (
@@ -1051,10 +1056,11 @@ async function pushPlatform(
       ? await getProductTranslations(primary.id)
       : []
     const shopifyEnglishTranslation = shopifyTranslations.find((translation) => translation.locale.toLowerCase() === 'en') ?? null
+    const channelOverride = contentByProduct.get(primary.id)
     const shopifyBaseFields = {
-      title: shopifyEnglishTranslation?.title ?? primary.title,
-      description: shopifyEnglishTranslation?.description ?? primary.description,
-      metaDescription: shopifyEnglishTranslation?.metaDescription ?? primary.metaDescription,
+      title: channelOverride?.title ?? shopifyEnglishTranslation?.title ?? primary.title,
+      description: channelOverride?.description ?? shopifyEnglishTranslation?.description ?? primary.description,
+      metaDescription: channelOverride?.metaDescription ?? shopifyEnglishTranslation?.metaDescription ?? primary.metaDescription,
     }
     const shopifyLocaleTranslations = shopifyTranslations.filter((translation) => translation.locale.toLowerCase() !== 'en')
 
