@@ -102,3 +102,14 @@ export async function getCategories(shopCipher: string, locale = 'en-GB'): Promi
     accessToken: token,
   })
 }
+
+/** POST /product/202309/products/search — the products currently on the TikTok shop. */
+export async function searchProducts(shopCipher: string, pageSize = 50): Promise<unknown> {
+  const token = await getTiktokAccessToken()
+  return callTikTok('/product/202309/products/search', {
+    method: 'POST',
+    query: { shop_cipher: shopCipher, page_size: String(pageSize) },
+    body: {},
+    accessToken: token,
+  })
+}
