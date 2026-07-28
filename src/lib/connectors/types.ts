@@ -117,6 +117,11 @@ export interface ProductPayload {
   // Generic product attributes keyed by internal attribute key.
   // Used by Coincart2 connector to push key/value lists on each product push.
   attributeValues?: Record<string, string[]>
+  // Shipping — set only for channels whose field rules push them (e.g. TikTok).
+  // weightGrams -> native Shopify variant weight; packageDimsMm -> product metafields
+  // (Shopify has no native per-variant dimensions field).
+  weightGrams?: number | null
+  packageDimsMm?: { length: number | null; width: number | null; height: number | null } | null
   replaceVariants?: boolean
 }
 

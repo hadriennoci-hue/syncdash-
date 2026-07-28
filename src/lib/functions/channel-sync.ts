@@ -113,6 +113,10 @@ interface EligibleProduct {
   vendor:                  string | null
   productType:             string | null
   taxonomyKey:             string | null
+  packageWeightG:          number | null
+  packageLengthMm:         number | null
+  packageWidthMm:          number | null
+  packageHeightMm:         number | null
   pushedCoincart2:       string
   pushedShopifyKomputerzz: string
   pushedShopifyTiktok:     string
@@ -1232,6 +1236,10 @@ async function pushPlatform(
           compareAt: priceRow?.compareAt ?? null,
           ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
           ...(platform.startsWith('shopify') ? { shopifyCategory: resolveCategoryGid(primary.taxonomyKey) } : {}),
+          ...(fieldPushed('package_weight') && primary.packageWeightG ? { weightGrams: primary.packageWeightG } : {}),
+          ...(fieldPushed('package_dims') && (primary.packageLengthMm || primary.packageWidthMm || primary.packageHeightMm)
+            ? { packageDimsMm: { length: primary.packageLengthMm, width: primary.packageWidthMm, height: primary.packageHeightMm } }
+            : {}),
           categoryIds,
           collections,
           ...(platform === 'coincart2' && Object.keys(coincartAttributeValues).length > 0
