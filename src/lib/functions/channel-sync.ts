@@ -1,5 +1,6 @@
 import { db } from '@/lib/db/client'
 import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap } from '@/lib/db/schema'
+import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
 import { and, eq, gt, inArray, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
@@ -821,8 +822,14 @@ async function pushPlatform(
   const categoryRows = await db.query.channelCategoryMap.findMany({
     where: eq(channelCategoryMap.platform, platform),
   })
-  const resolveCategoryGid = (taxonomyKey: string | null | undefined): string => {
-    const hit = taxonomyKey ? categoryRows.find((c) => c.taxonomyKey === taxonomyKey) : undefined
+  const validTaxonomyKeys = new Set(categoryRows.map((c) => c.taxonomyKey))
+  // Resolve the granular category: explicit taxonomy_key wins; otherwise derive it from the
+  // product's collection membership. Falls back to the Electronics root when nothing maps.
+  const resolveCategoryGidForProduct = (product: EligibleProduct): string => {
+    const key =
+      product.taxonomyKey ??
+      deriveTaxonomyKey(product.categories.map((c) => c.category.name), validTaxonomyKeys)
+    const hit = key ? categoryRows.find((c) => c.taxonomyKey === key) : undefined
     return hit?.shopifyCategoryGid ?? ROOT_CATEGORY_GID
   }
   let statusUpdated = 0
@@ -1235,7 +1242,7 @@ async function pushPlatform(
           price: priceRow?.price ?? null,
           compareAt: priceRow?.compareAt ?? null,
           ...(variantPayloads?.length ? { variants: variantPayloads, replaceVariants: true } : {}),
-          ...(platform.startsWith('shopify') ? { shopifyCategory: resolveCategoryGid(primary.taxonomyKey) } : {}),
+          ...(platform.startsWith('shopify') ? { shopifyCategory: resolveCategoryGidForProduct(primary) } : {}),
           ...(fieldPushed('package_weight') && primary.packageWeightG ? { weightGrams: primary.packageWeightG } : {}),
           ...(fieldPushed('package_dims') && (primary.packageLengthMm || primary.packageWidthMm || primary.packageHeightMm)
             ? { packageDimsMm: { length: primary.packageLengthMm, width: primary.packageWidthMm, height: primary.packageHeightMm } }
