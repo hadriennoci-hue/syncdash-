@@ -320,6 +320,21 @@ export const channelContent = sqliteTable('channel_content', {
   updatedAt:       text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({ pk: primaryKey({ columns: [t.productId, t.platform] }) }))
 
+// Per-channel image set. product_images are SHARED; when a product has channel_images rows for a
+// platform, the push uses THOSE instead (e.g. TikTok gets its squared 1:1 white-bg set while
+// Komputerzz keeps the originals). No rows → falls back to product_images.
+export const channelImages = sqliteTable('channel_images', {
+  id:        text('id').primaryKey(),
+  productId: text('product_id').notNull().references(() => products.id),
+  platform:  text('platform').notNull(),
+  url:       text('url').notNull(),
+  position:  integer('position').default(0),
+  alt:       text('alt'),
+  width:     integer('width'),
+  height:    integer('height'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+})
+
 // ---------------------------------------------------------------------------
 // Sales Channels
 // ---------------------------------------------------------------------------
