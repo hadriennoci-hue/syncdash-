@@ -1,6 +1,7 @@
 import { db } from '@/lib/db/client'
 import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap } from '@/lib/db/schema'
 import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
+import { normalizeAttributeValues } from '@/lib/utils/attribute-normalize'
 import { and, eq, gt, inArray, or } from 'drizzle-orm'
 import { createConnector } from '@/lib/connectors/registry'
 import { logOperation } from './log'
@@ -474,7 +475,8 @@ function collectShopifyProductMetafieldsFromAttributes(product: EligibleProduct)
     if (!targetKey) continue
     const raw = (mf.value ?? '').trim()
     if (!raw) continue
-    const values = splitAttributeValues(raw)
+    // Normalize: comma-safe split (keeps "16,000 DPI"), strip (TM)/"Up to", de-dupe.
+    const values = normalizeAttributeValues(raw)
     if (!values.length) continue
     out[targetKey] = Array.from(new Set([...(out[targetKey] ?? []), ...values]))
   }
