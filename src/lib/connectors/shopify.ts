@@ -543,6 +543,27 @@ export class ShopifyConnector implements PlatformConnector {
     })
   }
 
+  /**
+   * Publish a product to a named sales channel (e.g. 'TikTok') in addition to Online Store.
+   * Needed so TikTok's native app imports the product. No-op if the channel isn't connected.
+   * Requires the app's write_publications scope.
+   */
+  async publishToNamedChannel(productGid: string, channelName: string): Promise<void> {
+    const data = await this.graphql<{ publications: { nodes: Array<{ id: string; name: string }> } }>(
+      `{ publications(first: 25) { nodes { id name } } }`,
+    )
+    const pubId = data.publications.nodes.find(
+      (p) => p.name.toLowerCase() === channelName.toLowerCase(),
+    )?.id
+    if (!pubId) return
+    const mutation = `
+      mutation PublishToChannel($id: ID!, $pubId: ID!) {
+        publishablePublish(id: $id, input: { publicationId: $pubId }) { userErrors { message } }
+      }
+    `
+    await this.graphql(mutation, { id: productGid, pubId }).catch(() => {})
+  }
+
   private async syncLegacySeoDescription(productGid: string, metaDescription: string | null | undefined): Promise<void> {
     const numericId = this.gidToNumericId(productGid)
     await this.rest('PUT', `/products/${numericId}.json`, {

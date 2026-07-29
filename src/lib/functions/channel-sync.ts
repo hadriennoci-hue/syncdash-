@@ -1277,6 +1277,14 @@ async function pushPlatform(
         }))
 
         if (images.length > 0) await callWithShopifyAuthRetry(() => connector.setImages(platformId, images))
+        // Publish TikTok products to the TikTok sales channel too (not just Online Store), so the
+        // native TikTok app imports them. No-op if the channel isn't connected.
+        if (platform === 'shopify_tiktok' && typeof (connector as { publishToNamedChannel?: unknown }).publishToNamedChannel === 'function') {
+          await callWithShopifyAuthRetry(() =>
+            (connector as unknown as { publishToNamedChannel: (id: string, name: string) => Promise<void> })
+              .publishToNamedChannel(platformId, 'TikTok'),
+          )
+        }
         if (target.kind === 'group') {
           if (!isWooSkuAware(connector)) {
             throw new Error(`Grouped variant stock updates are not supported for ${platform}`)
