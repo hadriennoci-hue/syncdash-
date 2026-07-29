@@ -103,6 +103,20 @@ export async function getCategories(shopCipher: string, locale = 'en-GB'): Promi
   })
 }
 
+/**
+ * Generic signed TikTok API call through Wizhard (for iterating on endpoints without a redeploy).
+ * Resolves the stored access token; adds shop_cipher when useShopCipher is set.
+ */
+export async function tiktokApiCall(
+  path: string,
+  opts: { method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean } = {},
+): Promise<unknown> {
+  const token = await getTiktokAccessToken()
+  const query = { ...(opts.query ?? {}) }
+  if (opts.useShopCipher) query.shop_cipher = await getShopCipher()
+  return callTikTok(path, { method: opts.method ?? 'GET', query, body: opts.body, accessToken: token })
+}
+
 /** POST /product/202309/products/search — the products currently on the TikTok shop. */
 export async function searchProducts(shopCipher: string, pageSize = 50): Promise<unknown> {
   const token = await getTiktokAccessToken()
