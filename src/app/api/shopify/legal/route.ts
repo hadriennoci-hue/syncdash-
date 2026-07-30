@@ -27,7 +27,18 @@ export async function GET(req: NextRequest) {
   const token = await getStoredToken(platform)
   if (!token) return apiError('TOKEN_ERROR', 'No stored token after refresh', 500)
 
-  const query = `{
+  const gql = async (query: string) => {
+    const res = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token, 'User-Agent': 'Wizhard/1.0' },
+      body: JSON.stringify({ query }),
+    })
+    const j = (await res.json()) as { data?: Record<string, unknown>; errors?: unknown[] }
+    return { ok: res.ok && !j.errors?.length, data: j.data, errors: j.errors }
+  }
+
+  // Required: legal identity + store policies (refund/privacy/ToS/legal notice/contact).
+  const core = await gql(`{
     shop {
       name
       contactEmail
@@ -35,17 +46,13 @@ export async function GET(req: NextRequest) {
       primaryDomain { host url }
       shopPolicies { type title url body }
     }
-    pages(first: 100) { nodes { title handle isPublished body } }
-  }`
+  }`)
+  if (!core.ok) return apiError('SHOPIFY_API_ERROR', JSON.stringify(core.errors), 502)
 
-  const res = await fetch(`https://${shop}/admin/api/2025-01/graphql.json`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token, 'User-Agent': 'Wizhard/1.0' },
-    body: JSON.stringify({ query }),
-  })
-  if (!res.ok) return apiError('SHOPIFY_API_ERROR', `${res.status} ${await res.text()}`, 502)
-  const json = (await res.json()) as { data?: unknown; errors?: unknown[] }
-  if (json.errors?.length) return apiError('SHOPIFY_API_ERROR', JSON.stringify(json.errors), 502)
+  // Best-effort: published pages (needs read_content scope). Tolerate ACCESS_DENIED.
+  const pagesQuery = await gql(`{ pages(first: 100) { nodes { title handle isPublished body } } }`)
+  const pages = pagesQuery.ok ? pagesQuery.data?.pages : null
+  const pagesError = pagesQuery.ok ? null : JSON.stringify(pagesQuery.errors)
 
-  return apiResponse({ store: platform, shop, data: json.data })
+  return apiResponse({ store: platform, shop, shop_info: core.data?.shop, pages, pagesError })
 }
