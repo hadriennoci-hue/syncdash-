@@ -37,22 +37,34 @@ export async function GET(req: NextRequest) {
     return { ok: res.ok && !j.errors?.length, data: j.data, errors: j.errors }
   }
 
-  // Required: legal identity + store policies (refund/privacy/ToS/legal notice/contact).
-  const core = await gql(`{
+  // Shop identity — legal/billing name, contact, domain. Needs no special scope.
+  const identity = await gql(`{
     shop {
       name
       contactEmail
       billingAddress { company address1 address2 city zip province country phone }
       primaryDomain { host url }
-      shopPolicies { type title url body }
     }
   }`)
-  if (!core.ok) return apiError('SHOPIFY_API_ERROR', JSON.stringify(core.errors), 502)
+  if (!identity.ok) return apiError('SHOPIFY_API_ERROR', JSON.stringify(identity.errors), 502)
 
-  // Best-effort: published pages (needs read_content scope). Tolerate ACCESS_DENIED.
-  const pagesQuery = await gql(`{ pages(first: 100) { nodes { title handle isPublished body } } }`)
-  const pages = pagesQuery.ok ? pagesQuery.data?.pages : null
-  const pagesError = pagesQuery.ok ? null : JSON.stringify(pagesQuery.errors)
+  // Store legal policies (refund/privacy/ToS/legal notice/contact). Needs read_legal_policies.
+  const pol = await gql(`{ shop { shopPolicies { type title url body } } }`)
+  const policies = pol.ok ? (pol.data?.shop as { shopPolicies?: unknown })?.shopPolicies : null
+  const policiesError = pol.ok ? null : JSON.stringify(pol.errors)
 
-  return apiResponse({ store: platform, shop, shop_info: core.data?.shop, pages, pagesError })
+  // Published pages (e.g. mentions légales). Needs read_content.
+  const pg = await gql(`{ pages(first: 100) { nodes { title handle isPublished body } } }`)
+  const pages = pg.ok ? (pg.data?.pages as { nodes?: unknown })?.nodes : null
+  const pagesError = pg.ok ? null : JSON.stringify(pg.errors)
+
+  return apiResponse({
+    store: platform,
+    shop,
+    shop_info: identity.data?.shop,
+    policies,
+    policiesError,
+    pages,
+    pagesError,
+  })
 }
