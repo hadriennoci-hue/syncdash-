@@ -33,8 +33,8 @@ export async function GET(req: NextRequest) {
       contactEmail
       billingAddress { company address1 address2 city zip province country phone }
       primaryDomain { host url }
+      shopPolicies { type title url body }
     }
-    shopPolicies { type title url body }
     pages(first: 100) { nodes { title handle isPublished body } }
   }`
 
