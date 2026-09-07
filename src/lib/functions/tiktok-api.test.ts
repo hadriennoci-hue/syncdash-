@@ -23,4 +23,12 @@ describe('buildSignBase', () => {
     // sorted: app_key, shop_cipher, timestamp
     expect(base).toBe('S/product/202309/categoriesapp_keyKshop_cipherCtimestamp9S')
   })
+
+  it('excludes the body from the base for multipart uploads (signed with an empty body)', () => {
+    // tiktokUpload signs with bodyStr = '' — the multipart payload is never part of the base.
+    const base = buildSignBase('/product/202309/images/upload', { app_key: 'K', timestamp: '1' }, '', 'S')
+    expect(base).toBe('S/product/202309/images/uploadapp_keyKtimestamp1S')
+    // …and it must differ from what a JSON call with the same params would sign.
+    expect(base).not.toBe(buildSignBase('/product/202309/images/upload', { app_key: 'K', timestamp: '1' }, '{"a":1}', 'S'))
+  })
 })
