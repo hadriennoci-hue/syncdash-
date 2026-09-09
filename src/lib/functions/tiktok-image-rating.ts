@@ -88,8 +88,15 @@ export interface ProductImageRollup {
   images: Array<{ id: string; position: number } & ImageRating>
 }
 
-/** Rate all images of a product, persist the result, and return the rollup. */
-export async function rateProductImages(sku: string): Promise<ProductImageRollup> {
+/**
+ * Rate all images of a product, persist the result, and return the rollup.
+ * `deep` carries the pixel-derived signals for images we have fetched, keyed by image id;
+ * images missing from it are rated on metadata alone.
+ */
+export async function rateProductImages(
+  sku: string,
+  deep?: ReadonlyMap<string, ImageDeep>,
+): Promise<ProductImageRollup> {
   const rows = await db.query.productImages.findMany({
     where: eq(productImages.productId, sku),
   })
@@ -101,7 +108,7 @@ export async function rateProductImages(sku: string): Promise<ProductImageRollup
       position: r.position ?? 0,
       width: r.width ?? null,
       height: r.height ?? null,
-    })
+    }, deep?.get(r.id))
     return { id: r.id, position: r.position ?? 0, ...rating }
   })
 
