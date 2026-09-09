@@ -11,6 +11,9 @@
  *   npx tsx scripts/push-browser-channels.ts --dry-run    â†’ list queued products, no browser
  *   npx tsx scripts/push-browser-channels.ts --platform libre_market
  *   npx tsx scripts/push-browser-channels.ts --platform xmr_bazaar
+ *   npx tsx scripts/push-browser-channels.ts --platform xmr_bazaar --force-oos
+ *     → set every mapped XMR listing to Out of Stock; do not create/reactivate;
+ *       do not change Wizhard warehouse stock (other channels stay untouched)
  */
 
 import { chromium, type Page } from 'playwright'
@@ -24,9 +27,10 @@ import * as os from 'os'
 
 function readDevVars(): Record<string, string> {
   const candidates = [
+    process.env.WIZHARD_DEV_VARS,
     path.join(process.cwd(), '.dev.vars'),
     path.resolve(__dirname, '..', '.dev.vars'),
-  ]
+  ].filter((p): p is string => !!p)
   const envPath = candidates.find((p) => fs.existsSync(p))
   if (!envPath) throw new Error(`.dev.vars not found (checked: ${candidates.join(', ')})`)
 
@@ -56,6 +60,7 @@ const args          = process.argv.slice(2)
 const IS_LOCAL      = args.includes('--local')
 const IS_DRY_RUN    = args.includes('--dry-run')
 const IS_HEADLESS   = args.includes('--headless')
+const FORCE_OOS     = args.includes('--force-oos')
 const ONLY_PLATFORM = args.find((a) => a.startsWith('--platform='))?.split('=')[1]
   ?? (args[args.indexOf('--platform') + 1] !== undefined && !args[args.indexOf('--platform') + 1].startsWith('--')
     ? args[args.indexOf('--platform') + 1]
@@ -348,8 +353,8 @@ async function getChannelProducts(platform: 'libre_market' | 'xmr_bazaar', token
   while (true) {
     const res = await apiFetch('GET', `/api/channels/${platform}?page=${page}&perPage=${perPage}`, null, token, base)
     if (!res.ok) throw new Error(`Failed to fetch channel products for ${platform}: ${res.status}`)
-    const json = await res.json() as { products?: ChannelProductSummary[] }
-    const batch = json.products ?? []
+    const json = await res.json() as { products?: ChannelProductSummary[]; data?: { products?: ChannelProductSummary[] } }
+    const batch = json.data?.products ?? json.products ?? []
     all.push(...batch)
     if (batch.length < perPage) break
     page++
@@ -1286,13 +1291,59 @@ async function xmrEdit(
 
 async function xmrBeforeSubmit(delayState: { submittedOnce: boolean }, page: Page): Promise<void> {
   if (!delayState.submittedOnce) return
-  console.log('    Waiting 25s before XMR submit (rate-limit requirement)...')
-  await page.waitForTimeout(25000)
+  console.log('    Waiting 30s before XMR submit (rate-limit requirement)...')
+  await page.waitForTimeout(30000)
+}
+
+function xmrListingId(platformId: string): string {
+  return String(platformId)
+    .replace(/^https?:\/\/xmrbazaar\.com\/listing\//, '')
+    .replace(/^https?:\/\/xmrbazaar\.com\/edit-listing\//, '')
+    .replace(/\/.*$/, '')
+}
+
+async function xmrPublicIsOutOfStock(listingId: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`https://xmrbazaar.com/listing/${listingId}/`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    return /\(\s*Out of stock\s*\)/i.test(html) || /Out of stock/i.test(html)
+  } catch {
+    return null
+  }
+}
+
+async function xmrPageIsOutOfStock(page: Page): Promise<boolean> {
+  const body = ((await page.locator('body').innerText().catch(() => '')) || '').toLowerCase()
+  if (body.includes('out of stock')) return true
+  const statusSelect = page.locator('xpath=/html/body/div[3]/div/div[2]/form/div[1]/div[1]/select').first()
+  if (await statusSelect.count() > 0) {
+    const value = ((await statusSelect.inputValue().catch(() => '')) || '').toLowerCase()
+    const label = ((await statusSelect.locator('option:checked').innerText().catch(() => '')) || '').toLowerCase()
+    if (value.includes('out') || label.includes('out of stock') || value === '0') return true
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+
+async function launchBrowser() {
+  const opts = { headless: IS_HEADLESS, slowMo: IS_HEADLESS ? 0 : 100 }
+  try {
+    return await chromium.launch(opts)
+  } catch (err) {
+    const sys = '/usr/bin/chromium'
+    if (fs.existsSync(sys)) {
+      console.log(`  Using system Chromium at ${sys}`)
+      return await chromium.launch({ ...opts, executablePath: sys })
+    }
+    throw err
+  }
+}
 
 async function processPlatform(
   platform: 'libre_market' | 'xmr_bazaar',
@@ -1302,6 +1353,121 @@ async function processPlatform(
 ): Promise<BrowserRunReport> {
   console.log(`\n${'='.repeat(50)}\n${platform.toUpperCase()}\n${'='.repeat(50)}`)
   const jobId = await createBrowserSyncJob(platform, token, apiBase)
+
+  if (FORCE_OOS) {
+    if (platform !== 'xmr_bazaar') {
+      throw new Error('--force-oos is only implemented for --platform xmr_bazaar')
+    }
+    const channelProducts = await getChannelProducts('xmr_bazaar', token, apiBase)
+    const mapped = channelProducts.filter((p) => !!p.platformId)
+    console.log(`  ${mapped.length} mapped XMR listing(s) — checking which are still Active...`)
+
+    const active: typeof mapped = []
+    let skippedAlreadyOos = 0
+    for (const row of mapped) {
+      const listingId = xmrListingId(row.platformId!)
+      const oos = await xmrPublicIsOutOfStock(listingId)
+      if (oos === true) {
+        skippedAlreadyOos++
+        console.log(`    skip ${row.sku} (${listingId}) — already Out of Stock`)
+      } else {
+        active.push(row)
+        console.log(`    ${oos === false ? 'ACTIVE' : 'unknown'} ${row.sku} → ${listingId}`)
+      }
+    }
+    console.log(`  ${active.length} Active to update, ${skippedAlreadyOos} already Out of Stock`)
+
+    const report: BrowserRunReport = {
+      platform,
+      queued: active.length,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: [],
+      dryRun: IS_DRY_RUN,
+    }
+    if (IS_DRY_RUN) {
+      console.log('  [dry-run] Skipping browser.')
+      await finishBrowserSyncJob(jobId, report, 'Dry run only (force-oos)', null, token, apiBase)
+      return report
+    }
+
+    if (active.length === 0) {
+      console.log('  Nothing to edit.')
+      await finishBrowserSyncJob(jobId, report, 'force-oos: nothing active', null, token, apiBase)
+      return report
+    }
+
+    const username = vars['XMR_BAZAAR_USERNAME']
+    const password = vars['XMR_BAZAAR_PASSWORD']
+    if (!username || !password) throw new Error('XMR_BAZAAR_USERNAME or XMR_BAZAAR_PASSWORD not set')
+
+    const browser = await launchBrowser()
+    const page = await browser.newPage()
+    page.setDefaultTimeout(60000)
+    const xmrSubmitState = { submittedOnce: false }
+    try {
+      await xmrLogin(page, username, password)
+      for (const row of active) {
+        const platformId = row.platformId!
+        const listingId = xmrListingId(platformId)
+        console.log(`\n  → ${row.sku}: Out of Stock (${listingId})`)
+        try {
+          await page.goto(`https://xmrbazaar.com/listing/${listingId}/`)
+          await page.waitForLoadState('domcontentloaded')
+          if (await xmrIsListingNotFound(page)) throw new Error('XMR_LISTING_NOT_FOUND')
+          if (await xmrPageIsOutOfStock(page)) {
+            console.log('    skip — already Out of Stock')
+            skippedAlreadyOos++
+            continue
+          }
+          const synthetic = {
+            id: row.sku,
+            title: row.sku,
+            description: null,
+            productType: null,
+            images: [],
+            prices: { xmr_bazaar: { price: 0, compareAt: null } },
+            platforms: {},
+          } as ProductDetail
+          await xmrEdit(page, platformId, synthetic, false, 'out_of_stock', xmrSubmitState)
+          console.log('    ✅ Out of Stock saved')
+          report.updated++
+          report.processed++
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.log(`    ❌ ${msg}`)
+          report.failed++
+          report.processed++
+          report.errors.push(`${row.sku}: ${msg}`)
+          await page.screenshot({
+            path: path.join(process.cwd(), 'scripts', `error-xmr-oos-${row.sku}.png`),
+            fullPage: true,
+          }).catch(() => {})
+        }
+      }
+      await xmrLogout(page)
+      await finishBrowserSyncJob(
+        jobId,
+        report,
+        report.failed > 0
+          ? (report.errors[0] ?? `force-oos completed with ${report.failed} errors`)
+          : `force-oos: ${report.updated}/${mapped.length} set Out of Stock`,
+        report.failed > 0 ? (report.errors[0]?.split(':')[0] ?? null) : null,
+        token,
+        apiBase,
+      )
+      return report
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await failBrowserSyncJob(jobId, message, token, apiBase)
+      throw err
+    } finally {
+      await page.waitForTimeout(1500)
+      await browser.close()
+    }
+  }
 
   const { queuedSkus, mappedSkus, targetSkus } = await getTargetSkus(platform, token, apiBase)
   if (targetSkus.length === 0) {
@@ -1357,7 +1523,7 @@ async function processPlatform(
     dryRun: false,
   }
 
-  const browser = await chromium.launch({ headless: IS_HEADLESS, slowMo: IS_HEADLESS ? 0 : 100 })
+  const browser = await launchBrowser()
   const page    = await browser.newPage()
   page.setDefaultTimeout(60000)
 
@@ -1620,7 +1786,11 @@ async function main() {
 
   if (!token) { console.error('âŒ AGENT_BEARER_TOKEN not set in .dev.vars'); process.exit(1) }
 
-  console.log(`API: ${apiBase}${IS_DRY_RUN ? ' [dry-run]' : ''}`)
+  console.log(`API: ${apiBase}${IS_DRY_RUN ? ' [dry-run]' : ''}${FORCE_OOS ? ' [force-oos]' : ''}`)
+
+  if (FORCE_OOS && ONLY_PLATFORM !== 'xmr_bazaar') {
+    throw new Error('--force-oos requires --platform xmr_bazaar (refuses Libre Market and other channels)')
+  }
 
   const platforms: Array<'libre_market' | 'xmr_bazaar'> = ONLY_PLATFORM
     ? [ONLY_PLATFORM as 'libre_market' | 'xmr_bazaar']
