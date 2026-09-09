@@ -26,6 +26,21 @@ const productUrl = z.string().url().refine(hasProductPath, {
   message: 'URL must be a product page (must have a path beyond the domain). Use "https://not-listed" to mark a product as not found.',
 })
 
+/** box_contents is stored as a JSON array string; return [] rather than throwing on bad data. */
+function parseBoxContents(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+  } catch {
+    return []
+  }
+}
+
 function parseTags(raw: string | null): string[] {
   if (!raw) return []
   try {
@@ -90,6 +105,13 @@ const patchSchema = z.object({
     countryOfManufacture: z.string().optional(),
     weight:               z.number().positive().optional(),
     weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
+    taxonomyKey:          z.string().optional(),
+    packageLengthMm:      z.number().int().positive().optional(),
+    packageWidthMm:       z.number().int().positive().optional(),
+    packageHeightMm:      z.number().int().positive().optional(),
+    packageWeightG:       z.number().int().positive().optional(),
+    warrantyMonths:       z.number().int().nonnegative().optional(),
+    boxContents:          z.array(z.string().min(1)).max(20).optional(),
     competitorPrice:      z.number().nonnegative().nullable().optional(),
     competitorUrl:        productUrl.nullable().optional(),
     competitorPriceType:  z.enum(['promo', 'normal']).nullable().optional(),
@@ -201,6 +223,13 @@ export async function GET(
     countryOfManufacture: product.countryOfManufacture,
     weight:               product.weight,
     weightUnit:           product.weightUnit,
+    taxonomyKey:          product.taxonomyKey,
+    packageLengthMm:      product.packageLengthMm,
+    packageWidthMm:       product.packageWidthMm,
+    packageHeightMm:      product.packageHeightMm,
+    packageWeightG:       product.packageWeightG,
+    warrantyMonths:       product.warrantyMonths,
+    boxContents:          parseBoxContents(product.boxContents),
     vendor:               product.vendor,
     productType:          product.productType,
     isFeatured:           !!product.isFeatured,

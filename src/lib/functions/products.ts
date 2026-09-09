@@ -37,10 +37,49 @@ function normalizeTags(tags?: string[]): string[] | undefined {
 // createProduct
 // ---------------------------------------------------------------------------
 
-interface CreateProductInput {
+/**
+ * Catalogue fields that describe the physical/commercial product rather than its listing copy.
+ * Accepted by create and update alike; every one of them is persisted to D1 (they used to be
+ * accepted by the zod schemas and then silently dropped).
+ * Package dimensions describe the SHIPPED PARCEL, not the bare product — TikTok requires them.
+ */
+export interface CatalogueFields {
+  ean?: string
+  commodityCode?: string
+  customsDescription?: string
+  countryOfManufacture?: string
+  weight?: number
+  weightUnit?: 'kg' | 'g' | 'lb' | 'oz'
+  taxonomyKey?: string
+  packageLengthMm?: number
+  packageWidthMm?: number
+  packageHeightMm?: number
+  packageWeightG?: number
+  warrantyMonths?: number
+  boxContents?: string[]
+}
+
+/** Map the catalogue fields present in `src` onto a D1 update/insert object. */
+export function applyCatalogueFields(
+  src: CatalogueFields,
+  target: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const direct = [
+    'commodityCode', 'customsDescription', 'countryOfManufacture', 'weight', 'weightUnit',
+    'taxonomyKey', 'packageLengthMm', 'packageWidthMm', 'packageHeightMm', 'packageWeightG',
+    'warrantyMonths',
+  ] as const
+  for (const key of direct) {
+    if (src[key] !== undefined) target[key] = src[key]
+  }
+  if (src.ean !== undefined) target.ean = src.ean
+  if (src.boxContents !== undefined) target.boxContents = JSON.stringify(src.boxContents)
+  return target
+}
+
+interface CreateProductInput extends CatalogueFields {
   sku: string
   title: string
-  ean?: string
   description?: string
   metaDescription?: string
   tags?: string[]
@@ -91,15 +130,16 @@ export async function createProduct(
     isFeatured:  input.isFeatured ? 1 : 0,
     supplierId:  input.supplierId ?? null,
     updatedAt:   new Date().toISOString(),
+    ...applyCatalogueFields(input),
   }).onConflictDoUpdate({
     target: products.id,
     set: {
       title:       input.title,
-      ean:         input.ean ?? null,
       description: cleanDescription(input.description),
       metaDescription: cleanDescription(input.metaDescription),
       tags:        JSON.stringify(normalizeTags(input.tags) ?? []),
       updatedAt:   new Date().toISOString(),
+      ...applyCatalogueFields(input, { ean: input.ean ?? null }),
     },
   })
 
@@ -215,7 +255,7 @@ export async function createProduct(
 // ---------------------------------------------------------------------------
 
 interface UpdateProductInput {
-  fields: {
+  fields: CatalogueFields & {
     title?: string
     description?: string
     metaDescription?: string
@@ -255,6 +295,7 @@ export async function updateProduct(
   if (input.fields.pendingReview !== undefined) d1Update.pendingReview = input.fields.pendingReview ? 1 : 0
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
   if ('variantGroupId' in input.fields)       d1Update.variantGroupId = input.fields.variantGroupId ?? null
+  applyCatalogueFields(input.fields, d1Update)
 
   await db.update(products)
     .set(d1Update)
@@ -360,7 +401,7 @@ export async function updateProduct(
 // ---------------------------------------------------------------------------
 
 interface UpdateProductLocalInput {
-  fields: {
+  fields: CatalogueFields & {
     title?: string
     description?: string
     metaDescription?: string
@@ -387,6 +428,7 @@ export async function updateProductLocal(
   if (input.fields.status !== undefined)      d1Update.status = input.fields.status
   if (input.fields.pendingReview !== undefined) d1Update.pendingReview = input.fields.pendingReview ? 1 : 0
   if (input.fields.isFeatured !== undefined)  d1Update.isFeatured = input.fields.isFeatured ? 1 : 0
+  applyCatalogueFields(input.fields, d1Update)
 
   await db.update(products)
     .set(d1Update)
