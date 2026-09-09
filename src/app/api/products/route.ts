@@ -27,6 +27,13 @@ const createSchema = z.object({
   countryOfManufacture: z.string().optional(),
   weight:               z.number().positive().optional(),
   weightUnit:           z.enum(['kg', 'g', 'lb', 'oz']).optional(),
+  taxonomyKey:          z.string().optional(),
+  packageLengthMm:      z.number().int().positive().optional(),
+  packageWidthMm:       z.number().int().positive().optional(),
+  packageHeightMm:      z.number().int().positive().optional(),
+  packageWeightG:       z.number().int().positive().optional(),
+  warrantyMonths:       z.number().int().nonnegative().optional(),
+  boxContents:          z.array(z.string().min(1)).max(20).optional(),
   isFeatured:           z.boolean().optional(),
   supplierId:           z.string().optional(),
   variants:     z.array(z.object({
