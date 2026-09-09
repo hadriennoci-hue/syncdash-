@@ -51,3 +51,21 @@ describe('rateImageMeta', () => {
     expect(r.issues).toContain('main_bg')
   })
 })
+
+describe('readiness counts usable images, not perfect ones', () => {
+  const square = (n: number) => ({ url: `https://x/${n}.jpg`, position: n, width: 900, height: 900 })
+
+  it('treats a 900px square as usable but not perfect', () => {
+    const r = rateImageMeta(square(1))
+    expect(r.status).toBe('warn')
+    expect(r.issues).toEqual(['below_target'])
+  })
+
+  it('still fails an image below the hard floor', () => {
+    expect(rateImageMeta({ url: 'https://x/a.jpg', position: 1, width: 640, height: 640 }).status).toBe('fail')
+  })
+
+  it('still fails a non-square image', () => {
+    expect(rateImageMeta({ url: 'https://x/a.jpg', position: 1, width: 1800, height: 1200 }).status).toBe('fail')
+  })
+})

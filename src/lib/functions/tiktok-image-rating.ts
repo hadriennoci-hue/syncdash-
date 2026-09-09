@@ -82,6 +82,8 @@ export interface ProductImageRollup {
   sku: string
   total: number
   passCount: number
+  /** Images TikTok would accept: everything not failing a hard rule, warnings included. */
+  usableCount: number
   mainOk: boolean          // position-0 image exists and passes
   /** provisional: pixel checks (white bg) land later — see spec §5b */
   readyForTiktok: boolean  // >= minCountGood passing AND main passes
@@ -122,15 +124,20 @@ export async function rateProductImages(
   )
 
   const passCount = rated.filter((r) => r.status === 'pass').length
+  // `warn` means "accepted but below our own target" — a 900 px square image is one of these,
+  // and TikTok takes it (the IE floor is 800). Only `fail` is a rejection, so readiness counts
+  // usable images, not perfect ones.
+  const usableCount = rated.filter((r) => r.status !== 'fail').length
   const main = rated.find((r) => r.position === P.mainPosition)
-  const mainOk = !!main && main.status === 'pass'
+  const mainOk = !!main && main.status !== 'fail'
 
   return {
     sku,
     total: rated.length,
     passCount,
+    usableCount,
     mainOk,
-    readyForTiktok: passCount >= P.minCountGood && mainOk,
+    readyForTiktok: usableCount >= P.minCountGood && mainOk,
     images: rated,
   }
 }

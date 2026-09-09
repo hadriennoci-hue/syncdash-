@@ -105,7 +105,7 @@ export async function checkProductReadiness(
     packageHeightMm: product.packageHeightMm,
     packageWeightG: product.packageWeightG,
     gpsrComplete: !!(supplier?.manufacturerName && supplier?.euRpName),
-    imagePassCount: rollup.passCount,
+    imagePassCount: rollup.usableCount,
     imageMainOk: rollup.mainOk,
   }
 
