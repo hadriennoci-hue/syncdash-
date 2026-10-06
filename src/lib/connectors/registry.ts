@@ -3,6 +3,7 @@ import type { PlatformConnector, WarehouseConnector } from './types'
 import { ShopifyConnector, ShopifyWarehouseConnector } from './shopify'
 import { CoincartConnector } from './coincart'
 import { EbayConnector } from './ebay'
+import { MintsoftWarehouseConnector } from './mintsoft'
 import { getStoredToken } from '@/lib/functions/tokens'
 
 // ---------------------------------------------------------------------------
@@ -116,6 +117,16 @@ export function getWarehouseConnector(warehouseId: string): WarehouseConnector {
  */
 export async function createWarehouseConnector(warehouseId: string): Promise<WarehouseConnector> {
   if (warehouseId === 'ireland') {
+    // Mintsoft (2Flow WMS) is the source of truth for Ireland. The Tech Store read below is only a
+    // fallback while the Mintsoft credentials are not configured.
+    if (process.env.MINTSOFT_USERNAME && process.env.MINTSOFT_PASSWORD) {
+      const warehouseIdEnv = Number(process.env.MINTSOFT_WAREHOUSE_ID)
+      return new MintsoftWarehouseConnector(
+        process.env.MINTSOFT_USERNAME,
+        process.env.MINTSOFT_PASSWORD,
+        Number.isFinite(warehouseIdEnv) && warehouseIdEnv > 0 ? warehouseIdEnv : null,
+      )
+    }
     const token = await getStoredToken('shopify_tiktok')
     if (!token) {
       throw new Error('No valid stored OAuth token for shopify_tiktok. Run /api/tokens/refresh first.')
