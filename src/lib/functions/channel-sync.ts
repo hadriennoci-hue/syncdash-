@@ -1,4 +1,5 @@
 import { db } from '@/lib/db/client'
+import { EXTERNALLY_STOCKED_PLATFORMS } from '@/lib/functions/stock-ownership'
 import { products, platformMappings, warehouseStock, channelFieldRules, channelCategoryMap, channelContent, channelImages } from '@/lib/db/schema'
 import { deriveTaxonomyKey } from '@/lib/utils/taxonomy-key'
 import { normalizeAttributeValues } from '@/lib/utils/attribute-normalize'
@@ -1237,8 +1238,8 @@ async function pushPlatform(
         // XMR Bazaar and Libre Market do not support promo/compareAt pricing
         const compareAtForPlatform = (platform === 'xmr_bazaar' || platform === 'libre_market') ? null : (priceRow?.compareAt ?? null)
         await callWithShopifyAuthRetry(() => connector.updatePrice(platformId, priceRow?.price ?? null, compareAtForPlatform))
-        // XMR Bazaar does not manage stock
-        if (platform !== 'xmr_bazaar') {
+        // XMR Bazaar does not manage stock; externally stocked channels get stock from their WMS
+        if (platform !== 'xmr_bazaar' && !EXTERNALLY_STOCKED_PLATFORMS.has(platform)) {
           await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
         }
         await callWithShopifyAuthRetry(() => connector.toggleStatus(platformId, 'active'))
@@ -1308,7 +1309,7 @@ async function pushPlatform(
           if (acerStoreLocationId) {
             await callWithShopifyAuthRetry(() => shopifyConnector.updateStock(platformId, getStockForWarehouse(primary, 'acer_store'), acerStoreLocationId))
           }
-        } else {
+        } else if (!EXTERNALLY_STOCKED_PLATFORMS.has(platform)) {
           await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
         }
         return platformId
@@ -1525,7 +1526,7 @@ async function pushPlatform(
   let zeroedOutOfStock = 0
   const skippedRecentEdits = 0
   // Browser-automated channels cannot be deactivated via API — skip cleanup entirely
-  if (!BROWSER_PLATFORMS.includes(platform)) {
+  if (!BROWSER_PLATFORMS.includes(platform) && !EXTERNALLY_STOCKED_PLATFORMS.has(platform)) {
     try {
       const inStockRows = await db.query.warehouseStock.findMany({
         where: gt(warehouseStock.quantity, 0),

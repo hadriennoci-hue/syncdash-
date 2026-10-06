@@ -8,6 +8,7 @@ const isBlockedAcerSku = (sku: string) =>
   sku.toUpperCase().includes('_MEDIAKEY')
 
 import { db } from '@/lib/db/client'
+import { EXTERNALLY_STOCKED_PLATFORMS } from '@/lib/functions/stock-ownership'
 import { warehouses, warehouseStock, warehouseChannelRules, platformMappings, products, suppliers, syncJobs } from '@/lib/db/schema'
 import { eq, and, gt, inArray, isNull } from 'drizzle-orm'
 import { createWarehouseConnector, createConnector } from '@/lib/connectors/registry'
@@ -389,6 +390,12 @@ export async function pushStockToChannels(
   const results: ChannelStockResult[] = []
 
   for (const platform of platforms) {
+    // Stock on these channels is owned by their WMS (Mintsoft for shopify_tiktok), never by Wizhard,
+    // even if a warehouse rule is (re)added for them.
+    if (EXTERNALLY_STOCKED_PLATFORMS.has(platform)) {
+      results.push({ platform, productsUpdated: 0, errors: [] })
+      continue
+    }
     const errors: string[] = []
     let productsUpdated = 0
     let touchedCount = 0
