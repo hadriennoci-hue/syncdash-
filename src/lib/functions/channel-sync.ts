@@ -558,24 +558,16 @@ function getStockForWarehouse(product: EligibleProduct, warehouseId: string): nu
 }
 
 /**
- * For shopify_komputerzz: build per-location stock batch items.
- *   ireland   → SHOPIFY_KOMPUTERZZ_LOCATION_ID   (2flow Dublin — default location)
- *   acer_store → SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE (Acer Store Wroclaw Poland)
- * Falls back to total stock on default location when ACER_STORE env var is not set.
+ * For shopify_komputerzz: only the ireland warehouse (2Flow Dublin, default location) is pushed.
+ * The Acer Store Wroclaw Poland location was deactivated on 2026-11-04 (no more imports from it),
+ * so acer_store stock is never sent to Komputerzz.
  */
 function buildKomputerzzStockItems(
   platformId: string,
   sku: string,
   product: EligibleProduct,
 ): Array<{ platformId: string; sku: string; quantity: number; locationId?: string }> {
-  const acerStoreLocationId = process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE
-  if (!acerStoreLocationId) {
-    return [{ platformId, sku, quantity: getProductTotalStock(product) }]
-  }
-  return [
-    { platformId, sku, quantity: getStockForWarehouse(product, 'ireland') },
-    { platformId, sku, quantity: getStockForWarehouse(product, 'acer_store'), locationId: acerStoreLocationId },
-  ]
+  return [{ platformId, sku, quantity: getStockForWarehouse(product, 'ireland') }]
 }
 
 function getProductPriceRow(product: EligibleProduct, platform: Platform): PriceRow | undefined {
@@ -1302,13 +1294,7 @@ async function pushPlatform(
             }
           }
         } else if (platform === 'shopify_komputerzz') {
-          const acerStoreLocationId = process.env.SHOPIFY_KOMPUTERZZ_LOCATION_ID_ACER_STORE
-          // connector is ShopifyConnector here — updateStock accepts optional locationIdOverride
-          const shopifyConnector = connector as unknown as { updateStock: (id: string, qty: number, loc?: string) => Promise<void> }
-          await callWithShopifyAuthRetry(() => shopifyConnector.updateStock(platformId, getStockForWarehouse(primary, 'ireland')))
-          if (acerStoreLocationId) {
-            await callWithShopifyAuthRetry(() => shopifyConnector.updateStock(platformId, getStockForWarehouse(primary, 'acer_store'), acerStoreLocationId))
-          }
+          await callWithShopifyAuthRetry(() => connector.updateStock(platformId, getStockForWarehouse(primary, 'ireland')))
         } else if (!EXTERNALLY_STOCKED_PLATFORMS.has(platform)) {
           await callWithShopifyAuthRetry(() => connector.updateStock(platformId, totalStock))
         }
