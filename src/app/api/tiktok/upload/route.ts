@@ -14,6 +14,7 @@ interface UploadInput {
   fields?: Record<string, string>
   query?: Record<string, string>
   useShopCipher?: boolean
+  shopRegion?: string
 }
 
 function decodeBase64(b64: string): Uint8Array {
@@ -30,7 +31,7 @@ function decodeBase64(b64: string): Uint8Array {
  * multipart/form-data and reject JSON with 36009022. This route takes the file as base64 so
  * the caller stays a plain JSON client, and rebuilds the multipart body inside the Worker.
  *
- * Body: { path, data_base64, filename, content_type, fields?, query?, useShopCipher? }
+ * Body: { path, data_base64, filename, content_type, fields?, query?, useShopCipher?, shopRegion? }
  * e.g. { path: "/product/202309/images/upload", filename: "label.png",
  *        content_type: "image/png", fields: { use_case: "CERTIFICATION_IMAGE" } }
  */
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
         contentType: input.content_type ?? 'application/octet-stream',
       },
       input.fields ?? {},
-      { query: input.query, useShopCipher: input.useShopCipher },
+      { query: input.query, useShopCipher: input.useShopCipher, shopRegion: input.shopRegion },
     )
     return apiResponse({ data, bytes: bytes.length })
   } catch (err) {

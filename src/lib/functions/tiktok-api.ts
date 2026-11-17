@@ -100,12 +100,27 @@ export async function getAuthorizedShops(): Promise<TiktokShop[]> {
   return data.shops ?? []
 }
 
-/** Resolve the shop_cipher for the (single) authorized local shop. */
-export async function getShopCipher(): Promise<string> {
+/** Home shop region used when a caller does not name one (the Irish shop; FR/ES/IT are Sell Across Europe shops). */
+export const DEFAULT_SHOP_REGION = 'IE'
+
+/**
+ * Pick the shop of a given region. Since the token also covers the FR/ES/IT shops, TikTok's
+ * shop order is not stable: never fall back to "the first shop", fail loudly instead.
+ */
+export function pickShop(shops: TiktokShop[], region: string): TiktokShop {
+  const wanted = region.toUpperCase()
+  const shop = shops.find((s) => s.cipher && (s.region ?? '').toUpperCase() === wanted)
+  if (!shop) {
+    const have = shops.map((s) => s.region ?? '?').join(', ') || 'none'
+    throw new Error(`No authorized TikTok shop for region ${wanted} (authorized: ${have})`)
+  }
+  return shop
+}
+
+/** Resolve the shop_cipher for a region (default: TIKTOK_SHOP_REGION env, else IE). */
+export async function getShopCipher(region?: string): Promise<string> {
   const shops = await getAuthorizedShops()
-  const cipher = shops.find((s) => s.cipher)?.cipher
-  if (!cipher) throw new Error('No shop_cipher on any authorized shop')
-  return cipher
+  return pickShop(shops, region ?? process.env.TIKTOK_SHOP_REGION ?? DEFAULT_SHOP_REGION).cipher as string
 }
 
 /** GET /product/202309/categories — the TikTok category tree for the shop. */
@@ -123,11 +138,12 @@ export async function getCategories(shopCipher: string, locale = 'en-GB'): Promi
  */
 export async function tiktokApiCall(
   path: string,
-  opts: { method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean } = {},
+  opts: { method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean; shopRegion?: string } = {},
 ): Promise<unknown> {
   const token = await getTiktokAccessToken()
   const query = { ...(opts.query ?? {}) }
-  if (opts.useShopCipher) query.shop_cipher = await getShopCipher()
+  // An explicit shop_cipher in the query wins over the region lookup.
+  if (opts.useShopCipher && !query.shop_cipher) query.shop_cipher = await getShopCipher(opts.shopRegion)
   return callTikTok(path, { method: opts.method ?? 'GET', query, body: opts.body, accessToken: token })
 }
 
@@ -168,11 +184,11 @@ export async function tiktokUpload(
   path: string,
   file: TiktokUploadFile,
   fields: Record<string, string> = {},
-  opts: { query?: Record<string, string>; useShopCipher?: boolean } = {},
+  opts: { query?: Record<string, string>; useShopCipher?: boolean; shopRegion?: string } = {},
 ): Promise<unknown> {
   const token = await getTiktokAccessToken()
   const query = { ...(opts.query ?? {}) }
-  if (opts.useShopCipher) query.shop_cipher = await getShopCipher()
+  if (opts.useShopCipher && !query.shop_cipher) query.shop_cipher = await getShopCipher(opts.shopRegion)
 
   // Empty body string: multipart payloads are excluded from the TikTok signature base.
   const url = await buildSignedUrl(path, query, '')
