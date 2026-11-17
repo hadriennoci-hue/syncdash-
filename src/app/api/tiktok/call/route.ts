@@ -5,12 +5,13 @@ import { tiktokApiCall } from '@/lib/functions/tiktok-api'
 
 /**
  * POST /api/tiktok/call — generic signed TikTok API call, through Wizhard (bearer-protected).
- * Body: { path, method?, query?, body?, useShopCipher? }. For iterating on TikTok endpoints.
+ * Body: { path, method?, query?, body?, useShopCipher?, shopRegion? }. For iterating on TikTok endpoints.
+ * shopRegion (IE default, or FR/ES/IT) picks which authorized shop's cipher is added.
  */
 export async function POST(req: NextRequest) {
   const auth = verifyBearer(req)
   if (auth) return auth
-  let input: { path?: string; method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean }
+  let input: { path?: string; method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean; shopRegion?: string }
   try {
     input = await req.json()
   } catch {
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
       query: input.query,
       body: input.body,
       useShopCipher: input.useShopCipher,
+      shopRegion: input.shopRegion,
     })
     return apiResponse({ data })
   } catch (err) {

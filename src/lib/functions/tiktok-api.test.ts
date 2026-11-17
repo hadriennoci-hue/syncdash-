@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSignBase } from './tiktok-api'
+import { buildSignBase, pickShop } from './tiktok-api'
 
 describe('buildSignBase', () => {
   it('sorts params, excludes sign & access_token, wraps in app_secret', () => {
@@ -30,5 +30,27 @@ describe('buildSignBase', () => {
     expect(base).toBe('S/product/202309/images/uploadapp_keyKtimestamp1S')
     // …and it must differ from what a JSON call with the same params would sign.
     expect(base).not.toBe(buildSignBase('/product/202309/images/upload', { app_key: 'K', timestamp: '1' }, '{"a":1}', 'S'))
+  })
+})
+
+describe('pickShop', () => {
+  const shops = [
+    { id: '1', region: 'ES', cipher: 'C_ES' },
+    { id: '2', region: 'IT', cipher: 'C_IT' },
+    { id: '3', region: 'FR', cipher: 'C_FR' },
+    { id: '4', region: 'IE', cipher: 'C_IE' },
+  ]
+
+  it('picks the shop of the requested region, not the first one', () => {
+    expect(pickShop(shops, 'IE').cipher).toBe('C_IE')
+    expect(pickShop(shops, 'fr').cipher).toBe('C_FR')
+  })
+
+  it('throws instead of falling back when the region is not authorized', () => {
+    expect(() => pickShop(shops, 'DE')).toThrow(/region DE.*ES, IT, FR, IE/)
+  })
+
+  it('ignores a shop without cipher', () => {
+    expect(() => pickShop([{ id: '9', region: 'IE' }], 'IE')).toThrow(/region IE/)
   })
 })
