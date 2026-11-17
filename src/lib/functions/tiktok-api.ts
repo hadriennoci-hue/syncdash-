@@ -204,3 +204,12 @@ export async function tiktokUpload(
   })
   return unwrap(path, (await res.json()) as { code?: number; message?: string; data?: unknown })
 }
+
+/**
+ * Whether a passthrough call only reads data (allowed for the read-only agent token):
+ * any GET, or a POST to a TikTok search endpoint (products/orders/... search are POSTs).
+ */
+export function isReadOnlyTiktokCall(path: string, method: string = 'GET'): boolean {
+  if (method.toUpperCase() === 'GET') return true
+  return method.toUpperCase() === 'POST' && /\/search$/.test(path.split('?')[0])
+}
