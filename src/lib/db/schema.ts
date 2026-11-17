@@ -283,6 +283,25 @@ export const tiktokSelection = sqliteTable('tiktok_selection', {
   addedAt:   text('added_at').default(sql`CURRENT_TIMESTAMP`),
 })
 
+// Per-shop TikTok listings and prices (migration 0046). One row per (product, shop region):
+// IE (home shop, price driven by Shopify) and the Sell Across Europe shops FR/ES/IT (price pushed by Wizhard).
+// `price` = the price we want; live_* = what TikTok last returned (refresh).
+export const tiktokShopListings = sqliteTable('tiktok_shop_listings', {
+  productId:       text('product_id').notNull().references(() => products.id),
+  region:          text('region').notNull(),                 // 'IE' | 'FR' | 'ES' | 'IT'
+  price:           real('price'),
+  forSale:         integer('for_sale', { mode: 'boolean' }).notNull().default(true),
+  tiktokProductId: text('tiktok_product_id'),
+  tiktokSkuId:     text('tiktok_sku_id'),
+  livePrice:       real('live_price'),
+  currency:        text('currency'),
+  liveStatus:      text('live_status'),
+  auditStatus:     text('audit_status'),
+  lastSeenAt:      text('last_seen_at'),
+  pricePushedAt:   text('price_pushed_at'),
+  updatedAt:       text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({ pk: primaryKey({ columns: [t.productId, t.region] }) }))
+
 // ---------------------------------------------------------------------------
 // TikTok-readiness: category map + per-channel field rules
 // (see docs/tiktok-readiness-spec.md §2.3, §2.4)

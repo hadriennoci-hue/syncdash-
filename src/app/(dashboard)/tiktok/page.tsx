@@ -28,7 +28,10 @@ export default function TikTokPage() {
 
   return (
     <div className="space-y-3 max-w-3xl">
-      <h1 className="text-sm font-semibold">TikTok Selection ({items.length})</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-sm font-semibold">TikTok Selection ({items.length})</h1>
+        <Link href="/tiktok/prices" className="text-xs text-primary hover:underline">Prices per shop (IE/FR/ES/IT)</Link>
+      </div>
 
       <div className="flex gap-2">
         <input
