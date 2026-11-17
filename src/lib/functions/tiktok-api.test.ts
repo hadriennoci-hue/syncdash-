@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSignBase, pickShop } from './tiktok-api'
+import { buildSignBase, pickShop, isReadOnlyTiktokCall } from './tiktok-api'
 
 describe('buildSignBase', () => {
   it('sorts params, excludes sign & access_token, wraps in app_secret', () => {
@@ -52,5 +52,16 @@ describe('pickShop', () => {
 
   it('ignores a shop without cipher', () => {
     expect(() => pickShop([{ id: '9', region: 'IE' }], 'IE')).toThrow(/region IE/)
+  })
+})
+
+describe('isReadOnlyTiktokCall', () => {
+  it('allows GET and POST search endpoints only', () => {
+    expect(isReadOnlyTiktokCall('/product/202309/products/123')).toBe(true)
+    expect(isReadOnlyTiktokCall('/product/202309/products/search', 'POST')).toBe(true)
+    expect(isReadOnlyTiktokCall('/order/202309/orders/search', 'post')).toBe(true)
+    expect(isReadOnlyTiktokCall('/product/202309/products/123/prices/update', 'POST')).toBe(false)
+    expect(isReadOnlyTiktokCall('/product/202309/products/123', 'PUT')).toBe(false)
+    expect(isReadOnlyTiktokCall('/product/202309/products/123/partial_edit', 'POST')).toBe(false)
   })
 })

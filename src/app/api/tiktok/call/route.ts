@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
-import { verifyBearer } from '@/lib/auth/bearer'
+import { verifyBearer, bearerRole } from '@/lib/auth/bearer'
 import { apiResponse, apiError } from '@/lib/utils/api-response'
-import { tiktokApiCall } from '@/lib/functions/tiktok-api'
+import { tiktokApiCall, isReadOnlyTiktokCall } from '@/lib/functions/tiktok-api'
 
 /**
  * POST /api/tiktok/call — generic signed TikTok API call, through Wizhard (bearer-protected).
@@ -9,7 +9,7 @@ import { tiktokApiCall } from '@/lib/functions/tiktok-api'
  * shopRegion (IE default, or FR/ES/IT) picks which authorized shop's cipher is added.
  */
 export async function POST(req: NextRequest) {
-  const auth = verifyBearer(req)
+  const auth = verifyBearer(req, { allowReadOnly: true })
   if (auth) return auth
   let input: { path?: string; method?: 'GET' | 'POST'; query?: Record<string, string>; body?: unknown; useShopCipher?: boolean; shopRegion?: string }
   try {
@@ -18,6 +18,9 @@ export async function POST(req: NextRequest) {
     return apiError('VALIDATION_ERROR', 'Expected JSON body', 400)
   }
   if (!input.path) return apiError('VALIDATION_ERROR', 'path is required', 400)
+  if (bearerRole(req) === 'readonly' && !isReadOnlyTiktokCall(input.path, input.method)) {
+    return apiError('FORBIDDEN', 'Read-only token: only GET calls and POST search endpoints are allowed', 403)
+  }
   try {
     const data = await tiktokApiCall(input.path, {
       method: input.method,
